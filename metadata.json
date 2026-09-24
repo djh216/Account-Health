@@ -1,0 +1,6 @@
+{
+  "name": "Cellar Pulse",
+  "description": "Account health analysis and order analytics for wine distribution businesses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,63 @@
+# Build and deploy Cellar Pulse to Cloud Run.
+#
+# Prerequisites:
+#   gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+#   gcloud artifacts repositories create cellar-pulse --repository-format=docker --location=${_REGION}
+#
+# Manual run (uses the active gcloud project, or source gcp.deploy.env first):
+#   source gcp.deploy.env
+#   gcloud config set project "$GCP_PROJECT_ID"
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_SERVICE=cellar-pulse,_REPOSITORY=cellar-pulse
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE: cellar-pulse
+  _REPOSITORY: cellar-pulse
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA
+      - --region
+      - ${_REGION}
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 512Mi
+      - --cpu
+      - "1"
+      - --min-instances
+      - "0"
+      - --max-instances
+      - "10"
+      - --port
+      - "8080"
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
