@@ -11,7 +11,7 @@ export function ExportReportButton({
   label = "Export Alerts PDF",
   onMessage,
 }: {
-  page?: "health" | "orders";
+  page?: "health" | "orders" | "products";
   className?: string;
   variant?: "outline" | "default" | "secondary" | "ghost";
   size?: "default" | "sm" | "lg" | "xs";

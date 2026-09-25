@@ -128,3 +128,76 @@
     @apply font-sans;
   }
 }
+
+@media print {
+  @page {
+    margin: 10mm 12mm;
+    size: letter portrait;
+  }
+
+  /* Force background colors and exact color rendering */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 10pt !important;
+  }
+
+  /* Hide navigation, interactive buttons, search inputs, dialogs, and drawer triggers */
+  nav,
+  header .site-nav,
+  button,
+  input,
+  select,
+  [role="combobox"],
+  [role="dialog"],
+  [data-slot="dialog-content"],
+  [data-slot="dialog-overlay"],
+  .no-print,
+  [data-print-hide="true"] {
+    display: none !important;
+  }
+
+  /* Ensure card backgrounds and borders print crisp without shadows */
+  .border,
+  .rounded-xl,
+  .rounded-lg,
+  .rounded-md {
+    box-shadow: none !important;
+    border-color: #e5e7eb !important;
+  }
+
+  /* Keep cards and table rows together without awkward pagination breaks */
+  section,
+  .grid,
+  table,
+  tr,
+  .card,
+  [data-slot="card"] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Expand content to fill full printed page width */
+  main,
+  header > div,
+  .max-w-6xl,
+  .max-w-\[96rem\] {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Format charts nicely for printing */
+  .recharts-responsive-container {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}

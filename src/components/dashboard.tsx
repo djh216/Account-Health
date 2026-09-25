@@ -17,6 +17,7 @@ import { AccountListDialog } from "@/components/account-list-dialog";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { ClearDataButton } from "@/components/clear-data-button";
 import { ExportReportButton } from "@/components/export-report-button";
+import { PrintReportButton } from "@/components/print-report-button";
 import { RiskBadge } from "@/components/risk-badge";
 import { RepFilterSelect } from "@/components/rep-filter-select";
 import {
@@ -313,7 +314,7 @@ export function Dashboard() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5">
+        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 sm:px-6 lg:px-8 py-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-2 text-primary">
@@ -344,6 +345,7 @@ export function Dashboard() {
                 criticalCount={criticalAlertsCount}
                 onClick={() => setNotificationSidebarOpen(true)}
               />
+              <PrintReportButton />
               <ExportReportButton page="health" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
               <Button onClick={() => setUploadOpen(true)}>
@@ -363,7 +365,7 @@ export function Dashboard() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
+      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 sm:px-6 lg:px-8 py-6">
         {toast ? (
           <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
             {toast}

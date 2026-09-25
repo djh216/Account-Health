@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const LINKS = [
   { href: "/", label: "Account health" },
   { href: "/orders", label: "Order analytics" },
+  { href: "/products", label: "Product sales trends" },
 ] as const;
 
 export function SiteNav() {

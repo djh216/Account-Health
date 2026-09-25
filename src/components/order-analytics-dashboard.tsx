@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Grape, Search, Upload } fro
 import { AccountListDialog } from "@/components/account-list-dialog";
 import { ClearDataButton } from "@/components/clear-data-button";
 import { ExportReportButton } from "@/components/export-report-button";
+import { PrintReportButton } from "@/components/print-report-button";
 import {
   AccountTrackingSheet,
   ProductTrackingSheet,
@@ -462,6 +463,7 @@ export function OrderAnalyticsDashboard() {
                 criticalCount={criticalAlertsCount}
                 onClick={() => setNotificationSidebarOpen(true)}
               />
+              <PrintReportButton />
               <ExportReportButton page="orders" onMessage={flash} />
               <ClearDataButton
                 onCleared={(message) => {
