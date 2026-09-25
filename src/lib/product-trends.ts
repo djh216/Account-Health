@@ -28,6 +28,21 @@ export type ProductAccountPlacement = {
   shareOfProductPct: number;
 };
 
+export type ProductSlowingAlert = {
+  id: string;
+  productName: string;
+  severity: "critical" | "warning" | "watch";
+  recentVolume28d: number;
+  priorVolume28d: number;
+  volumeDropBtls: number;
+  dropPercentage: number;
+  lastOrderDate: string;
+  accountCount: number;
+  message: string;
+  recommendation: string;
+  topAtRiskAccounts: string[];
+};
+
 export type ProductSummary = {
   productName: string;
   totalBottles: number;
@@ -77,7 +92,7 @@ export const PRODUCT_PALETTE = [
   "#047857", // emerald-700
 ];
 
-const PERIOD_DAYS = 45;
+const PERIOD_DAYS = 28;
 
 /**
  * Calculates time-series trend data and analytics summaries for all individual products.
@@ -402,4 +417,77 @@ export function buildProductTrendData({
     peakPeriod,
     avgMonthlyBottles,
   };
+}
+
+/**
+ * Detects wine products whose reorder volume or sales velocity has slowed significantly over the last 28 days.
+ */
+export function detectSlowingProductAlerts(
+  summaries: ProductSummary[],
+): ProductSlowingAlert[] {
+  const alerts: ProductSlowingAlert[] = [];
+
+  for (const s of summaries) {
+    // Only evaluate wines with established sales history (at least 3 bottles in prior 28-day cycle or multiple orders)
+    if (s.priorVolume < 3 && s.orderCount < 2) continue;
+
+    // Check if volume is slowing over the last 28 days
+    const delta = s.velocityDeltaPct ?? 0;
+    const dropBtls = Math.max(0, s.priorVolume - s.recentVolume);
+
+    if (s.recentVolume < s.priorVolume || delta <= -15) {
+      let severity: "critical" | "warning" | "watch" = "watch";
+      let message = "";
+      let recommendation = "";
+
+      const dropPct = s.priorVolume > 0
+        ? Math.round(((s.priorVolume - s.recentVolume) / s.priorVolume) * 100)
+        : Math.abs(Math.round(delta));
+
+      if (s.recentVolume === 0 && s.priorVolume >= 4) {
+        severity = "critical";
+        message = `Zero reorders in the last 28 days (down from ${s.priorVolume} btls in the prior 28-day window).`;
+        recommendation = `Target top previous purchasing accounts (${s.topAccounts.slice(0, 3).map((a) => a.accountName).join(", ") || "historical buyers"}) to check depletion levels and restock before losing placement.`;
+      } else if (dropPct >= 50 && s.priorVolume >= 4) {
+        severity = "critical";
+        message = `Severe 28-day slowdown: volume plunged ${dropPct}% (${s.recentVolume} btls vs ${s.priorVolume} btls prior).`;
+        recommendation = `Review BTG (by-the-glass) and menu rotation status with key placements to determine if wine was rotated off the list.`;
+      } else if (dropPct >= 25 || (s.recentVolume === 0 && s.priorVolume >= 2)) {
+        severity = "warning";
+        message = `Notable 28-day sales deceleration: volume down ${dropPct}% vs prior 28-day period.`;
+        recommendation = `Schedule staff re-tasting or distributor check-in with accounts carrying this SKU to revitalize momentum.`;
+      } else if (dropPct >= 15) {
+        severity = "watch";
+        message = `Mild 28-day sales cooling: down ${dropPct}% compared to prior 28 days.`;
+        recommendation = `Monitor upcoming order cadence across active placements over the next 2-4 weeks.`;
+      } else {
+        continue;
+      }
+
+      alerts.push({
+        id: `prod_alert_${normalizeName(s.productName)}`,
+        productName: s.productName,
+        severity,
+        recentVolume28d: s.recentVolume,
+        priorVolume28d: s.priorVolume,
+        volumeDropBtls: dropBtls,
+        dropPercentage: dropPct,
+        lastOrderDate: s.lastOrderDate,
+        accountCount: s.accountCount,
+        message,
+        recommendation,
+        topAtRiskAccounts: s.topAccounts.slice(0, 4).map((a) => a.accountName),
+      });
+    }
+  }
+
+  // Sort alerts by severity (critical > warning > watch), then by drop volume descending
+  const severityRank = { critical: 0, warning: 1, watch: 2 };
+  alerts.sort((a, b) => {
+    const rankDiff = severityRank[a.severity] - severityRank[b.severity];
+    if (rankDiff !== 0) return rankDiff;
+    return b.volumeDropBtls - a.volumeDropBtls;
+  });
+
+  return alerts;
 }

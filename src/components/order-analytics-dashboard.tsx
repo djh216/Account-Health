@@ -46,6 +46,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  buildProductTrendData,
+  detectSlowingProductAlerts,
+} from "@/lib/product-trends";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import {
   formatDate,
@@ -296,10 +300,33 @@ export function OrderAnalyticsDashboard() {
     [enrichedAccounts, state.orders, state.analysisAsOf, analytics.asOf],
   );
 
+  const productTrends = useMemo(
+    () =>
+      buildProductTrendData({
+        orders: state.orders,
+        selectedProducts: [],
+        asOf: state.analysisAsOf ?? analytics.asOf,
+      }),
+    [state.orders, state.analysisAsOf, analytics.asOf],
+  );
+
+  const productAlerts = useMemo(
+    () => detectSlowingProductAlerts(productTrends.productSummaries),
+    [productTrends.productSummaries],
+  );
+
+  const criticalProductAlertsCount = useMemo(
+    () => productAlerts.filter((a) => a.severity === "critical").length,
+    [productAlerts],
+  );
+
   const criticalAlertsCount = useMemo(
     () => frequencyAlerts.filter((a) => a.severity === "critical").length,
     [frequencyAlerts],
   );
+
+  const totalAlertsCount = frequencyAlerts.length + productAlerts.length;
+  const totalCriticalAlertsCount = criticalAlertsCount + criticalProductAlertsCount;
 
   const projectionsSummary = useMemo(
     () =>
@@ -459,8 +486,8 @@ export function OrderAnalyticsDashboard() {
             </div>
             <div className="flex flex-wrap gap-2">
               <NotificationSidebarTrigger
-                alertsCount={frequencyAlerts.length}
-                criticalCount={criticalAlertsCount}
+                alertsCount={totalAlertsCount}
+                criticalCount={totalCriticalAlertsCount}
                 onClick={() => setNotificationSidebarOpen(true)}
               />
               <PrintReportButton />
@@ -1265,6 +1292,7 @@ export function OrderAnalyticsDashboard() {
 
       <NotificationSidebar
         alerts={frequencyAlerts}
+        productAlerts={productAlerts}
         open={notificationSidebarOpen}
         onOpenChange={setNotificationSidebarOpen}
         onSelectAccount={(accountName, accountId) => {

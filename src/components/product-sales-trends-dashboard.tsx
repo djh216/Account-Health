@@ -6,6 +6,7 @@ import {
   ArrowUpDown,
   ArrowUpRight,
   BarChart2,
+  Bell,
   Download,
   Search,
   Sparkles,
@@ -81,6 +82,7 @@ import {
   type ProductTrendGranularity,
   type ProductTrendMetric,
   type ProductTrendTimeframe,
+  detectSlowingProductAlerts,
 } from "@/lib/product-trends";
 import { cn } from "@/lib/utils";
 
@@ -108,20 +110,20 @@ function TrajectoryPill({
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
           <ArrowUpRight className="size-3" />
-          Accelerating{showWindow ? " (45d)" : ""}
+          Accelerating{showWindow ? " (28d)" : ""}
         </span>
       );
     case "steady":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          Steady{showWindow ? " (45d)" : ""}
+          Steady{showWindow ? " (28d)" : ""}
         </span>
       );
     case "decelerating":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
           <ArrowDownRight className="size-3" />
-          Decelerating{showWindow ? " (45d)" : ""}
+          Decelerating{showWindow ? " (28d)" : ""}
         </span>
       );
     case "new":
@@ -193,7 +195,7 @@ export function ProductSalesTrendsDashboard() {
     [frequencyAlerts],
   );
 
-  // Compute trend metrics
+  // Compute trend metrics (28-day trajectory window)
   const trends = useMemo(
     () =>
       buildProductTrendData({
@@ -205,6 +207,20 @@ export function ProductSalesTrendsDashboard() {
       }),
     [state.orders, selectedProducts, granularity, timeframe, state.analysisAsOf],
   );
+
+  // Alerts for slowing wine products over the last 28 days
+  const productAlerts = useMemo(
+    () => detectSlowingProductAlerts(trends.productSummaries),
+    [trends.productSummaries],
+  );
+
+  const criticalProductAlertsCount = useMemo(
+    () => productAlerts.filter((a) => a.severity === "critical").length,
+    [productAlerts],
+  );
+
+  const totalAlertsCount = frequencyAlerts.length + productAlerts.length;
+  const totalCriticalAlertsCount = criticalAlertsCount + criticalProductAlertsCount;
 
   // Assign distinct colors to each selected product
   const productColorMap = useMemo(() => {
@@ -357,8 +373,8 @@ export function ProductSalesTrendsDashboard() {
                 </Button>
               ) : null}
               <NotificationSidebarTrigger
-                alertsCount={frequencyAlerts.length}
-                criticalCount={criticalAlertsCount}
+                alertsCount={totalAlertsCount}
+                criticalCount={totalCriticalAlertsCount}
                 onClick={() => setNotificationSidebarOpen(true)}
               />
               <PrintReportButton />
@@ -394,6 +410,67 @@ export function ProductSalesTrendsDashboard() {
             Showing <span className="font-medium">{repFilter}</span>&apos;s product sales only.
           </div>
         ) : null}
+
+        {/* 28-Day Slowing Wine Sales Alert Banner */}
+        {productAlerts.length > 0 && (
+          <div
+            className={cn(
+              "rounded-xl border p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs",
+              criticalProductAlertsCount > 0
+                ? "border-rose-300 bg-rose-50/70 text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200"
+                : "border-amber-300 bg-amber-50/70 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={cn(
+                  "p-2 rounded-lg shrink-0 mt-0.5",
+                  criticalProductAlertsCount > 0
+                    ? "bg-rose-500 text-white"
+                    : "bg-amber-500 text-white",
+                )}
+              >
+                <TrendingDown className="size-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-heading font-bold text-sm sm:text-base">
+                    {productAlerts.length} Wine SKU{productAlerts.length === 1 ? "" : "s"} Slowing in Sales (Last 28 Days)
+                  </span>
+                  {criticalProductAlertsCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white">
+                      {criticalProductAlertsCount} Critical
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs mt-0.5 opacity-90 max-w-3xl leading-relaxed">
+                  Sales velocity or reorder volume dropped noticeably over the last 28 days compared to the prior 28-day cycle:{" "}
+                  <span className="font-semibold">
+                    {productAlerts.slice(0, 3).map((a) => `${a.productName} (-${a.dropPercentage}%)`).join(", ")}
+                    {productAlerts.length > 3 ? `, +${productAlerts.length - 3} more` : ""}.
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+              <Button
+                size="sm"
+                variant={criticalProductAlertsCount > 0 ? "default" : "secondary"}
+                className={cn(
+                  "text-xs font-semibold h-8",
+                  criticalProductAlertsCount > 0
+                    ? "bg-rose-700 hover:bg-rose-800 text-white"
+                    : "bg-amber-700 hover:bg-amber-800 text-white",
+                )}
+                onClick={() => setNotificationSidebarOpen(true)}
+              >
+                <Bell className="size-3.5 mr-1.5" />
+                View 28d Slowdown Briefing
+              </Button>
+            </div>
+          </div>
+        )}
 
         {trends.totalActiveProducts === 0 ? (
           <Card className="border-dashed py-12">
@@ -465,7 +542,7 @@ export function ProductSalesTrendsDashboard() {
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingUp className="size-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Top Growth Momentum (45-Day Window)</span>
+                    <span>Top Growth Momentum (28-Day Window)</span>
                   </CardDescription>
                   <CardTitle className="font-heading text-xl truncate" title={trends.topGrowing?.productName}>
                     {trends.topGrowing ? trends.topGrowing.productName : "—"}
@@ -479,7 +556,7 @@ export function ProductSalesTrendsDashboard() {
                           ? `+${trends.topGrowing.velocityDeltaPct.toFixed(0)}%`
                           : "Expanding"}
                       </span>{" "}
-                      velocity vs prior 45d ({trends.topGrowing.recentVolume} btls in last 45d vs {trends.topGrowing.priorVolume} btls prior)
+                      velocity vs prior 28d ({trends.topGrowing.recentVolume} btls in last 28d vs {trends.topGrowing.priorVolume} btls prior)
                     </>
                   ) : (
                     "All products steady"
@@ -491,7 +568,7 @@ export function ProductSalesTrendsDashboard() {
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />
-                    <span>Cooling SKU (45-Day Window)</span>
+                    <span>Cooling SKU (28-Day Window)</span>
                   </CardDescription>
                   <CardTitle className="font-heading text-xl truncate" title={trends.atRiskProduct?.productName}>
                     {trends.atRiskProduct ? trends.atRiskProduct.productName : "None"}
@@ -505,7 +582,7 @@ export function ProductSalesTrendsDashboard() {
                           ? `${trends.atRiskProduct.velocityDeltaPct.toFixed(0)}%`
                           : "Decelerating"}
                       </span>{" "}
-                      velocity vs prior 45d ({trends.atRiskProduct.recentVolume} btls in last 45d vs {trends.atRiskProduct.priorVolume} btls prior)
+                      velocity vs prior 28d ({trends.atRiskProduct.recentVolume} btls in last 28d vs {trends.atRiskProduct.priorVolume} btls prior)
                     </>
                   ) : (
                     "No steep deceleration detected"
@@ -915,15 +992,15 @@ export function ProductSalesTrendsDashboard() {
                       { id: "all", label: `All Wines (${trends.totalActiveProducts})` },
                       {
                         id: "accelerating",
-                        label: `🚀 Accelerating (45d: ${trends.productSummaries.filter((s) => s.trajectory === "accelerating").length})`,
+                        label: `🚀 Accelerating (28d: ${trends.productSummaries.filter((s) => s.trajectory === "accelerating").length})`,
                       },
                       {
                         id: "steady",
-                        label: `Steady (45d: ${trends.productSummaries.filter((s) => s.trajectory === "steady").length})`,
+                        label: `Steady (28d: ${trends.productSummaries.filter((s) => s.trajectory === "steady").length})`,
                       },
                       {
                         id: "decelerating",
-                        label: `📉 Decelerating (45d: ${trends.productSummaries.filter((s) => s.trajectory === "decelerating").length})`,
+                        label: `📉 Decelerating (28d: ${trends.productSummaries.filter((s) => s.trajectory === "decelerating").length})`,
                       },
                       {
                         id: "new",
@@ -1010,7 +1087,7 @@ export function ProductSalesTrendsDashboard() {
                           onClick={() => handleSort("velocityDeltaPct")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
-                            <span>Trajectory (45d vs Prior)</span>
+                            <span>Trajectory (28d vs Prior)</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
@@ -1082,10 +1159,10 @@ export function ProductSalesTrendsDashboard() {
                                           ? "text-rose-600 dark:text-rose-400"
                                           : "text-muted-foreground",
                                       )}
-                                      title="Velocity change over the last 45 days compared to prior 45 days"
+                                      title="Velocity change over the last 28 days compared to prior 28 days"
                                     >
                                       {summary.velocityDeltaPct > 0 ? "+" : ""}
-                                      {summary.velocityDeltaPct.toFixed(0)}% (45d)
+                                      {summary.velocityDeltaPct.toFixed(0)}% (28d)
                                     </span>
                                   )}
                                 </div>
@@ -1146,7 +1223,7 @@ export function ProductSalesTrendsDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-medium">Trajectory (45-Day):</span>
+                    <span className="text-xs text-muted-foreground font-medium">Trajectory (28-Day):</span>
                     <TrajectoryPill trajectory={selectedDetailProduct.trajectory} showWindow />
                     {selectedDetailProduct.velocityDeltaPct !== null && (
                       <span
@@ -1160,7 +1237,7 @@ export function ProductSalesTrendsDashboard() {
                         )}
                       >
                         {selectedDetailProduct.velocityDeltaPct > 0 ? "+" : ""}
-                        {selectedDetailProduct.velocityDeltaPct.toFixed(0)}% (last 45d vs prior 45d)
+                        {selectedDetailProduct.velocityDeltaPct.toFixed(0)}% (last 28d vs prior 28d)
                       </span>
                     )}
                   </div>
@@ -1286,7 +1363,14 @@ export function ProductSalesTrendsDashboard() {
         open={notificationSidebarOpen}
         onOpenChange={setNotificationSidebarOpen}
         alerts={frequencyAlerts}
+        productAlerts={productAlerts}
+        defaultCategory="products"
         onSelectAccount={() => {
+          setNotificationSidebarOpen(false);
+        }}
+        onSelectProduct={(productName) => {
+          const summary = trends.productSummaries.find((s) => s.productName === productName);
+          if (summary) setSelectedDetailProduct(summary);
           setNotificationSidebarOpen(false);
         }}
       />
