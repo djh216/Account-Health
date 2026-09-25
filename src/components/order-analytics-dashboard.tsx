@@ -14,6 +14,10 @@ import {
   type AccountProductSelection,
 } from "@/components/account-product-orders-dialog";
 import { RepFilterSelect } from "@/components/rep-filter-select";
+import {
+  NotificationSidebar,
+  NotificationSidebarTrigger,
+} from "@/components/notification-sidebar";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -55,6 +59,7 @@ import {
   normalizeName,
 } from "@/lib/format";
 import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
+import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
 import type { AccountHealth } from "@/lib/types";
 import {
   orderCadenceTone,
@@ -233,6 +238,7 @@ export function OrderAnalyticsDashboard() {
   const { state, fullState, snapshot, repFilter, setRepFilter, reps, importParseResult } =
     useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [restaurantFilter, setRestaurantFilter] = useState("all");
   const [productFilter, setProductFilter] = useState("all");
@@ -272,6 +278,21 @@ export function OrderAnalyticsDashboard() {
   const enrichedAccounts = useMemo(
     () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
     [snapshot.accounts, state.orders],
+  );
+
+  const frequencyAlerts = useMemo(
+    () =>
+      detectOrderFrequencyDrops(
+        enrichedAccounts,
+        state.orders,
+        state.analysisAsOf ?? analytics.asOf,
+      ),
+    [enrichedAccounts, state.orders, state.analysisAsOf, analytics.asOf],
+  );
+
+  const criticalAlertsCount = useMemo(
+    () => frequencyAlerts.filter((a) => a.severity === "critical").length,
+    [frequencyAlerts],
   );
 
   const healthByAccountName = useMemo(
@@ -421,6 +442,11 @@ export function OrderAnalyticsDashboard() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <NotificationSidebarTrigger
+                alertsCount={frequencyAlerts.length}
+                criticalCount={criticalAlertsCount}
+                onClick={() => setNotificationSidebarOpen(true)}
+              />
               <ExportReportButton page="orders" onMessage={flash} />
               <ClearDataButton
                 onCleared={(message) => {
@@ -486,6 +512,34 @@ export function OrderAnalyticsDashboard() {
           </Card>
         ) : (
           <>
+            {frequencyAlerts.length > 0 ? (
+              <div
+                role="alert"
+                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-amber-300/80 bg-amber-50/70 p-4 text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/20 dark:text-amber-200"
+              >
+                <div className="flex items-start gap-3">
+                  <BarChart3 className="size-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">
+                      {frequencyAlerts.length} account{frequencyAlerts.length === 1 ? "" : "s"} with significant order frequency drops
+                    </p>
+                    <p className="text-xs text-amber-900/80 dark:text-amber-300/80 mt-0.5">
+                      {criticalAlertsCount > 0 ? `${criticalAlertsCount} critical rate drops. ` : ""}
+                      Reorder cadence has slowed or stalled past their historical typical pace.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 bg-white/90 hover:bg-white text-xs font-semibold text-amber-950 border-amber-300 shadow-2xs dark:bg-amber-900/50 dark:text-amber-100 dark:border-amber-700"
+                  onClick={() => setNotificationSidebarOpen(true)}
+                >
+                  View Alerts Sidebar ({frequencyAlerts.length})
+                </Button>
+              </div>
+            ) : null}
+
             <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <Kpi
                 label="Order events"
@@ -1152,6 +1206,23 @@ export function OrderAnalyticsDashboard() {
                 ? imported.visits.length
                 : imported.accounts.length;
           flash(`Imported ${count} ${result.kind === "orders" ? "order lines" : "records"}.`);
+        }}
+      />
+
+      <NotificationSidebar
+        alerts={frequencyAlerts}
+        open={notificationSidebarOpen}
+        onOpenChange={setNotificationSidebarOpen}
+        onSelectAccount={(accountName, accountId) => {
+          const tracking =
+            analytics.byAccount.find(
+              (row) => normalizeName(row.accountName) === normalizeName(accountName),
+            ) ?? null;
+          if (tracking) {
+            setSelectedAccount(tracking);
+          } else {
+            openAccountFromHealth(accountId);
+          }
         }}
       />
     </div>

@@ -19,6 +19,10 @@ import { ClearDataButton } from "@/components/clear-data-button";
 import { ExportReportButton } from "@/components/export-report-button";
 import { RiskBadge } from "@/components/risk-badge";
 import { RepFilterSelect } from "@/components/rep-filter-select";
+import {
+  NotificationSidebar,
+  NotificationSidebarTrigger,
+} from "@/components/notification-sidebar";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -74,6 +78,7 @@ import {
 import { FOCUS_SECTIONS } from "@/lib/focus-sections";
 import { setPortfolio } from "@/lib/portfolio-store";
 import { generateSampleWinePortfolio } from "@/lib/sample-data";
+import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
 import type { AccountHealth, RiskLevel, TerritoryValueTier } from "@/lib/types";
 
 type AccountListDialogState = {
@@ -118,6 +123,7 @@ export function Dashboard() {
   const { state, fullState, snapshot, repFilter, setRepFilter, reps, importParseResult } =
     useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState<"all" | RiskLevel>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -131,6 +137,21 @@ export function Dashboard() {
   const enrichedAccounts = useMemo(
     () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
     [snapshot.accounts, state.orders],
+  );
+
+  const frequencyAlerts = useMemo(
+    () =>
+      detectOrderFrequencyDrops(
+        enrichedAccounts,
+        state.orders,
+        state.analysisAsOf,
+      ),
+    [enrichedAccounts, state.orders, state.analysisAsOf],
+  );
+
+  const criticalAlertsCount = useMemo(
+    () => frequencyAlerts.filter((a) => a.severity === "critical").length,
+    [frequencyAlerts],
   );
 
   const territoryByTier = useMemo(
@@ -318,6 +339,11 @@ export function Dashboard() {
                   Load sample book
                 </Button>
               ) : null}
+              <NotificationSidebarTrigger
+                alertsCount={frequencyAlerts.length}
+                criticalCount={criticalAlertsCount}
+                onClick={() => setNotificationSidebarOpen(true)}
+              />
               <ExportReportButton page="health" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
               <Button onClick={() => setUploadOpen(true)}>
@@ -367,6 +393,34 @@ export function Dashboard() {
           </Card>
         ) : (
           <>
+            {frequencyAlerts.length > 0 ? (
+              <div
+                role="alert"
+                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-amber-300/80 bg-amber-50/70 p-4 text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/20 dark:text-amber-200"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-sm">
+                      {frequencyAlerts.length} account{frequencyAlerts.length === 1 ? "" : "s"} with significant order frequency drops
+                    </p>
+                    <p className="text-xs text-amber-900/80 dark:text-amber-300/80 mt-0.5">
+                      {criticalAlertsCount > 0 ? `${criticalAlertsCount} critical rate drops. ` : ""}
+                      Purchasing cadence has stalled or dropped significantly below typical schedule.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 bg-white/90 hover:bg-white text-xs font-semibold text-amber-950 border-amber-300 shadow-2xs dark:bg-amber-900/50 dark:text-amber-100 dark:border-amber-700"
+                  onClick={() => setNotificationSidebarOpen(true)}
+                >
+                  View Alerts Sidebar ({frequencyAlerts.length})
+                </Button>
+              </div>
+            ) : null}
+
             <section
               className={`grid gap-3 sm:grid-cols-2 ${state.orders.length > 0 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}
             >
@@ -648,6 +702,22 @@ export function Dashboard() {
         showHistory={accountListDialog?.showHistory}
         emptyMessage={accountListDialog?.emptyMessage}
         onSelectAccount={setSelectedId}
+      />
+
+      <NotificationSidebar
+        alerts={frequencyAlerts}
+        open={notificationSidebarOpen}
+        onOpenChange={setNotificationSidebarOpen}
+        onSelectAccount={(accountName, accountId) => {
+          const target = enrichedAccounts.find(
+            (item) =>
+              item.account.id === accountId ||
+              normalizeName(item.account.name) === normalizeName(accountName),
+          );
+          if (target) {
+            setSelectedId(target.account.id);
+          }
+        }}
       />
     </div>
   );
