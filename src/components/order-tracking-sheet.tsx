@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { OrderCadenceAlert } from "@/components/order-cadence-alert";
 import { RiskBadge } from "@/components/risk-badge";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { projectSingleAccount } from "@/lib/order-projections";
 import {
   Dialog,
   DialogContent,
@@ -100,6 +102,10 @@ export function AccountTrackingSheet({
       })
     : null;
 
+  const projection = tracking
+    ? projectSingleAccount(tracking, accountHealth, tracking.analysisAsOf)
+    : null;
+
   return (
     <Dialog open={Boolean(tracking)} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[calc(100vh-1.5rem)] w-[min(96rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
@@ -134,6 +140,82 @@ export function AccountTrackingSheet({
                 {cadence ? <OrderCadenceAlert cadence={cadence} /> : null}
 
                 <AccountTrackingSummary tracking={tracking} compact />
+
+                {projection ? (
+                  <div className="rounded-xl border border-border bg-card p-3.5 space-y-3 text-xs">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <span className="font-heading font-semibold text-sm">Forecast & Churn Risk</span>
+                      <span
+                        className={cn(
+                          "font-bold tabular-nums",
+                          projection.churnTier === "high"
+                            ? "text-rose-600 dark:text-rose-400"
+                            : projection.churnTier === "moderate"
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-emerald-600 dark:text-emerald-400",
+                        )}
+                      >
+                        {projection.churnScore}% ({projection.churnTier.toUpperCase()})
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-muted/40 p-2">
+                        <span className="text-[11px] text-muted-foreground block">Proj. Next 30d</span>
+                        <span className="font-semibold text-foreground text-sm">
+                          {formatNumber(projection.projectedVolume30)} btls
+                        </span>
+                        <span className="text-[10px] text-muted-foreground block">
+                          ~{projection.projectedOrderCount30} orders
+                        </span>
+                      </div>
+                      <div className="rounded-lg bg-muted/40 p-2">
+                        <span className="text-[11px] text-muted-foreground block">Proj. Next 90d</span>
+                        <span className="font-semibold text-foreground text-sm">
+                          {formatNumber(projection.projectedVolume90)} btls
+                        </span>
+                        <span className="text-[10px] text-muted-foreground block">
+                          Risk-adj: {formatNumber(projection.riskAdjustedVolume90)} btls
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-muted-foreground">Expected Next Order:</span>
+                        <span className="font-medium text-foreground">
+                          {formatDate(projection.expectedNextOrderDate)}
+                        </span>
+                      </div>
+                      {projection.isOverdueForOrder ? (
+                        <div className="text-[11px] text-rose-600 dark:text-rose-400 font-medium text-right">
+                          Overdue by +{projection.daysOverdue} days
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {projection.churnSignals.length > 0 && projection.churnTier !== "low" ? (
+                      <div className="rounded-lg border border-amber-300/80 bg-amber-50/60 p-2.5 dark:border-amber-800/80 dark:bg-amber-950/20">
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider mb-1">
+                          <AlertTriangle className="size-3 text-amber-600 shrink-0" />
+                          Key Churn Signals
+                        </span>
+                        <ul className="space-y-1 text-[11px] text-muted-foreground">
+                          {projection.churnSignals.map((signal, i) => (
+                            <li key={i} className="flex items-start gap-1">
+                              <span className="text-amber-600 font-bold shrink-0">·</span>
+                              <span>{signal}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-2 pt-1.5 border-t border-amber-200 dark:border-amber-900/60 text-[11px]">
+                          <span className="font-semibold text-foreground">Retention Play: </span>
+                          <span className="text-muted-foreground">{projection.retentionRecommendation}</span>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="min-w-0 space-y-4 xl:overflow-y-auto xl:pl-1">

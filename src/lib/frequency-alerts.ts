@@ -37,6 +37,7 @@ export type AccountFrequencyAlert = {
   revenueRecent90: number;
   revenuePrior90: number;
   revenueAtRisk: number;
+  bottlesAtRisk: number;
   // Context & action
   message: string;
   actionRecommendation: string;
@@ -216,6 +217,25 @@ export function detectOrderFrequencyDrops(
           ? Math.round(health.revenue90 * (dropPercentage / 100))
           : 0;
 
+    const totalAccountBottles = accountOrders.reduce(
+      (sum, o) => sum + (o.cases || 0) * 12,
+      0,
+    );
+    const uniqueOrderDatesCount = Math.max(
+      1,
+      new Set(accountOrders.map((o) => o.date)).size,
+    );
+    const avgBottlesPerOrder =
+      accountOrders.length > 0
+        ? Math.round(totalAccountBottles / uniqueOrderDatesCount)
+        : 24;
+
+    const bottlesAtRisk = Math.round(
+      avgBottlesPerOrder *
+        Math.max(1, typicalOrdersPerMonth) *
+        (dropPercentage / 100),
+    );
+
     alerts.push({
       id: account.id || normalizeName(account.name),
       accountName: account.name,
@@ -236,6 +256,7 @@ export function detectOrderFrequencyDrops(
       revenueRecent90: health.revenue90,
       revenuePrior90: health.revenuePrior90,
       revenueAtRisk,
+      bottlesAtRisk,
       message,
       actionRecommendation,
     });

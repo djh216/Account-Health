@@ -26,6 +26,7 @@ import {
   formatDate,
   formatDays,
   formatMoney,
+  formatNumber,
 } from "@/lib/format";
 import { territoryTierLabel } from "@/lib/territory-value";
 import {
@@ -33,6 +34,7 @@ import {
   saveAcknowledgedAlertIds,
   type AccountFrequencyAlert,
 } from "@/lib/frequency-alerts";
+import { ExportReportButton } from "@/components/export-report-button";
 import { cn } from "@/lib/utils";
 
 type FilterTab = "all" | "critical" | "warning" | "acknowledged";
@@ -138,6 +140,11 @@ export function NotificationSidebar({
     [unacknowledgedAlerts],
   );
 
+  const totalBottlesAtRisk = useMemo(
+    () => unacknowledgedAlerts.reduce((sum, a) => sum + (a.bottlesAtRisk || 0), 0),
+    [unacknowledgedAlerts],
+  );
+
   // Filtered display list
   const filteredAlerts = useMemo(() => {
     let list: AccountFrequencyAlert[];
@@ -189,14 +196,17 @@ export function NotificationSidebar({
                 below their typical rate.
               </SheetDescription>
             </div>
-            <SheetClose
-              render={
-                <Button variant="ghost" size="icon-sm" className="rounded-lg">
-                  <X className="size-4" />
-                  <span className="sr-only">Close sidebar</span>
-                </Button>
-              }
-            />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <ExportReportButton size="xs" variant="outline" label="Export PDF" />
+              <SheetClose
+                render={
+                  <Button variant="ghost" size="icon-sm" className="rounded-lg">
+                    <X className="size-4" />
+                    <span className="sr-only">Close sidebar</span>
+                  </Button>
+                }
+              />
+            </div>
           </div>
 
           {/* Quick Metrics Strip */}
@@ -211,7 +221,7 @@ export function NotificationSidebar({
             </div>
             <div>
               <span className="block text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Critical Rate Drops
+                Critical Drops
               </span>
               <span className="mt-0.5 text-lg font-bold tabular-nums text-rose-600 dark:text-rose-400">
                 {criticalCount}
@@ -219,11 +229,16 @@ export function NotificationSidebar({
             </div>
             <div>
               <span className="block text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Volume at Risk
+                Bottles at Risk
               </span>
-              <span className="mt-0.5 text-lg font-bold tabular-nums text-amber-700 dark:text-amber-400">
-                {formatMoney(totalRevenueAtRisk)}
-              </span>
+              <div className="mt-0.5 flex items-baseline gap-1">
+                <span className="text-lg font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                  {formatNumber(totalBottlesAtRisk)}
+                </span>
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  btls ({formatMoney(totalRevenueAtRisk)})
+                </span>
+              </div>
             </div>
           </div>
 
@@ -546,11 +561,12 @@ export function NotificationSidebar({
                   </div>
 
                   {/* Revenue / Volume Deficit if available */}
-                  {alert.revenueAtRisk > 0 ? (
+                  {alert.revenueAtRisk > 0 || alert.bottlesAtRisk > 0 ? (
                     <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
                       <span>Recent 90d Revenue: {formatMoney(alert.revenueRecent90)}</span>
-                      <span className="font-medium text-amber-800 dark:text-amber-300">
-                        Est. Deficit: {formatMoney(alert.revenueAtRisk)}
+                      <span className="font-semibold text-amber-800 dark:text-amber-300">
+                        At Risk: {alert.bottlesAtRisk > 0 ? `${formatNumber(alert.bottlesAtRisk)} btls` : ""}
+                        {alert.revenueAtRisk > 0 ? ` (${formatMoney(alert.revenueAtRisk)})` : ""}
                       </span>
                     </div>
                   ) : null}

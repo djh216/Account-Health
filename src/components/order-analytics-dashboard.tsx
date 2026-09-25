@@ -60,6 +60,11 @@ import {
 } from "@/lib/format";
 import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
 import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
+import {
+  buildProjectionsAndChurn,
+} from "@/lib/order-projections";
+import { VolumeProjectionChurnPanel } from "@/components/volume-projection-churn-panel";
+import { BottleSalesTrendChart } from "@/components/bottle-sales-trend-chart";
 import type { AccountHealth } from "@/lib/types";
 import {
   orderCadenceTone,
@@ -293,6 +298,16 @@ export function OrderAnalyticsDashboard() {
   const criticalAlertsCount = useMemo(
     () => frequencyAlerts.filter((a) => a.severity === "critical").length,
     [frequencyAlerts],
+  );
+
+  const projectionsSummary = useMemo(
+    () =>
+      buildProjectionsAndChurn(
+        analytics,
+        enrichedAccounts,
+        state.analysisAsOf ?? analytics.asOf,
+      ),
+    [analytics, enrichedAccounts, state.analysisAsOf],
   );
 
   const healthByAccountName = useMemo(
@@ -557,8 +572,8 @@ export function OrderAnalyticsDashboard() {
               />
               <Kpi
                 label="Total volume"
-                value={formatNumber(analytics.totals.totalVolume)}
-                hint="Cases / units across all lines"
+                value={`${formatNumber(analytics.totals.totalVolume)} btls`}
+                hint="Total bottles across all order lines"
               />
               <Kpi
                 label="Restaurants"
@@ -588,6 +603,15 @@ export function OrderAnalyticsDashboard() {
             <Tabs defaultValue="accounts">
               <TabsList>
                 <TabsTrigger value="accounts">Account tracking</TabsTrigger>
+                <TabsTrigger value="trends">Bottle sales trends</TabsTrigger>
+                <TabsTrigger value="projections" className="relative">
+                  Forecast & Churn
+                  {projectionsSummary.highChurnCount > 0 ? (
+                    <span className="ml-1.5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white tabular-nums leading-none">
+                      {projectionsSummary.highChurnCount}
+                    </span>
+                  ) : null}
+                </TabsTrigger>
                 <TabsTrigger value="frequency">Order frequency</TabsTrigger>
                 <TabsTrigger value="products">Products tracked</TabsTrigger>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -704,6 +728,21 @@ export function OrderAnalyticsDashboard() {
                 </Card>
               </TabsContent>
 
+              <TabsContent value="projections" className="space-y-4">
+                <VolumeProjectionChurnPanel
+                  summary={projectionsSummary}
+                  onSelectAccount={(accountName) => {
+                    const tracking =
+                      analytics.byAccount.find(
+                        (row) => normalizeName(row.accountName) === normalizeName(accountName),
+                      ) ?? null;
+                    if (tracking) {
+                      setSelectedAccount(tracking);
+                    }
+                  }}
+                />
+              </TabsContent>
+
               <TabsContent value="frequency" className="space-y-4">
                 <Card>
                   <CardHeader className="border-b">
@@ -810,6 +849,19 @@ export function OrderAnalyticsDashboard() {
                     </div>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="trends" className="space-y-4">
+                <BottleSalesTrendChart
+                  orders={analytics.orders}
+                  asOf={state.analysisAsOf ?? snapshot.asOf}
+                  onSelectAccount={(accountName) => {
+                    const row = analytics.byAccount.find(
+                      (a) => normalizeName(a.accountName) === normalizeName(accountName),
+                    );
+                    if (row) setSelectedAccount(row);
+                  }}
+                />
               </TabsContent>
 
               <TabsContent value="products" className="space-y-4">

@@ -5,9 +5,17 @@ import { Button } from "@/components/ui/button";
 import { useReportExport } from "@/hooks/use-report-export";
 
 export function ExportReportButton({
+  className,
+  variant = "outline",
+  size = "default",
+  label = "Export Alerts PDF",
   onMessage,
 }: {
-  page: "health" | "orders";
+  page?: "health" | "orders";
+  className?: string;
+  variant?: "outline" | "default" | "secondary" | "ghost";
+  size?: "default" | "sm" | "lg" | "xs";
+  label?: string;
   onMessage?: (message: string) => void;
 }) {
   const { busy, canExport, exportReport } = useReportExport();
@@ -15,10 +23,10 @@ export function ExportReportButton({
   async function handleExport() {
     try {
       await exportReport();
-      onMessage?.("Focus & health PDF downloaded.");
+      onMessage?.("Frequency drop alerts report downloaded.");
     } catch (error) {
       const text =
-        error instanceof Error ? error.message : "Could not generate the report.";
+        error instanceof Error ? error.message : "Could not generate the alerts report.";
       onMessage?.(text);
     }
   }
@@ -26,12 +34,14 @@ export function ExportReportButton({
   return (
     <Button
       type="button"
-      variant="outline"
+      variant={variant}
+      size={size}
+      className={className}
       disabled={busy || !canExport}
       onClick={() => void handleExport()}
     >
       <Download data-icon="inline-start" />
-      {busy ? "Generating PDF…" : "Export PDF"}
+      {busy ? "Generating PDF…" : label}
     </Button>
   );
 }

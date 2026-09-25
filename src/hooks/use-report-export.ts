@@ -3,11 +3,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import {
-  downloadFocusHealthPdf,
-  type FocusHealthPdfInput,
+  downloadFrequencyAlertsPdf,
+  type FrequencyAlertsPdfInput,
 } from "@/lib/report-export";
-import { focusAccountsByHorizon } from "@/lib/score";
 import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
+import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
 import { todayIso } from "@/lib/format";
 
 export function useReportExport() {
@@ -19,26 +19,32 @@ export function useReportExport() {
     [snapshot.accounts, state.orders],
   );
 
-  const focusByHorizon = useMemo(
-    () => focusAccountsByHorizon(enrichedAccounts),
-    [enrichedAccounts],
+  const alerts = useMemo(
+    () =>
+      detectOrderFrequencyDrops(
+        enrichedAccounts,
+        state.orders,
+        state.analysisAsOf ?? snapshot.asOf,
+      ),
+    [enrichedAccounts, state.orders, state.analysisAsOf, snapshot.asOf],
   );
 
   const generatedAt = state.analysisAsOf ?? snapshot.asOf ?? todayIso();
 
-  const printInput = useMemo((): FocusHealthPdfInput | null => {
+  const printInput = useMemo((): FrequencyAlertsPdfInput | null => {
     if (snapshot.accounts.length === 0) return null;
     return {
       repFilter,
-      asOf: snapshot.asOf,
+      asOf: state.analysisAsOf ?? snapshot.asOf ?? todayIso(),
       generatedAt,
-      focusByHorizon,
+      alerts,
     };
   }, [
     repFilter,
+    state.analysisAsOf,
     snapshot.asOf,
     generatedAt,
-    focusByHorizon,
+    alerts,
     snapshot.accounts.length,
   ]);
 
@@ -50,7 +56,7 @@ export function useReportExport() {
     }
     setBusy(true);
     try {
-      downloadFocusHealthPdf(printInput);
+      downloadFrequencyAlertsPdf(printInput);
     } finally {
       setBusy(false);
     }
@@ -59,6 +65,7 @@ export function useReportExport() {
   return {
     busy,
     canExport,
+    alertsCount: alerts.length,
     exportReport,
   };
 }
