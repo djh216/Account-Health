@@ -1,11 +1,14 @@
 import type { AccountHealth, FocusHorizon } from "./types";
 import type { AccountFrequencyAlert } from "./frequency-alerts";
+import type { RestaurantOrderFrequency, RestaurantVolumeRow } from "./order-analytics";
+import type { ProductSummary, ProductSlowingAlert } from "./product-trends";
 
 export type FocusHealthPdfInput = {
   repFilter: string;
   asOf: string;
   generatedAt: string;
   focusByHorizon: Record<FocusHorizon, AccountHealth[]>;
+  allAccounts?: AccountHealth[];
 };
 
 export type FrequencyAlertsPdfInput = {
@@ -15,8 +18,41 @@ export type FrequencyAlertsPdfInput = {
   alerts: AccountFrequencyAlert[];
 };
 
+export type OrderAnalyticsPdfInput = {
+  repFilter: string;
+  asOf: string;
+  generatedAt: string;
+  restaurantFrequency: RestaurantOrderFrequency[];
+  topRestaurants?: RestaurantVolumeRow[];
+  totalOrders: number;
+  totalBottles: number;
+  totalRevenue: number;
+};
+
+export type ProductTrendsPdfInput = {
+  repFilter: string;
+  asOf: string;
+  generatedAt: string;
+  products: ProductSummary[];
+  slowingAlerts?: ProductSlowingAlert[];
+  totalBottles: number;
+  totalRevenue: number;
+};
+
 export { downloadFocusHealthPdf } from "./generate-focus-health-pdf";
 export { downloadFrequencyAlertsPdf } from "./generate-frequency-alerts-pdf";
+export { downloadOrderAnalyticsPdf } from "./generate-order-analytics-pdf";
+export { downloadProductTrendsPdf } from "./generate-product-trends-pdf";
+export {
+  downloadProductSlowdownPdf,
+  downloadProductSlowdownCsv,
+  type ProductSlowdownPdfInput,
+} from "./generate-product-slowdown-pdf";
+export {
+  downloadImminentChurnPdf,
+  generateImminentChurnPdfDocument,
+  type ImminentChurnPdfInput,
+} from "./generate-imminent-churn-pdf";
 
 export function frequencyAlertsReportFilename(input: FrequencyAlertsPdfInput): string {
   const repSlug =

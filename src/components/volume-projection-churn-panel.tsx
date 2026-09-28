@@ -8,10 +8,16 @@ import {
   ArrowUpDown,
   CheckCircle2,
   ExternalLink,
+  Loader2,
+  Printer,
+  RotateCcw,
   Search,
   ShieldAlert,
+  Trash2,
   TrendingDown,
   TrendingUp,
+  Undo2,
+  X,
 } from "lucide-react";
 import {
   Card,
@@ -35,7 +41,9 @@ import {
   formatDays,
   formatMoney,
   formatNumber,
+  todayIso,
 } from "@/lib/format";
+import { downloadImminentChurnPdf } from "@/lib/report-export";
 import { territoryTierLabel } from "@/lib/territory-value";
 import { cn } from "@/lib/utils";
 import {
@@ -115,9 +123,13 @@ function TrajectoryBadge({ trajectory }: { trajectory: VolumeTrendTrajectory }) 
 export function VolumeProjectionChurnPanel({
   summary,
   onSelectAccount,
+  repFilter = "all",
+  asOf,
 }: {
   summary: PortfolioProjectionSummary;
   onSelectAccount?: (accountName: string) => void;
+  repFilter?: string;
+  asOf?: string;
 }) {
   const searchInputId = useId();
   const [horizon, setHorizon] = useState<ProjectionHorizon>(30);
@@ -127,6 +139,8 @@ export function VolumeProjectionChurnPanel({
     column: ProjectionSortKey;
     direction: SortDirection;
   }>({ column: "churnScore", direction: "desc" });
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
   function toggleSort(column: ProjectionSortKey) {
     setSort((curr) =>
@@ -166,11 +180,69 @@ export function VolumeProjectionChurnPanel({
     return sortProjectionRows(list, sort.column, sort.direction);
   }, [summary.accounts, churnFilter, searchQuery, sort]);
 
-  // High Churn Accounts for quick intervention callouts
-  const imminentChurnAccounts = useMemo(
+  // User-removed accounts from the Imminent Churn Intervention report
+  const [removedAccountNames, setRemovedAccountNames] = useState<string[]>([]);
+  const [lastRemovedAccount, setLastRemovedAccount] = useState<string | null>(null);
+
+  // All high churn accounts identified by the model
+  const rawHighChurnAccounts = useMemo(
     () => summary.accounts.filter((a) => a.churnTier === "high"),
     [summary.accounts],
   );
+
+  // High Churn Accounts for quick intervention callouts (excluding any removed accounts)
+  const imminentChurnAccounts = useMemo(
+    () => rawHighChurnAccounts.filter((a) => !removedAccountNames.includes(a.accountName)),
+    [rawHighChurnAccounts, removedAccountNames],
+  );
+
+  function handleRemoveAccount(accountName: string) {
+    setRemovedAccountNames((prev) =>
+      prev.includes(accountName) ? prev : [...prev, accountName],
+    );
+    setLastRemovedAccount(accountName);
+    setExportFeedback(`Removed "${accountName}" from the report.`);
+    setTimeout(() => {
+      setExportFeedback((current) => (current?.includes(`"${accountName}"`) ? null : current));
+    }, 4500);
+  }
+
+  function handleResetRemoved() {
+    setRemovedAccountNames([]);
+    setLastRemovedAccount(null);
+    setExportFeedback("Restored all removed accounts to the report.");
+    setTimeout(() => setExportFeedback(null), 3500);
+  }
+
+  function handleUndoLastRemove() {
+    if (!lastRemovedAccount) return;
+    const restoredName = lastRemovedAccount;
+    setRemovedAccountNames((prev) => prev.filter((name) => name !== restoredName));
+    setLastRemovedAccount(null);
+    setExportFeedback(`Restored "${restoredName}" to the report.`);
+    setTimeout(() => setExportFeedback(null), 3500);
+  }
+
+  async function handlePrintImminentChurn() {
+    if (imminentChurnAccounts.length === 0) return;
+    setIsExportingPdf(true);
+    setExportFeedback(null);
+    try {
+      downloadImminentChurnPdf({
+        repFilter: repFilter ?? "all",
+        asOf: asOf ?? todayIso(),
+        generatedAt: new Date().toISOString(),
+        accounts: imminentChurnAccounts,
+      });
+      setExportFeedback("Printable Churn Action Plan PDF downloaded.");
+      setTimeout(() => setExportFeedback(null), 4500);
+    } catch {
+      setExportFeedback("Could not generate PDF. Please try again.");
+      setTimeout(() => setExportFeedback(null), 4500);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -258,72 +330,174 @@ export function VolumeProjectionChurnPanel({
       </section>
 
       {/* Immediate Churn Intervention Callout */}
-      {imminentChurnAccounts.length > 0 ? (
+      {rawHighChurnAccounts.length > 0 ? (
         <Card className="border-rose-300/80 bg-rose-50/40 dark:bg-rose-950/20">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400">
-              <ShieldAlert className="size-5" />
-              <CardTitle className="font-heading text-lg">
-                Imminent Churn Intervention Required ({imminentChurnAccounts.length} accounts)
-              </CardTitle>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400">
+                  <ShieldAlert className="size-5 shrink-0" />
+                  <CardTitle className="font-heading text-lg">
+                    Imminent Churn Intervention Required ({imminentChurnAccounts.length} accounts
+                    {removedAccountNames.length > 0 ? `, ${removedAccountNames.length} removed` : ""})
+                  </CardTitle>
+                </div>
+                <CardDescription className="text-xs text-rose-950/80 dark:text-rose-300/80">
+                  These accounts have significantly missed their reorder cadence, experienced steep
+                  volume decline, or dropped core wine products. Proactive outreach can save them
+                  before they switch to another distributor.
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {removedAccountNames.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 border border-rose-300/70 bg-white/80 text-rose-900 shadow-2xs hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/60"
+                    onClick={handleResetRemoved}
+                    title="Restore all removed accounts to this report"
+                  >
+                    <RotateCcw className="size-3.5" data-icon="inline-start" />
+                    <span>Reset Removed ({removedAccountNames.length})</span>
+                  </Button>
+                ) : null}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 border-rose-300 bg-white/95 text-rose-900 shadow-2xs hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200 dark:hover:bg-rose-900/60"
+                  onClick={handlePrintImminentChurn}
+                  disabled={isExportingPdf || imminentChurnAccounts.length === 0}
+                  title="Print or export printable PDF for Imminent Churn Intervention accounts"
+                >
+                  {isExportingPdf ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" data-icon="inline-start" />
+                      <span>Preparing PDF…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Printer className="size-3.5" data-icon="inline-start" />
+                      <span>Print Churn Action Plan</span>
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
-            <CardDescription className="text-xs text-rose-950/80 dark:text-rose-300/80">
-              These accounts have significantly missed their reorder cadence, experienced steep
-              volume decline, or dropped core wine products. Proactive outreach can save them
-              before they switch to another distributor.
-            </CardDescription>
+            {exportFeedback ? (
+              <div className="mt-2 flex items-center justify-between rounded-md bg-white/90 px-2.5 py-1.5 text-[11px] font-medium text-rose-950 border border-rose-200 shadow-2xs dark:bg-card dark:border-rose-900 dark:text-rose-200">
+                <span>{exportFeedback}</span>
+                {lastRemovedAccount && removedAccountNames.includes(lastRemovedAccount) ? (
+                  <button
+                    type="button"
+                    onClick={handleUndoLastRemove}
+                    className="ml-2 inline-flex items-center gap-1 font-semibold text-rose-700 underline hover:no-underline dark:text-rose-300"
+                  >
+                    <Undo2 className="size-3" />
+                    Undo
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {imminentChurnAccounts.map((account) => (
-                <div
-                  key={account.accountName}
-                  className="rounded-lg border border-rose-200 bg-white/90 p-3 text-xs shadow-2xs dark:border-rose-900/60 dark:bg-card"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="font-semibold text-foreground block text-sm">
-                        {account.accountName}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {account.salesRep ? `Rep: ${account.salesRep} · ` : ""}
-                        {account.territoryTier ? `${territoryTierLabel(account.territoryTier)} Tier` : ""}
-                      </span>
-                    </div>
-                    <span className="shrink-0 text-xs font-bold text-rose-700 dark:text-rose-400 tabular-nums">
-                      {account.churnScore}% Churn Risk
-                    </span>
-                  </div>
-
-                  <div className="mt-2 space-y-1 text-muted-foreground">
-                    <p className="font-medium text-rose-900 dark:text-rose-200">
-                      {account.churnSignals[0]}
-                    </p>
-                    <p className="text-[11px] leading-snug">
-                      <span className="font-medium text-foreground">Playbook: </span>
-                      {account.retentionRecommendation}
-                    </p>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between border-t pt-2">
-                    <span className="text-[11px] text-muted-foreground">
-                      Run-rate: {account.monthlyVolumeAtRisk} btls/mo
-                    </span>
-                    {onSelectAccount ? (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        className="text-xs text-rose-900 dark:text-rose-200 border-rose-300 hover:bg-rose-50"
-                        onClick={() => onSelectAccount(account.accountName)}
-                      >
-                        <ExternalLink className="size-3" data-icon="inline-start" />
-                        Review Account
-                      </Button>
-                    ) : null}
-                  </div>
+            {imminentChurnAccounts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-rose-300 bg-white/60 p-6 text-center text-xs text-rose-900 dark:border-rose-900 dark:bg-card/40 dark:text-rose-300">
+                <p className="font-medium">
+                  All {rawHighChurnAccounts.length} imminent churn accounts have been removed from this report.
+                </p>
+                <div className="mt-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 border-rose-300 bg-white hover:bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-card dark:text-rose-200"
+                    onClick={handleResetRemoved}
+                  >
+                    <RotateCcw className="size-3.5" data-icon="inline-start" />
+                    Restore All Removed Accounts
+                  </Button>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {imminentChurnAccounts.map((account) => (
+                  <div
+                    key={account.accountName}
+                    className="group relative rounded-lg border border-rose-200 bg-white/90 p-3 text-xs shadow-2xs transition hover:border-rose-300 dark:border-rose-900/60 dark:bg-card"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 pr-1">
+                        <span className="font-semibold text-foreground block text-sm truncate" title={account.accountName}>
+                          {account.accountName}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground block truncate">
+                          {account.salesRep ? `Rep: ${account.salesRep} · ` : ""}
+                          {account.territoryTier ? `${territoryTierLabel(account.territoryTier)} Tier` : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs font-bold text-rose-700 dark:text-rose-400 tabular-nums">
+                          {account.churnScore}% Churn Risk
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAccount(account.accountName)}
+                          className="rounded p-1 text-muted-foreground hover:bg-rose-100 hover:text-rose-900 dark:hover:bg-rose-950/60 dark:hover:text-rose-200 transition"
+                          title={`Remove ${account.accountName} from report`}
+                          aria-label={`Remove ${account.accountName} from report`}
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 space-y-1 text-muted-foreground">
+                      <p className="font-medium text-rose-900 dark:text-rose-200">
+                        {account.churnSignals[0]}
+                      </p>
+                      <p className="text-[11px] leading-snug">
+                        <span className="font-medium text-foreground">Playbook: </span>
+                        {account.retentionRecommendation}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-rose-100 dark:border-rose-900/40 pt-2">
+                      <span className="text-[11px] text-muted-foreground">
+                        Run-rate: {account.monthlyVolumeAtRisk} btls/mo
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="ghost"
+                          className="text-xs text-rose-700 hover:bg-rose-100 hover:text-rose-950 dark:text-rose-300 dark:hover:bg-rose-950/60"
+                          onClick={() => handleRemoveAccount(account.accountName)}
+                          title={`Remove ${account.accountName} from report`}
+                        >
+                          <Trash2 className="size-3" data-icon="inline-start" />
+                          <span>Remove Account</span>
+                        </Button>
+                        {onSelectAccount ? (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            className="text-xs text-rose-900 dark:text-rose-200 border-rose-300 hover:bg-rose-50 dark:border-rose-800 dark:hover:bg-rose-900/40"
+                            onClick={() => onSelectAccount(account.accountName)}
+                          >
+                            <ExternalLink className="size-3" data-icon="inline-start" />
+                            <span>Review</span>
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}

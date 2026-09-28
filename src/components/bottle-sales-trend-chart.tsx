@@ -20,7 +20,10 @@ import {
   TrendingUp,
   Wine,
   X,
+  Sparkles,
 } from "lucide-react";
+import { TrendPointAnalyticsDialog } from "@/components/trend-point-analytics-dialog";
+import type { ProductTrendPoint } from "@/lib/product-trends";
 import {
   Card,
   CardContent,
@@ -117,6 +120,16 @@ export function BottleSalesTrendChart({
       asOf,
     });
   }, [orders, selectedAccounts, granularity, timeframe, asOf]);
+
+  const [selectedPoint, setSelectedPoint] = useState<ProductTrendPoint | null>(null);
+  const [pointModalOpen, setPointModalOpen] = useState(false);
+
+  const convertedPoints = useMemo((): ProductTrendPoint[] => {
+    return data.map((d) => ({
+      ...d,
+      activeAccountsCount: 0,
+    }));
+  }, [data]);
 
   // Filtered account list for selector
   const filteredAccountsForSelection = useMemo(() => {
@@ -341,139 +354,228 @@ export function BottleSalesTrendChart({
               )}
             </div>
           ) : (
-            <div className="h-96 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={data}
-                  margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    className="stroke-muted/60"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
-                    tick={{ fill: "currentColor", fontSize: 11 }}
-                    className="text-muted-foreground"
-                    dy={10}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
-                    tick={{ fill: "currentColor", fontSize: 11 }}
-                    className="text-muted-foreground"
-                    tickFormatter={(val: number) => `${val} btls`}
-                    width={65}
-                  />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload || !payload.length) return null;
-                      const point = payload[0].payload as (typeof data)[0];
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded-lg px-3 py-1.5">
+                <div className="flex items-center gap-1.5 text-primary font-medium">
+                  <Sparkles className="size-3.5 shrink-0" />
+                  <span>Interactive Analytics: Click any point or dot on the chart to inspect period analytics & orders</span>
+                </div>
+                {selectedPoint && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    className="h-6 text-[11px] gap-1 shrink-0"
+                    onClick={() => setPointModalOpen(true)}
+                  >
+                    Inspect {selectedPoint.label}
+                  </Button>
+                )}
+              </div>
 
-                      return (
-                        <div className="rounded-xl border border-border bg-popover/95 p-3.5 shadow-xl backdrop-blur-md text-xs min-w-[200px]">
-                          <div className="border-b pb-2 mb-2">
-                            <span className="font-heading font-semibold text-sm text-foreground block">
-                              {label}
-                            </span>
-                            <div className="flex items-center justify-between text-muted-foreground mt-0.5">
-                              <span>Aggregate Total:</span>
-                              <span className="font-bold text-foreground tabular-nums">
-                                {formatNumber(point.totalBottles)} bottles
+              <div className="h-96 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={data}
+                    margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
+                    onClick={(state) => {
+                      const index = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : -1;
+                      const raw =
+                        index >= 0
+                          ? data[index]
+                          : data.find((d) => d.label === state?.activeLabel);
+                      if (raw) {
+                        setSelectedPoint(
+                          convertedPoints.find((p) => p.key === raw.key) || {
+                            ...raw,
+                            activeAccountsCount: 0,
+                          },
+                        );
+                        setPointModalOpen(true);
+                      }
+                    }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      className="stroke-muted/60"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
+                      tick={{ fill: "currentColor", fontSize: 11 }}
+                      className="text-muted-foreground"
+                      dy={10}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
+                      tick={{ fill: "currentColor", fontSize: 11 }}
+                      className="text-muted-foreground"
+                      tickFormatter={(val: number) => `${val} btls`}
+                      width={65}
+                    />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const point = payload[0].payload as (typeof data)[0];
+
+                        return (
+                          <div className="rounded-xl border border-border bg-popover/95 p-3.5 shadow-xl backdrop-blur-md text-xs min-w-[200px]">
+                            <div className="border-b pb-2 mb-2">
+                              <span className="font-heading font-semibold text-sm text-foreground block">
+                                {label}
                               </span>
+                              <div className="flex items-center justify-between text-muted-foreground mt-0.5">
+                                <span>Aggregate Total:</span>
+                                <span className="font-bold text-foreground tabular-nums">
+                                  {formatNumber(point.totalBottles)} bottles
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-muted-foreground">
+                                <span>Revenue:</span>
+                                <span className="tabular-nums font-medium text-foreground">
+                                  {formatMoney(point.totalRevenue)}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center justify-between text-muted-foreground">
-                              <span>Revenue:</span>
-                              <span className="tabular-nums font-medium text-foreground">
-                                {formatMoney(point.totalRevenue)}
+
+                            {showIndividualLines && selectedAccounts.length > 0 && (
+                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                  Account Breakdown
+                                </span>
+                                {selectedAccounts
+                                  .filter((acc) => (point[acc] as number) > 0)
+                                  .sort(
+                                    (a, b) =>
+                                      ((point[b] as number) || 0) -
+                                      ((point[a] as number) || 0),
+                                  )
+                                  .map((acc) => (
+                                    <div
+                                      key={acc}
+                                      className="flex items-center justify-between gap-3 text-[11px]"
+                                    >
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <span
+                                          className="size-2 rounded-full shrink-0"
+                                          style={{
+                                            backgroundColor:
+                                              accountColorMap.get(acc) || "#9f1239",
+                                          }}
+                                        />
+                                        <span className="truncate text-muted-foreground">
+                                          {acc}
+                                        </span>
+                                      </div>
+                                      <span className="font-semibold tabular-nums text-foreground shrink-0">
+                                        {formatNumber(point[acc] as number)} btls
+                                      </span>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+
+                            <div className="pt-2 mt-2 border-t border-border/40 text-center">
+                              <span className="text-[10px] font-medium text-primary">
+                                👆 Click dot to open full period data & analytics
                               </span>
                             </div>
                           </div>
-
-                          {showIndividualLines && selectedAccounts.length > 0 && (
-                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                                Account Breakdown
-                              </span>
-                              {selectedAccounts
-                                .filter((acc) => (point[acc] as number) > 0)
-                                .sort(
-                                  (a, b) =>
-                                    ((point[b] as number) || 0) -
-                                    ((point[a] as number) || 0),
-                                )
-                                .map((acc) => (
-                                  <div
-                                    key={acc}
-                                    className="flex items-center justify-between gap-3 text-[11px]"
-                                  >
-                                    <div className="flex items-center gap-1.5 truncate">
-                                      <span
-                                        className="size-2 rounded-full shrink-0"
-                                        style={{
-                                          backgroundColor:
-                                            accountColorMap.get(acc) || "#9f1239",
-                                        }}
-                                      />
-                                      <span className="truncate text-muted-foreground">
-                                        {acc}
-                                      </span>
-                                    </div>
-                                    <span className="font-semibold tabular-nums text-foreground shrink-0">
-                                      {formatNumber(point[acc] as number)} btls
-                                    </span>
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    wrapperStyle={{ paddingTop: "15px" }}
-                    formatter={(value) => (
-                      <span className="text-xs text-foreground font-medium mr-2">
-                        {value}
-                      </span>
-                    )}
-                  />
-
-                  {/* Highlighted Aggregate Line */}
-                  {showAggregateLine && (
-                    <Line
-                      type="monotone"
-                      dataKey="totalBottles"
-                      name="Aggregate Total (Bottles)"
-                      stroke="#881337"
-                      strokeWidth={3.5}
-                      dot={{ r: 4, fill: "#881337", strokeWidth: 1 }}
-                      activeDot={{ r: 6, fill: "#881337" }}
+                        );
+                      }}
                     />
-                  )}
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      wrapperStyle={{ paddingTop: "15px" }}
+                      formatter={(value) => (
+                        <span className="text-xs text-foreground font-medium mr-2">
+                          {value}
+                        </span>
+                      )}
+                    />
 
-                  {/* Individual Selected Account Lines */}
-                  {showIndividualLines &&
-                    selectedAccounts.map((account) => (
+                    {/* Highlighted Aggregate Line */}
+                    {showAggregateLine && (
                       <Line
-                        key={account}
                         type="monotone"
-                        dataKey={account}
-                        name={account}
-                        stroke={accountColorMap.get(account) || "#2563eb"}
-                        strokeWidth={1.8}
-                        strokeDasharray={selectedAccounts.length > 6 ? "4 4" : undefined}
-                        dot={{ r: 2.5 }}
-                        activeDot={{ r: 5 }}
+                        dataKey="totalBottles"
+                        name="Aggregate Total (Bottles)"
+                        stroke="#881337"
+                        strokeWidth={3.5}
+                        dot={{
+                          r: 4.5,
+                          fill: "#881337",
+                          stroke: "#ffffff",
+                          strokeWidth: 1.5,
+                          className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2.5px]",
+                        }}
+                        activeDot={{
+                          r: 7,
+                          fill: "#881337",
+                          stroke: "#ffffff",
+                          strokeWidth: 2.5,
+                          className: "cursor-pointer filter drop-shadow-md",
+                          onClick: (dotProps: unknown) => {
+                            const raw = (dotProps as { payload?: (typeof data)[0] })?.payload;
+                            if (raw) {
+                              setSelectedPoint(
+                                convertedPoints.find((p) => p.key === raw.key) || {
+                                  ...raw,
+                                  activeAccountsCount: 0,
+                                },
+                              );
+                              setPointModalOpen(true);
+                            }
+                          },
+                        }}
                       />
-                    ))}
-                </LineChart>
-              </ResponsiveContainer>
+                    )}
+
+                    {/* Individual Selected Account Lines */}
+                    {showIndividualLines &&
+                      selectedAccounts.map((account) => (
+                        <Line
+                          key={account}
+                          type="monotone"
+                          dataKey={account}
+                          name={account}
+                          stroke={accountColorMap.get(account) || "#2563eb"}
+                          strokeWidth={1.8}
+                          strokeDasharray={selectedAccounts.length > 6 ? "4 4" : undefined}
+                          dot={{
+                            r: 3.5,
+                            fill: accountColorMap.get(account) || "#2563eb",
+                            stroke: "#ffffff",
+                            strokeWidth: 1.2,
+                            className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2px]",
+                          }}
+                          activeDot={{
+                            r: 6.5,
+                            fill: accountColorMap.get(account) || "#2563eb",
+                            stroke: "#ffffff",
+                            strokeWidth: 2,
+                            className: "cursor-pointer",
+                            onClick: (dotProps: unknown) => {
+                              const raw = (dotProps as { payload?: (typeof data)[0] })?.payload;
+                              if (raw) {
+                                setSelectedPoint(
+                                  convertedPoints.find((p) => p.key === raw.key) || {
+                                    ...raw,
+                                    activeAccountsCount: 0,
+                                  },
+                                );
+                                setPointModalOpen(true);
+                              }
+                            },
+                          }}
+                        />
+                      ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
         </CardContent>
@@ -698,6 +800,17 @@ export function BottleSalesTrendChart({
           </CardContent>
         </Card>
       )}
+
+      {/* Interactive Trend Point Analytics Dialog */}
+      <TrendPointAnalyticsDialog
+        open={pointModalOpen}
+        onOpenChange={setPointModalOpen}
+        point={selectedPoint}
+        allPoints={convertedPoints}
+        orders={orders}
+        granularity={granularity}
+        onSelectPoint={(pt) => setSelectedPoint(pt)}
+      />
     </div>
   );
 }

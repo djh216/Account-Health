@@ -48,7 +48,13 @@ function alertRow(alert: AccountFrequencyAlert): (string | number)[] {
   const repStr = alert.salesRep ? `\nRep: ${alert.salesRep}` : "";
   const accountCell = `${alert.accountName}${tierStr}${repStr}`;
 
-  const cadenceCell = `Typ: ${alert.typicalIntervalDays}d\nElapsed: ${alert.currentDaysSinceOrder}d (+${alert.daysPastTypical}d)\n${alert.cadenceMultiplier.toFixed(1)}x cycle`;
+  const overdueStr =
+    alert.daysPastTypical > 0
+      ? ` (+${alert.daysPastTypical}d overdue)`
+      : alert.daysPastTypical === 0
+      ? " (due today)"
+      : ` (${Math.abs(alert.daysPastTypical)}d remaining)`;
+  const cadenceCell = `Typ: ${alert.typicalIntervalDays}d\nElapsed: ${alert.currentDaysSinceOrder}d${overdueStr}\n${alert.cadenceMultiplier.toFixed(1)}x cycle`;
 
   const paceCell = `-${alert.dropPercentage}%\n${alert.recentOrdersPerMonth}/mo vs ${alert.typicalOrdersPerMonth}/mo`;
 

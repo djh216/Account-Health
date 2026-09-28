@@ -54,12 +54,20 @@ export function subscribeRepFilter(listener: () => void): () => void {
 
 export function getRepFilterSnapshot(): string {
   if (typeof window === "undefined") return "all";
-  return localStorage.getItem(REP_FILTER_KEY) ?? "all";
+  try {
+    return localStorage.getItem(REP_FILTER_KEY) ?? "all";
+  } catch {
+    return "all";
+  }
 }
 
 export function setRepFilter(value: string): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(REP_FILTER_KEY, value);
+  try {
+    localStorage.setItem(REP_FILTER_KEY, value);
+  } catch {
+    // ignore storage quota/security error
+  }
   for (const listener of listeners) listener();
 }
 

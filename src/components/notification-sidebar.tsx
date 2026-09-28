@@ -7,20 +7,19 @@ import {
   Clock,
   ExternalLink,
   Info,
+  Printer,
   RotateCcw,
   Search,
   TrendingDown,
   Wine,
-  X,
 } from "lucide-react";
+import { downloadProductSlowdownPdf } from "@/lib/report-export";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -112,7 +111,11 @@ export function NotificationSidebar({
       `Severity: ${alert.severity.toUpperCase()} (${alert.dropPercentage}% frequency drop)`,
       `Typical rate: Every ${alert.typicalIntervalDays} days (~${alert.typicalOrdersPerMonth} orders/mo)`,
       `Current state: Last ordered ${alert.currentDaysSinceOrder} days ago (${formatDate(alert.lastOrderDate)})`,
-      `Days overdue: +${alert.daysPastTypical} days past typical schedule`,
+      alert.daysPastTypical > 0
+        ? `Days overdue: +${alert.daysPastTypical} days past typical schedule`
+        : alert.daysPastTypical === 0
+        ? "Reorder timing: Due for reorder today on typical schedule"
+        : `Cadence status: Within typical schedule (${Math.abs(alert.daysPastTypical)} days remaining until expected order)`,
       alert.revenueAtRisk > 0 ? `Est. volume deficit: ${formatMoney(alert.revenueAtRisk)}` : null,
       `Action: ${alert.actionRecommendation}`,
     ]
@@ -147,6 +150,19 @@ export function NotificationSidebar({
       navigator.clipboard.writeText(text);
       setCopiedId(pAlert.id);
       window.setTimeout(() => setCopiedId(null), 2500);
+    }
+  }
+
+  function handlePrintProductSlowdownPdf() {
+    try {
+      downloadProductSlowdownPdf({
+        repFilter: "all",
+        asOf: new Date().toISOString(),
+        generatedAt: new Date().toISOString(),
+        alerts: productAlerts,
+      });
+    } catch {
+      // ignore
     }
   }
 
@@ -255,13 +271,10 @@ export function NotificationSidebar({
   const showProducts = category === "all" || category === "products";
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex h-full w-full max-w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl"
-      >
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] max-w-5xl w-full overflow-hidden flex flex-col p-0 sm:max-w-5xl rounded-2xl shadow-2xl">
         {/* Header */}
-        <SheetHeader className="shrink-0 border-b border-border bg-card p-5">
+        <div className="shrink-0 border-b border-border bg-card p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-primary">
@@ -270,23 +283,15 @@ export function NotificationSidebar({
                   Sales Cadence & Velocity Intelligence
                 </span>
               </div>
-              <SheetTitle className="font-heading mt-1 text-2xl font-bold tracking-tight">
+              <DialogTitle className="font-heading mt-1 text-2xl font-bold tracking-tight">
                 Order & Product Sales Alerts
-              </SheetTitle>
-              <SheetDescription className="mt-1 text-xs text-muted-foreground">
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-xs text-muted-foreground">
                 Monitors accounts past their typical reorder cycles and wines slowing in sales over the last 28 days.
-              </SheetDescription>
+              </DialogDescription>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 pr-6">
               <ExportReportButton size="xs" variant="outline" label="Export PDF" />
-              <SheetClose
-                render={
-                  <Button variant="ghost" size="icon-sm" className="rounded-lg">
-                    <X className="size-4" />
-                    <span className="sr-only">Close sidebar</span>
-                  </Button>
-                }
-              />
             </div>
           </div>
 
@@ -460,7 +465,7 @@ export function NotificationSidebar({
               ) : null}
             </div>
           </div>
-        </SheetHeader>
+        </div>
 
         {/* Scrollable Alert List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -526,12 +531,22 @@ export function NotificationSidebar({
               {/* Product Slowing Alerts Section (28-day window) */}
               {showProducts && filteredProductAlerts.length > 0 && (
                 <div className="space-y-3">
-                  {showAccounts && filteredAlerts.length > 0 && (
-                    <div className="flex items-center gap-1.5 pt-1 text-xs font-semibold text-primary uppercase tracking-wider">
+                  <div className="flex items-center justify-between gap-1.5 pt-1 text-xs font-semibold text-primary uppercase tracking-wider">
+                    <div className="flex items-center gap-1.5">
                       <Wine className="size-3.5" />
                       <span>Wine Product Sales Slowing (Last 28 Days)</span>
                     </div>
-                  )}
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="h-6 text-[11px] gap-1 px-2 border-primary/30 text-primary hover:bg-primary/10"
+                      onClick={handlePrintProductSlowdownPdf}
+                      title="Download printable PDF for 28-day product slowdown briefing"
+                    >
+                      <Printer className="size-3" />
+                      <span>Print PDF</span>
+                    </Button>
+                  </div>
 
                   {filteredProductAlerts.map((pAlert) => {
                     const isAcknowledged = acknowledgedIds.has(pAlert.id);
@@ -812,18 +827,28 @@ export function NotificationSidebar({
                             <span className="text-muted-foreground block text-[11px] font-medium">
                               Current Status
                             </span>
-                            <div className="mt-0.5 font-medium text-foreground">
-                              {formatDays(alert.currentDaysSinceOrder)}
-                              <span
-                                className={cn(
-                                  "ml-1 font-semibold",
-                                  isCritical
-                                    ? "text-rose-600 dark:text-rose-400"
-                                    : "text-amber-600 dark:text-amber-400",
-                                )}
-                              >
-                                (+{alert.daysPastTypical}d overdue)
-                              </span>
+                            <div className="mt-0.5 flex flex-wrap items-baseline gap-1 font-medium text-foreground">
+                              <span>{formatDays(alert.currentDaysSinceOrder)}</span>
+                              {alert.daysPastTypical > 0 ? (
+                                <span
+                                  className={cn(
+                                    "font-semibold",
+                                    isCritical
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : "text-amber-600 dark:text-amber-400",
+                                  )}
+                                >
+                                  (+{alert.daysPastTypical}d overdue)
+                                </span>
+                              ) : alert.daysPastTypical === 0 ? (
+                                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                  (due today)
+                                </span>
+                              ) : (
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                  (within cycle · {Math.abs(alert.daysPastTypical)}d left)
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -834,6 +859,22 @@ export function NotificationSidebar({
                             <span className="flex items-center gap-1">
                               <Clock className="size-3 text-muted-foreground/70" />
                               Cycle Elapsed: {progressPct}% of normal interval
+                              {alert.daysPastTypical <= 0 ? (
+                                <span className="ml-1 font-medium text-emerald-600 dark:text-emerald-400">
+                                  · On Schedule
+                                </span>
+                              ) : (
+                                <span
+                                  className={cn(
+                                    "ml-1 font-medium",
+                                    isCritical
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : "text-amber-600 dark:text-amber-400",
+                                  )}
+                                >
+                                  · Overdue
+                                </span>
+                              )}
                             </span>
                             <span>
                               Last order: {formatDate(alert.lastOrderDate)}
@@ -843,7 +884,9 @@ export function NotificationSidebar({
                             <div
                               className={cn(
                                 "h-full rounded-full transition-all",
-                                isCritical
+                                alert.daysPastTypical <= 0
+                                  ? "bg-emerald-500"
+                                  : isCritical
                                   ? "bg-rose-500"
                                   : isWarning
                                   ? "bg-amber-500"
@@ -931,16 +974,12 @@ export function NotificationSidebar({
             <Info className="size-3.5 text-muted-foreground/80" />
             <span>Updates dynamically based on orders and account history.</span>
           </div>
-          <SheetClose
-            render={
-              <Button variant="ghost" size="xs" className="text-xs">
-                Close
-              </Button>
-            }
-          />
+          <Button variant="outline" size="xs" onClick={() => onOpenChange(false)} className="text-xs">
+            Close Alerts
+          </Button>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
 

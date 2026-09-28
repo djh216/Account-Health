@@ -2,28 +2,36 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FOCUS_SECTIONS } from "./focus-sections";
 import { formatDate } from "./format";
-import type { FocusHealthPdfInput } from "./report-export";
 import type { AccountHealth, FocusHorizon, RiskLevel } from "./types";
 import { territoryTierLabel } from "./territory-value";
 
 const MARGIN_X = 12;
-const HEADER_RGB: [number, number, number] = [235, 230, 223];
+const BURGUNDY: [number, number, number] = [120, 28, 48];
+const TEXT_DARK: [number, number, number] = [30, 41, 59];
+
+export type FocusHealthPdfInput = {
+  repFilter: string;
+  asOf: string;
+  generatedAt: string;
+  focusByHorizon: Record<FocusHorizon, AccountHealth[]>;
+  allAccounts?: AccountHealth[];
+};
 
 const WINDOW_LABEL: Record<FocusHorizon, string> = {
-  this_week: "≤1 wk",
-  two_weeks: "2 wk",
-  three_weeks: "3 wk",
+  this_week: "≤ 1 Week (Urgent)",
+  two_weeks: "2 Weeks Out",
+  three_weeks: "3 Weeks Out",
 };
 
 const RISK_SHORT: Record<RiskLevel, string> = {
-  critical: "Crit",
-  at_risk: "Risk",
-  dormant: "Dorm",
-  healthy: "OK",
+  critical: "CRITICAL",
+  at_risk: "AT RISK",
+  dormant: "DORMANT",
+  healthy: "HEALTHY",
 };
 
 function repLabel(repFilter: string): string {
-  return repFilter === "all" ? "All reps" : repFilter;
+  return repFilter === "all" ? "All Sales Reps" : `Rep: ${repFilter}`;
 }
 
 function compactDays(days: number | null): string {
@@ -44,77 +52,24 @@ function compactFrequency(days: number | null): string {
   return months === 1 ? "1mo" : `${months}mo`;
 }
 
-function focusRow(window: string, item: AccountHealth): string[] {
+function focusRow(window: string, item: AccountHealth): (string | number)[] {
+  const tier = item.territoryTier ? territoryTierLabel(item.territoryTier) : "—";
+  const rep = item.account.salesRep ? ` (${item.account.salesRep})` : "";
+  const cadenceMultiplier =
+    item.typicalIntervalDays && item.daysSinceOrder
+      ? `${(item.daysSinceOrder / item.typicalIntervalDays).toFixed(1)}x cycle`
+      : "—";
+
   return [
     window,
-    item.account.name,
+    `${item.account.name}${rep}`,
     RISK_SHORT[item.risk],
-    item.territoryTier ? territoryTierLabel(item.territoryTier).slice(0, 1) : "—",
-    String(item.score),
+    tier,
+    item.score,
     compactDays(item.daysSinceOrder),
     compactFrequency(item.typicalIntervalDays),
+    cadenceMultiplier,
   ];
-}
-
-function pageWidth(doc: jsPDF): number {
-  return doc.internal.pageSize.getWidth();
-}
-
-function pageHeight(doc: jsPDF): number {
-  return doc.internal.pageSize.getHeight();
-}
-
-function drawCompactHeader(doc: jsPDF, input: FocusHealthPdfInput): number {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text(
-    `Cellar Pulse · ${repLabel(input.repFilter)} · as of ${formatDate(input.asOf)}`,
-    MARGIN_X,
-    11,
-  );
-  doc.setDrawColor(92, 46, 46);
-  doc.setLineWidth(0.35);
-  doc.line(MARGIN_X, 13, pageWidth(doc) - MARGIN_X, 13);
-  return 17;
-}
-
-function tableStyles() {
-  return {
-    theme: "grid" as const,
-    margin: { left: MARGIN_X, right: MARGIN_X },
-    headStyles: {
-      fillColor: HEADER_RGB,
-      textColor: [0, 0, 0] as [number, number, number],
-      fontStyle: "bold" as const,
-      fontSize: 7.5,
-      cellPadding: 1.2,
-    },
-    bodyStyles: {
-      fontSize: 7.5,
-      cellPadding: 1.5,
-      valign: "middle" as const,
-    },
-    alternateRowStyles: {
-      fillColor: [252, 252, 252] as [number, number, number],
-    },
-    styles: {
-      overflow: "linebreak" as const,
-      cellWidth: "wrap" as const,
-    },
-  };
-}
-
-function addPageFooters(doc: jsPDF): void {
-  const total = doc.getNumberOfPages();
-  for (let p = 1; p <= total; p++) {
-    doc.setPage(p);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(120, 120, 120);
-    doc.text(`${p}/${total}`, pageWidth(doc) - MARGIN_X, pageHeight(doc) - 4, {
-      align: "right",
-    });
-  }
 }
 
 export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
@@ -128,7 +83,82 @@ export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
     format: "a4",
   });
 
-  const y = drawCompactHeader(doc, input);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Document Title Header
+  doc.setFillColor(BURGUNDY[0], BURGUNDY[1], BURGUNDY[2]);
+  doc.rect(0, 0, pageWidth, 18, "F");
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("CELLAR PULSE · ACCOUNT HEALTH & FOCUS HORIZONS REPORT", MARGIN_X, 11);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.text(
+    `${repLabel(input.repFilter)}  ·  As of: ${formatDate(input.asOf)}  ·  Exported: ${input.generatedAt.slice(0, 10)}`,
+    pageWidth - MARGIN_X,
+    11,
+    { align: "right" },
+  );
+
+  // Compute metrics from allAccounts or focusByHorizon
+  const accountsList =
+    input.allAccounts && input.allAccounts.length > 0
+      ? input.allAccounts
+      : FOCUS_SECTIONS.flatMap((s) => input.focusByHorizon[s.horizon]);
+
+  const totalAccounts = accountsList.length;
+  const criticalCount = accountsList.filter((a) => a.risk === "critical").length;
+  const atRiskCount = accountsList.filter((a) => a.risk === "at_risk").length;
+  const dormantCount = accountsList.filter((a) => a.risk === "dormant").length;
+  const healthyCount = accountsList.filter((a) => a.risk === "healthy").length;
+  const avgScore =
+    totalAccounts > 0
+      ? Math.round(accountsList.reduce((s, a) => s + a.score, 0) / totalAccounts)
+      : 0;
+
+  // Summary Metrics Bar
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(MARGIN_X, 22, pageWidth - MARGIN_X * 2, 13, 2, 2, "FD");
+
+  doc.setFontSize(8);
+  doc.setTextColor(TEXT_DARK[0], TEXT_DARK[1], TEXT_DARK[2]);
+
+  doc.setFont("helvetica", "bold");
+  doc.text("TOTAL ACCOUNTS:", MARGIN_X + 4, 30);
+  doc.setFont("helvetica", "normal");
+  doc.text(`${totalAccounts}`, MARGIN_X + 34, 30);
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(190, 18, 60);
+  doc.text("CRITICAL:", MARGIN_X + 50, 30);
+  doc.text(`${criticalCount}`, MARGIN_X + 66, 30);
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(180, 83, 9);
+  doc.text("AT RISK:", MARGIN_X + 78, 30);
+  doc.text(`${atRiskCount}`, MARGIN_X + 92, 30);
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100, 116, 139);
+  doc.text("DORMANT:", MARGIN_X + 104, 30);
+  doc.text(`${dormantCount}`, MARGIN_X + 122, 30);
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(22, 101, 52);
+  doc.text("HEALTHY:", MARGIN_X + 134, 30);
+  doc.text(`${healthyCount}`, MARGIN_X + 150, 30);
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(TEXT_DARK[0], TEXT_DARK[1], TEXT_DARK[2]);
+  doc.text("AVG HEALTH SCORE:", MARGIN_X + 164, 30);
+  doc.setFont("helvetica", "normal");
+  doc.text(`${avgScore} / 100`, MARGIN_X + 196, 30);
 
   const focusBody = FOCUS_SECTIONS.flatMap((section) => {
     const label = WINDOW_LABEL[section.horizon];
@@ -138,30 +168,74 @@ export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
   });
 
   autoTable(doc, {
-    startY: y,
-    head: [["When", "Account", "Risk", "T", "Score", "Last", "Cadence"]],
+    startY: 38,
+    margin: { left: MARGIN_X, right: MARGIN_X, bottom: 14 },
+    head: [
+      [
+        "Focus Window",
+        "Account / Customer",
+        "Risk Level",
+        "Territory Tier",
+        "Health Score",
+        "Last Order",
+        "Cadence",
+        "Cadence Pace",
+      ],
+    ],
     body:
       focusBody.length > 0
         ? focusBody
-        : [["—", "No focus accounts", "—", "—", "—", "—", "—"]],
-    ...tableStyles(),
+        : [["—", "No focus accounts in active horizons", "—", "—", "—", "—", "—", "—"]],
+    theme: "grid",
+    headStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [30, 41, 59],
+      fontStyle: "bold",
+      fontSize: 8,
+      cellPadding: 2,
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      textColor: [30, 41, 59],
+      cellPadding: 1.8,
+      valign: "middle",
+    },
+    alternateRowStyles: {
+      fillColor: [250, 250, 252],
+    },
     columnStyles: {
-      0: { cellWidth: 14 },
-      1: { cellWidth: 72 },
-      2: { cellWidth: 12 },
-      3: { cellWidth: 8, halign: "center" },
-      4: { cellWidth: 11, halign: "right" },
-      5: { cellWidth: 12, halign: "right" },
-      6: { cellWidth: 14, halign: "right" },
+      0: { cellWidth: 34, fontStyle: "bold" },
+      1: { cellWidth: 68 },
+      2: { cellWidth: 24, fontStyle: "bold" },
+      3: { cellWidth: 26 },
+      4: { cellWidth: 22, halign: "right", fontStyle: "bold" },
+      5: { cellWidth: 22, halign: "right" },
+      6: { cellWidth: 22, halign: "right" },
+      7: { cellWidth: 28, halign: "right" },
     },
   });
 
-  addPageFooters(doc);
+  // Page numbering footers
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text(
+      `Cellar Pulse  ·  Account Health & Priority Horizons  ·  ${formatDate(input.asOf)}`,
+      MARGIN_X,
+      pageHeight - 5,
+    );
+    doc.text(`Page ${p} of ${totalPages}`, pageWidth - MARGIN_X, pageHeight - 5, {
+      align: "right",
+    });
+  }
 
   const repSlug =
     input.repFilter === "all"
       ? "all-reps"
       : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(`cellar-pulse-focus-health-${repSlug}-${stamp}.pdf`);
+  doc.save(`cellar-pulse-account-health-${repSlug}-${stamp}.pdf`);
 }

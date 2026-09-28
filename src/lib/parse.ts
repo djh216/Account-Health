@@ -10,7 +10,7 @@ import type {
   Visit,
 } from "./types";
 
-const ACCOUNT_ALIASES = [
+export const ACCOUNT_ALIASES = [
   "licensee",
   "licensee name",
   "licensed account",
@@ -18,12 +18,30 @@ const ACCOUNT_ALIASES = [
   "account name",
   "account_name",
   "accountname",
+  "account #",
+  "account no",
+  "account number",
+  "account id",
+  "account code",
   "customer",
   "customer name",
   "customer_name",
+  "customername",
+  "customer #",
+  "customer no",
+  "customer number",
+  "customer id",
+  "customer code",
+  "cust #",
+  "cust id",
+  "cust no",
+  "cust name",
   "restaurant",
   "restaurant name",
   "restaurant_name",
+  "client",
+  "client name",
+  "business name",
   "location",
   "location name",
   "site",
@@ -31,64 +49,203 @@ const ACCOUNT_ALIASES = [
   "outlet",
   "outlet name",
   "sold to",
+  "sold to name",
   "sold-to",
+  "sold-to name",
   "soldto",
   "ship to",
+  "ship to name",
   "ship-to",
+  "ship-to name",
+  "shipto",
   "acct",
+  "acct name",
+  "account desc",
+  "account description",
+  "establishment",
+  "buyer",
+  "company",
+  "company name",
+  "premises",
+  "premise name",
+  "premise description",
+  "dba",
+  "dba name",
+  "trade name",
+  "store",
+  "store name",
+  "store #",
+  "billing account",
+  "bill to",
+  "bill to name",
+  "bill-to",
+  "bill-to name",
 ];
-const LAST_ORDER_ALIASES = [
+
+export const LAST_ORDER_ALIASES = [
   "last order date",
+  "last order dt",
+  "last order dte",
   "last order",
+  "last ordered",
   "last_order_date",
+  "last_order_dt",
+  "last_order",
   "date last ordered",
-  "last invoice date",
-  "last invoice",
-  "last purchase date",
-  "last purchase",
-  "last sale date",
-  "last sale",
+  "date last order",
   "date of last order",
+  "last invoice date",
+  "last invoice dt",
+  "last invoice",
+  "last invoiced",
+  "last inv date",
+  "last inv dt",
+  "last inv",
+  "date last invoiced",
+  "date of last invoice",
+  "last purchase date",
+  "last purchase dt",
+  "last purchase",
+  "last purchased",
+  "date last purchased",
+  "last sale date",
+  "last sale dt",
+  "last sale",
+  "last delivery date",
+  "last delivery dt",
+  "last delivery",
+  "last delivered",
+  "last deliv date",
+  "last shipment date",
+  "last shipment",
+  "last shipped",
+  "last transaction date",
+  "last transaction",
+  "last trans date",
+  "latest order date",
+  "latest order dt",
+  "latest order",
+  "latest invoice date",
+  "latest invoice",
+  "latest purchase date",
+  "latest purchase",
+  "most recent order date",
+  "most recent order dt",
+  "most recent order",
+  "most recent invoice date",
+  "most recent invoice",
+  "most recent purchase date",
+  "most recent purchase",
+  "recent order date",
+  "recent order",
+  "prev order date",
+  "previous order date",
+  "order last date",
 ];
-const LAST_VISIT_ALIASES = [
+
+export const LAST_VISIT_ALIASES = [
   "last visit date",
+  "last visit dt",
+  "last visit dte",
   "last visit",
+  "last visited",
   "last_visit_date",
+  "last_visit_dt",
+  "last_visit",
   "date last visited",
+  "date last visit",
+  "date of last visit",
   "last call date",
+  "last call dt",
   "last call",
+  "last called",
+  "date last called",
+  "date of last call",
   "last stop date",
+  "last stop dt",
   "last stop",
   "last activity date",
-  "date of last visit",
+  "last activity dt",
+  "last activity",
   "last rep visit",
+  "last rep call",
+  "last contact date",
+  "last contact dt",
+  "last contact",
+  "last contacted date",
+  "last contacted",
+  "last touch date",
+  "last touch",
+  "last interaction date",
+  "last interaction",
+  "latest visit date",
+  "latest visit dt",
+  "latest visit",
+  "latest call date",
+  "latest call",
+  "latest activity date",
+  "latest activity",
+  "latest contact date",
+  "latest contact",
+  "most recent visit date",
+  "most recent visit dt",
+  "most recent visit",
+  "most recent call date",
+  "most recent call",
+  "most recent activity date",
+  "most recent activity",
+  "most recent contact date",
+  "most recent contact",
+  "last meeting date",
+  "last meeting dt",
+  "last meeting",
+  "last check in date",
+  "last check in",
+  "last checkin date",
+  "last checkin",
+  "visit last date",
+  "call last date",
 ];
-const DATE_ALIASES = [
-  "date",
+
+export const DATE_ALIASES = [
   "order date",
   "order_date",
   "invoice date",
   "invoice_date",
+  "transaction date",
+  "trans date",
+  "ship date",
+  "delivery date",
   "visit date",
   "visit_date",
+  "call date",
   "activity date",
   "activity_date",
-  "call date",
+  "date",
 ];
-const REVENUE_ALIASES = [
+
+export const REVENUE_ALIASES = [
   "revenue",
   "order value",
   "order amount",
+  "total amount",
+  "total sales",
+  "net sales",
+  "gross sales",
+  "dollars",
+  "invoice total",
+  "last order amount",
+  "last order value",
+  "last order $",
+  "last order revenue",
+  "sales dollars",
+  "sales amount",
   "amount",
   "total",
   "sales",
-  "dollars",
-  "net sales",
-  "invoice total",
-  "last order amount",
-  "last order $",
 ];
-const CASES_ALIASES = [
+
+export const CASES_ALIASES = [
   "cases",
   "units",
   "quantity",
@@ -110,8 +267,10 @@ const CASES_ALIASES = [
   "order qty",
   "order quantity",
 ];
-const SKU_ALIASES = ["sku count", "skus", "lines", "wine count", "line count"];
-const TYPE_ALIASES = [
+
+export const SKU_ALIASES = ["sku count", "skus", "lines", "wine count", "line count"];
+
+export const TYPE_ALIASES = [
   "license type",
   "lic type",
   "type",
@@ -121,7 +280,8 @@ const TYPE_ALIASES = [
   "premise",
   "segment",
 ];
-const LICENSE_ALIASES = [
+
+export const LICENSE_ALIASES = [
   "license number",
   "license #",
   "license no",
@@ -130,10 +290,12 @@ const LICENSE_ALIASES = [
   "license",
   "lic #",
 ];
-const CITY_ALIASES = ["city", "market"];
-const COUNTY_ALIASES = ["county"];
-const REGION_ALIASES = ["region", "territory", "area", "division"];
-const REP_ALIASES = [
+
+export const CITY_ALIASES = ["city", "market"];
+export const COUNTY_ALIASES = ["county"];
+export const REGION_ALIASES = ["region", "territory", "area", "division"];
+
+export const REP_ALIASES = [
   "lead team member",
   "lead team member name",
   "lead team",
@@ -147,8 +309,10 @@ const REP_ALIASES = [
   "ae",
   "sales person",
 ];
-const TIER_ALIASES = ["tier", "account tier", "customer tier", "level", "segment tier"];
-const PRODUCT_ALIASES = [
+
+export const TIER_ALIASES = ["tier", "account tier", "customer tier", "level", "segment tier"];
+
+export const PRODUCT_ALIASES = [
   "product",
   "product name",
   "product purchased",
@@ -168,33 +332,179 @@ const PRODUCT_ALIASES = [
   "label",
   "brand",
 ];
-const OUTCOME_ALIASES = ["outcome", "notes", "result", "purpose", "activity", "visit type"];
 
-function normalizeHeader(value: string): string {
-  return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+export const OUTCOME_ALIASES = [
+  "outcome",
+  "notes",
+  "result",
+  "purpose",
+  "activity",
+  "visit type",
+  "rep notes",
+];
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function findHeader(headers: string[], aliases: string[]): string | undefined {
-  const normalized = headers.map((header) => ({
+function normalizeHeader(value: string | undefined | null): string {
+  if (value == null) return "";
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/[^\w\s$/%#]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function isRepLikeHeader(headerKey: string): boolean {
+  return (
+    /(rep|person|representative|agent|team|lead|consultant|owner|sales rep)/.test(headerKey) ||
+    REP_ALIASES.some((repAlias) => headerKey === repAlias || headerKey.includes(repAlias))
+  );
+}
+
+function findHeader(
+  headers: (string | undefined | null)[],
+  aliases: string[],
+  options?: { isRevenue?: boolean; excludeColumns?: (string | undefined)[] },
+): string | undefined {
+  const excludeSet = new Set(
+    (options?.excludeColumns || []).filter(Boolean).map((c) => String(c)),
+  );
+
+  const cleanHeaders = headers
+    .filter((h): h is string => Boolean(h && String(h).trim().length > 0))
+    .filter((h) => !excludeSet.has(h));
+
+  const normalized = cleanHeaders.map((header) => ({
     original: header,
     key: normalizeHeader(header),
   }));
-  // Prefer exact matches, then longest partial alias (more specific wins).
+
+  // Prevent revenue aliases from accidentally hijacking Sales Rep columns
+  const filteredNormalized = options?.isRevenue
+    ? normalized.filter((item) => !isRepLikeHeader(item.key))
+    : normalized;
+
+  // 1. Exact match (highest priority)
   for (const alias of aliases) {
-    const match = normalized.find((item) => item.key === alias);
+    const match = filteredNormalized.find((item) => item.key === alias);
     if (match) return match.original;
   }
+
+  // 2. Word boundary / phrase match (more specific wins)
   const ranked = aliases
     .map((alias) => ({ alias, length: alias.length }))
     .sort((a, b) => b.length - a.length);
+
   for (const { alias } of ranked) {
-    const match = normalized.find((item) => item.key.includes(alias));
+    const wordPattern = new RegExp(`(^|\\s)${escapeRegex(alias)}(\\s|$)`);
+    const match = filteredNormalized.find((item) => wordPattern.test(item.key));
     if (match) return match.original;
   }
+
+  // 3. Fallback partial includes only for longer/specific phrases (>= 5 chars)
+  for (const { alias } of ranked) {
+    if (alias.length < 5) continue;
+    const match = filteredNormalized.find((item) => item.key.includes(alias));
+    if (match) return match.original;
+  }
+
   return undefined;
 }
 
-function countMappedValues(
+export function findHeaderRowIndex(rawRows: string[][]): number {
+  if (rawRows.length === 0) return 0;
+
+  let bestIndex = 0;
+  let bestScore = -999;
+  const maxScan = Math.min(rawRows.length, 35);
+
+  for (let i = 0; i < maxScan; i++) {
+    const row = rawRows[i];
+    if (!row) continue;
+    const nonBlank = row.filter((c) => String(c ?? "").trim().length > 0);
+    if (nonBlank.length < 2) continue;
+
+    let score = 0;
+    for (const rawCell of nonBlank) {
+      const cell = String(rawCell).trim().toLowerCase();
+      // Account / customer indicator (+25)
+      if (
+        /(account|customer|licensee|restaurant|client|location|outlet|sold to|ship to|buyer|store)/.test(
+          cell,
+        )
+      ) {
+        score += 25;
+      }
+      // Last order indicators (+20)
+      if (
+        /(last order|last invoice|last purchase|last sale|last delivery|last shipment|most recent order|latest order|last ordered)/.test(
+          cell,
+        )
+      ) {
+        score += 20;
+      }
+      // Last visit indicators (+20)
+      if (
+        /(last visit|last call|last stop|last contact|last touch|last activity|most recent visit|latest visit|last visited)/.test(
+          cell,
+        )
+      ) {
+        score += 20;
+      }
+      // Sales rep indicators (+15)
+      if (/(sales rep|rep|salesperson|lead team|team member|sales representative)/.test(cell)) {
+        score += 15;
+      }
+      // General date indicators (+10)
+      if (
+        /(order date|invoice date|visit date|call date|activity date|transaction date|^date$)/.test(
+          cell,
+        )
+      ) {
+        score += 10;
+      }
+      // Revenue / volume / product indicators (+10)
+      if (/(revenue|order value|order amount|cases|bottles|volume|product|item|sku)/.test(cell)) {
+        score += 10;
+      }
+      // Account metadata indicators (+5)
+      if (/(license number|license #|account type|tier|channel|city|county|region)/.test(cell)) {
+        score += 5;
+      }
+      // Penalize cells that look like actual transaction data (dates or numbers)
+      if (
+        /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(cell) ||
+        /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(cell)
+      ) {
+        score -= 15;
+      }
+      if (/^\$?\d+(\.\d+)?$/.test(cell)) {
+        score -= 5;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  // Fallback: if no aliases matched with positive score, pick first row with >= 2 non-empty cells
+  if (bestScore <= 0) {
+    for (let i = 0; i < maxScan; i++) {
+      const count = (rawRows[i] ?? []).filter((c) => String(c ?? "").trim().length > 0).length;
+      if (count >= 2) return i;
+    }
+  }
+
+  return bestIndex;
+}
+
+export function countMappedValues(
   rows: Record<string, string>[],
   column: string | undefined,
   predicate: (value: string) => boolean,
@@ -204,47 +514,58 @@ function countMappedValues(
   return sample.filter((row) => predicate(String(row[column] ?? ""))).length;
 }
 
-function parseNumber(value: string | undefined): number {
-  if (!value) return 0;
-  const cleaned = value.replace(/[$,]/g, "").trim();
+export function parseNumber(value: string | number | undefined | null): number {
+  if (value == null) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const str = String(value).trim();
+  if (!str) return 0;
+  const isParenNegative = /^\(.*\)$/.test(str);
+  const cleaned = str.replace(/[$,()]/g, "").trim();
   const parsed = Number.parseFloat(cleaned);
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (!Number.isFinite(parsed)) return 0;
+  return isParenNegative ? -Math.abs(parsed) : parsed;
 }
 
-export function parseDate(value: string | undefined): string | null {
+export function parseDate(value: string | undefined | null): string | null {
   if (!value) return null;
-  const trimmed = value.trim();
+  const trimmed = String(value).trim();
   if (!trimmed) return null;
-  // ISO format: YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
 
-  // Excel serial number: e.g. 45540 (days since Dec 30, 1899)
+  // 1. ISO format: YYYY-MM-DD or YYYY/MM/DD (with optional timestamp)
+  const isoMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  // 2. Excel numeric serial date (e.g. 45427 or 45427.5)
   if (/^\d{4,6}(\.\d+)?$/.test(trimmed)) {
     const serial = Number.parseFloat(trimmed);
     if (serial >= 20000 && serial <= 80000) {
       const utcDays = Math.floor(serial - 25569);
       const date = new Date(utcDays * 86400 * 1000);
       if (!Number.isNaN(date.getTime())) {
-        return date.toISOString().slice(0, 10);
+        const y = date.getUTCFullYear();
+        const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(date.getUTCDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
       }
     }
   }
 
-  // Common slash/dash date: DD/MM/YYYY or MM/DD/YYYY
-  const slashMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  // 3. US or International slash/dash date: MM/DD/YYYY, M/D/YY, DD/MM/YYYY, etc.
+  const slashMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+.*)?$/);
   if (slashMatch) {
     const [, p1, p2, p3] = slashMatch;
     let year = Number.parseInt(p3, 10);
     if (year < 100) year += year < 50 ? 2000 : 1900;
     const n1 = Number.parseInt(p1, 10);
     const n2 = Number.parseInt(p2, 10);
-    // If first number > 12, it's definitely DD/MM/YYYY
     if (n1 > 12 && n2 <= 12) {
       const monthStr = String(n2).padStart(2, "0");
       const dayStr = String(n1).padStart(2, "0");
       return `${year}-${monthStr}-${dayStr}`;
     }
-    // Otherwise standard MM/DD/YYYY
     if (n1 <= 12 && n2 <= 31) {
       const monthStr = String(n1).padStart(2, "0");
       const dayStr = String(n2).padStart(2, "0");
@@ -252,38 +573,48 @@ export function parseDate(value: string | undefined): string | null {
     }
   }
 
+  // 4. Native JS date fallback
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-function isSnapshotShape(
+export function salesRepFromFileName(fileName: string): string | undefined {
+  if (!fileName) return undefined;
+  const base = fileName.replace(/\.[a-z0-9]+$/i, "");
+  const match = base.match(
+    /^([a-z][a-z\s.'_-]{0,40}?)(?:[-_–—\s]+(?:last\s+(?:order|visit|call|activity)|order\s+history|visit\s+log|orders|visits))/i,
+  );
+  if (match) {
+    const rep = match[1]
+      .replace(/[_-]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+    if (
+      rep &&
+      !/^(monthly|quarterly|annual|weekly|daily|territory|report|portfolio|account|customer|company)$/i.test(
+        rep,
+      )
+    ) {
+      return rep;
+    }
+  }
+  return undefined;
+}
+
+export function isSnapshotShape(
   mapping: ColumnMapping,
   rows: Record<string, string>[],
 ): boolean {
-  if (!mapping.lastOrderDate || !mapping.lastVisitDate) return false;
+  if (!mapping.lastOrderDate && !mapping.lastVisitDate) return false;
   if (mapping.product) return false;
-  const volumeHits = countMappedValues(rows, mapping.cases, (value) => parseNumber(value) > 0);
-  const revenueHits = countMappedValues(rows, mapping.revenue, (value) => parseNumber(value) > 0);
-  if (volumeHits > 0 || revenueHits > 0) return false;
-
-  const lastOrderHits = countMappedValues(rows, mapping.lastOrderDate, (value) =>
-    Boolean(parseDate(value)),
-  );
-  const lastVisitHits = countMappedValues(rows, mapping.lastVisitDate, (value) =>
-    Boolean(parseDate(value)),
-  );
-  return lastOrderHits > 0 && lastVisitHits > 0;
-}
-
-function salesRepFromFileName(fileName: string): string | undefined {
-  const match = fileName.match(/^([a-z][a-z\s.'-]{0,30}?)\s+last order/i);
-  if (!match) return undefined;
-  const rep = match[1]
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-  return rep || undefined;
+  const lastOrderHits = countMappedValues(rows, mapping.lastOrderDate, (v) => Boolean(parseDate(v)));
+  const lastVisitHits = countMappedValues(rows, mapping.lastVisitDate, (v) => Boolean(parseDate(v)));
+  return lastOrderHits > 0 || lastVisitHits > 0;
 }
 
 export function detectKind(
@@ -292,56 +623,81 @@ export function detectKind(
   rows: Record<string, string>[],
 ): ReportKind {
   const lower = fileName.toLowerCase();
+
+  // 1. Both last order date and last visit date mapped -> snapshot!
+  if (mapping.lastOrderDate && mapping.lastVisitDate) {
+    return "snapshot";
+  }
+
+  // 2. Count mapped values in sample rows
+  const dateHits = countMappedValues(rows, mapping.date, (v) => Boolean(parseDate(v)));
+  const lastOrderHits = countMappedValues(rows, mapping.lastOrderDate, (v) => Boolean(parseDate(v)));
+  const lastVisitHits = countMappedValues(rows, mapping.lastVisitDate, (v) => Boolean(parseDate(v)));
+  const revenueHits = countMappedValues(rows, mapping.revenue, (v) => parseNumber(v) > 0);
+  const volumeHits = countMappedValues(rows, mapping.cases, (v) => parseNumber(v) > 0);
+  const productHits = countMappedValues(rows, mapping.product, (v) => v.trim().length > 0);
+
+  // Both dates have real hits -> snapshot
+  if (lastOrderHits > 0 && lastVisitHits > 0) {
+    return "snapshot";
+  }
+
+  // Explicit snapshot filename pattern
   if (
-    (/(snapshot|last order date|last order.*last visit)/.test(lower) ||
-      isSnapshotShape(mapping, rows)) &&
-    mapping.lastOrderDate &&
-    mapping.lastVisitDate
+    /(snapshot|last order date|last order.*last visit|last visit.*last order)/i.test(lower) &&
+    (mapping.lastOrderDate || mapping.lastVisitDate)
   ) {
     return "snapshot";
   }
 
-  const dateHits = countMappedValues(rows, mapping.date, (value) => Boolean(parseDate(value)));
-  const revenueHits = countMappedValues(rows, mapping.revenue, (value) => parseNumber(value) > 0);
-  const volumeHits = countMappedValues(rows, mapping.cases, (value) => parseNumber(value) > 0);
-  const productHits = countMappedValues(
-    rows,
-    mapping.product,
-    (value) => value.trim().length > 0,
-  );
+  // Visit log / visit history
+  if (
+    /(visit|call|activity|stop|meeting|interaction)/i.test(lower) ||
+    (mapping.lastVisitDate && !mapping.lastOrderDate && !mapping.product && !mapping.revenue) ||
+    (mapping.outcome && !mapping.product && !mapping.cases)
+  ) {
+    return "visits";
+  }
 
-  const hasOrderShape =
-    Boolean(mapping.date) &&
-    dateHits > 0 &&
-    (Boolean(mapping.product) ||
-      Boolean(mapping.cases) ||
-      Boolean(mapping.revenue) ||
-      volumeHits > 0 ||
-      productHits > 0 ||
-      /(order|invoice|sales|shipment)/.test(lower));
-
-  if (hasOrderShape) return "orders";
-
-  if (/(visit|call|activity|stop)/.test(lower)) return "visits";
-  if (/(order|invoice|sales|shipment)/.test(lower)) return "orders";
-  if (/(account|customer|roster|outlet)/.test(lower)) return "accounts";
-
-  if (mapping.revenue && revenueHits >= Math.max(3, Math.min(rows.length, 25) * 0.3)) {
+  // Order history
+  if (
+    /(order|invoice|sales|shipment|purchase)/i.test(lower) ||
+    (mapping.date && (productHits > 0 || volumeHits > 0 || revenueHits > 0)) ||
+    (mapping.lastOrderDate && !mapping.lastVisitDate) ||
+    (mapping.product && (productHits > 0 || volumeHits > 0))
+  ) {
     return "orders";
   }
-  if (mapping.outcome && mapping.date && !mapping.product && !mapping.cases) return "visits";
-  if (mapping.type || mapping.city || mapping.county) return "accounts";
-  if (mapping.date && dateHits > 0) return "orders";
+
+  if (mapping.revenue && revenueHits >= Math.max(2, Math.min(rows.length, 25) * 0.2)) {
+    return "orders";
+  }
+
+  if (mapping.date && dateHits > 0) {
+    return "orders";
+  }
+
+  if (mapping.type || mapping.city || mapping.county || mapping.tier || mapping.licenseNumber) {
+    return "accounts";
+  }
+
   return "accounts";
 }
 
 export function detectMapping(headers: string[]): ColumnMapping {
+  const account = findHeader(headers, ACCOUNT_ALIASES);
+  const lastOrderDate = findHeader(headers, LAST_ORDER_ALIASES);
+  const lastVisitDate = findHeader(headers, LAST_VISIT_ALIASES);
+  const date = findHeader(headers, DATE_ALIASES, {
+    excludeColumns: [lastOrderDate, lastVisitDate],
+  });
+
   return {
-    account: findHeader(headers, ACCOUNT_ALIASES),
-    lastOrderDate: findHeader(headers, LAST_ORDER_ALIASES),
-    lastVisitDate: findHeader(headers, LAST_VISIT_ALIASES),
-    date: findHeader(headers, DATE_ALIASES),
-    revenue: findHeader(headers, REVENUE_ALIASES),
+    account,
+    lastOrderDate,
+    lastVisitDate,
+    date,
+    revenue: findHeader(headers, REVENUE_ALIASES, { isRevenue: true }),
     cases: findHeader(headers, CASES_ALIASES),
     skuCount: findHeader(headers, SKU_ALIASES),
     type: findHeader(headers, TYPE_ALIASES),
@@ -364,25 +720,32 @@ export function finalizeParse(
   const mapping = detectMapping(headers);
   const kind = detectKind(fileName, mapping, rows);
   const warnings: string[] = [];
+
   if (!mapping.account) {
     warnings.push("Could not find an account name column. Map it before importing.");
   }
   if (kind === "snapshot") {
     if (!mapping.lastOrderDate && !mapping.lastVisitDate) {
-      warnings.push("Map last order date and last visit date for snapshot imports.");
+      warnings.push("Map last order date or last visit date for snapshot imports.");
     }
-  } else if (kind !== "accounts" && !mapping.date) {
-    warnings.push("Could not find a date column. Map it before importing.");
-  }
-  if (kind === "orders") {
-    if (!mapping.product) {
-      warnings.push("Product column not mapped — map it to track individual products.");
+  } else if (kind === "orders") {
+    if (!mapping.date && !mapping.lastOrderDate) {
+      warnings.push("Map date or last order date for order history.");
     }
-    if (!mapping.cases) {
-      warnings.push("Volume column not mapped — map cases, quantity, or volume.");
+  } else if (kind === "visits") {
+    if (!mapping.date && !mapping.lastVisitDate) {
+      warnings.push("Map date or last visit date for visit records.");
     }
   }
-  return { fileName, headers, rows, kind, mapping, warnings };
+
+  return {
+    fileName,
+    headers,
+    rows,
+    kind,
+    mapping,
+    warnings,
+  };
 }
 
 export function parseCsv(fileName: string, text: string): ParseResult {
@@ -392,8 +755,11 @@ export function parseCsv(fileName: string, text: string): ParseResult {
     transformHeader: (header) => header.trim(),
   });
   const headers = (parsed.meta.fields ?? []).filter(Boolean);
-  const rows = parsed.data.filter((row) =>
-    Object.values(row).some((value) => String(value ?? "").trim().length > 0),
+  const rows = (parsed.data ?? []).filter(
+    (row) =>
+      row &&
+      typeof row === "object" &&
+      Object.values(row).some((value) => String(value ?? "").trim().length > 0),
   );
   return finalizeParse(fileName, headers, rows);
 }
@@ -461,7 +827,10 @@ export function rowsToRecords(
     }
 
     if (kind === "snapshot") {
-      const lastOrder = parseDate(row[mapping.lastOrderDate ?? ""]);
+      const lastOrder = parseDate(
+        row[mapping.lastOrderDate ?? ""] ||
+          (mapping.date && !mapping.lastVisitDate ? row[mapping.date] : ""),
+      );
       if (lastOrder) {
         orders.push({
           id: `${account.id}-last-order`,
@@ -473,7 +842,10 @@ export function rowsToRecords(
           product: row[mapping.product ?? ""]?.trim() || undefined,
         });
       }
-      const lastVisit = parseDate(row[mapping.lastVisitDate ?? ""]);
+      const lastVisit = parseDate(
+        row[mapping.lastVisitDate ?? ""] ||
+          (mapping.date && !mapping.lastOrderDate ? row[mapping.date] : ""),
+      );
       if (lastVisit) {
         visits.push({
           id: `${account.id}-last-visit`,
@@ -481,7 +853,7 @@ export function rowsToRecords(
           accountName: account.name,
           date: lastVisit,
           salesRep: account.salesRep ?? repFromFile,
-          outcome: "Last recorded visit",
+          outcome: row[mapping.outcome ?? ""]?.trim() || "Last recorded visit",
         });
       }
       return;
@@ -492,8 +864,11 @@ export function rowsToRecords(
       if (!date) return;
       const product = row[mapping.product ?? ""]?.trim() || undefined;
       const cases = parseNumber(row[mapping.cases ?? ""]);
+      const isSnapshotOrder = !product && cases === 0 && !mapping.revenue;
       orders.push({
-        id: `${account.id}-${date}-${index}-${slugify(product ?? "line")}`,
+        id: isSnapshotOrder
+          ? `${account.id}-last-order`
+          : `${account.id}-${date}-${index}-${slugify(product ?? "line")}`,
         accountId: account.id,
         accountName: account.name,
         date,
@@ -507,13 +882,15 @@ export function rowsToRecords(
     if (kind === "visits") {
       const date = parseDate(row[mapping.date ?? ""] || row[mapping.lastVisitDate ?? ""]);
       if (!date) return;
+      const outcome = row[mapping.outcome ?? ""]?.trim() || undefined;
+      const isSnapshotVisit = !outcome && Boolean(mapping.lastVisitDate);
       visits.push({
-        id: `${account.id}-${date}-${index}`,
+        id: isSnapshotVisit ? `${account.id}-last-visit` : `${account.id}-${date}-${index}`,
         accountId: account.id,
         accountName: account.name,
         date,
-        salesRep: row[mapping.salesRep ?? ""]?.trim() || undefined,
-        outcome: row[mapping.outcome ?? ""]?.trim() || undefined,
+        salesRep: row[mapping.salesRep ?? ""]?.trim() || account.salesRep || repFromFile,
+        outcome: outcome || "Recorded visit",
       });
     }
   });

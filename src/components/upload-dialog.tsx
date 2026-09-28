@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { detectKind, parseCsv } from "@/lib/parse";
+import { parseFiles } from "@/lib/excel-parser";
+import { detectKind } from "@/lib/parse";
 import type { ColumnMapping, ParseResult, ReportKind } from "@/lib/types";
 
 const ALL_FIELDS: Array<{ key: keyof ColumnMapping; label: string }> = [
@@ -57,6 +58,7 @@ function fieldsForKind(kind: ReportKind): Array<{ key: keyof ColumnMapping; labe
       [
         "account",
         "date",
+        "lastOrderDate",
         "revenue",
         "cases",
         "skuCount",
@@ -70,7 +72,7 @@ function fieldsForKind(kind: ReportKind): Array<{ key: keyof ColumnMapping; labe
   }
   if (kind === "visits") {
     return ALL_FIELDS.filter((field) =>
-      ["account", "date", "salesRep", "outcome"].includes(field.key),
+      ["account", "date", "lastVisitDate", "salesRep", "outcome"].includes(field.key),
     );
   }
   return ALL_FIELDS.filter((field) =>
@@ -112,39 +114,63 @@ export function UploadDialog({
       }
     } else if (parsed.kind === "orders") {
       if (!parsed.mapping.date && !parsed.mapping.lastOrderDate) {
-        missing.push("Date");
+        missing.push("Date or Last order date");
       }
     } else if (parsed.kind === "visits") {
       if (!parsed.mapping.date && !parsed.mapping.lastVisitDate) {
-        missing.push("Date");
+        missing.push("Date or Last visit date");
       }
     }
     return missing;
   }, [parsed]);
 
   async function handleFiles(files: FileList | null) {
-    const file = files?.[0];
-    if (!file) return;
+    if (!files || files.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".csv") || lower.endsWith(".txt")) {
-        const text = await file.text();
-        setParsed(parseCsv(file.name, text));
-      } else {
-        const form = new FormData();
-        form.set("file", file);
-        const response = await fetch("/api/parse-report", {
-          method: "POST",
-          body: form,
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Could not read that file.");
-        }
-        setParsed(payload as ParseResult);
+      const fileList = Array.from(files);
+
+      // 1. First attempt direct client-side parsing:
+      // Works in-memory with SheetJS & PapaParse without network limits, avoiding proxy 413s and HTML error responses.
+      try {
+        const result = await parseFiles(fileList);
+        setParsed(result);
+        return;
+      } catch {
+        // Fall back to server route
       }
+
+      // 2. Fallback to API route with defensive response handling (handles HTML 413, 500, or proxy pages gracefully)
+      const form = new FormData();
+      fileList.forEach((file) => {
+        form.append("file", file);
+      });
+
+      const response = await fetch("/api/parse-report", {
+        method: "POST",
+        body: form,
+      });
+
+      const responseText = await response.text();
+      let payload: { error?: string } | null = null;
+      try {
+        payload = JSON.parse(responseText);
+      } catch {
+        if (!response.ok) {
+          throw new Error(
+            response.status === 413
+              ? "The file is too large to upload over the network. Please upload standard Excel (.xlsx) or CSV files."
+              : `Server error (${response.status}): Could not process this spreadsheet.`,
+          );
+        }
+        throw new Error("Could not parse file data: unrecognized response from server.");
+      }
+
+      if (!response.ok || !payload) {
+        throw new Error(payload?.error ?? "Could not read that file.");
+      }
+      setParsed(payload as ParseResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not read that file.");
       setParsed(null);
@@ -278,11 +304,11 @@ export function UploadDialog({
             <FileSpreadsheet className="size-8 text-primary" />
           )}
           <div className="font-medium text-base">
-            {busy ? "Reading & parsing file…" : "Drop a CSV or Excel file here, or browse"}
+            {busy ? "Reading & parsing file…" : "Drop CSV or Excel files here, or browse"}
           </div>
           <p className="max-w-md text-xs text-muted-foreground">
-            Supported: customer orders (restaurant, date, product, volume), last order &
-            visit snapshots, visit logs, and account rosters (.csv, .xlsx, .txt).
+            Supported: Excel spreadsheets (.xlsx, .xls) and CSVs. You can upload combined
+            last order & visit sheets, or select both last order and last visit exports together.
           </p>
           <Button
             type="button"
@@ -295,12 +321,13 @@ export function UploadDialog({
             }}
           >
             <Upload data-icon="inline-start" />
-            Select file from computer
+            Select file(s) from computer
           </Button>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,.txt,.xlsx,.xls"
+            multiple
+            accept=".csv,.txt,.xlsx,.xls,.xlsm"
             className="sr-only"
             disabled={busy}
             onChange={(event) => {

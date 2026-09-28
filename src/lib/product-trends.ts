@@ -92,8 +92,6 @@ export const PRODUCT_PALETTE = [
   "#047857", // emerald-700
 ];
 
-const PERIOD_DAYS = 28;
-
 /**
  * Calculates time-series trend data and analytics summaries for all individual products.
  */
@@ -138,9 +136,9 @@ export function buildProductTrendData({
     cutoffDate = subMonths(asOfDate, 12);
   }
 
-  // Windows for trajectory: recent 45 days vs prior 45 days
-  const recentStart = subDays(asOfDate, PERIOD_DAYS);
-  const priorStart = subDays(asOfDate, PERIOD_DAYS * 2);
+  // Windows for trajectory: recent month vs prior month
+  const recentStart = subMonths(asOfDate, 1);
+  const priorStart = subMonths(asOfDate, 2);
 
   // Group all valid orders by product
   const productOrderMap = new Map<string, Order[]>();
@@ -420,7 +418,7 @@ export function buildProductTrendData({
 }
 
 /**
- * Detects wine products whose reorder volume or sales velocity has slowed significantly over the last 28 days.
+ * Detects wine products whose reorder volume or sales velocity has slowed significantly over the last month.
  */
 export function detectSlowingProductAlerts(
   summaries: ProductSummary[],
@@ -428,10 +426,10 @@ export function detectSlowingProductAlerts(
   const alerts: ProductSlowingAlert[] = [];
 
   for (const s of summaries) {
-    // Only evaluate wines with established sales history (at least 3 bottles in prior 28-day cycle or multiple orders)
+    // Only evaluate wines with established sales history (at least 3 bottles in prior monthly cycle or multiple orders)
     if (s.priorVolume < 3 && s.orderCount < 2) continue;
 
-    // Check if volume is slowing over the last 28 days
+    // Check if volume is slowing over the last month
     const delta = s.velocityDeltaPct ?? 0;
     const dropBtls = Math.max(0, s.priorVolume - s.recentVolume);
 
@@ -446,19 +444,19 @@ export function detectSlowingProductAlerts(
 
       if (s.recentVolume === 0 && s.priorVolume >= 4) {
         severity = "critical";
-        message = `Zero reorders in the last 28 days (down from ${s.priorVolume} btls in the prior 28-day window).`;
+        message = `Zero reorders in the last month (down from ${s.priorVolume} btls in the prior month).`;
         recommendation = `Target top previous purchasing accounts (${s.topAccounts.slice(0, 3).map((a) => a.accountName).join(", ") || "historical buyers"}) to check depletion levels and restock before losing placement.`;
       } else if (dropPct >= 50 && s.priorVolume >= 4) {
         severity = "critical";
-        message = `Severe 28-day slowdown: volume plunged ${dropPct}% (${s.recentVolume} btls vs ${s.priorVolume} btls prior).`;
+        message = `Severe monthly slowdown: volume plunged ${dropPct}% (${s.recentVolume} btls vs ${s.priorVolume} btls prior month).`;
         recommendation = `Review BTG (by-the-glass) and menu rotation status with key placements to determine if wine was rotated off the list.`;
       } else if (dropPct >= 25 || (s.recentVolume === 0 && s.priorVolume >= 2)) {
         severity = "warning";
-        message = `Notable 28-day sales deceleration: volume down ${dropPct}% vs prior 28-day period.`;
+        message = `Notable monthly sales deceleration: volume down ${dropPct}% vs prior month.`;
         recommendation = `Schedule staff re-tasting or distributor check-in with accounts carrying this SKU to revitalize momentum.`;
       } else if (dropPct >= 15) {
         severity = "watch";
-        message = `Mild 28-day sales cooling: down ${dropPct}% compared to prior 28 days.`;
+        message = `Mild monthly sales cooling: down ${dropPct}% compared to prior month.`;
         recommendation = `Monitor upcoming order cadence across active placements over the next 2-4 weeks.`;
       } else {
         continue;

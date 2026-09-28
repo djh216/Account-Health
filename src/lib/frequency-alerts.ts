@@ -190,8 +190,12 @@ export function detectOrderFrequencyDrops(
       message = `Last ordered ${daysSince} days ago — ${daysPast} days past typical ${intervalDays}-day reorder schedule (${dropPercentage}% drop in pace).`;
     } else if (reason === "velocity_drop") {
       message = `Order pace fell to ${recentOrdersPerMonth}/mo (expected ${typicalOrdersPerMonth}/mo based on historical cadence, down ${dropPercentage}%).`;
-    } else {
+    } else if (daysPast > 0) {
       message = `Reorder cycle lengthened: currently ${daysSince} days elapsed vs typical ${intervalDays}-day cadence (+${daysPast} days overdue).`;
+    } else if (daysPast === 0) {
+      message = `Reorder cycle reached: currently ${daysSince} days elapsed vs typical ${intervalDays}-day cadence (due today).`;
+    } else {
+      message = `Volume pace slowed: last ordered ${daysSince} days ago (within typical ${intervalDays}-day cadence, ${Math.abs(daysPast)} days remaining).`;
     }
 
     // Action recommendation based on territory tier & reason

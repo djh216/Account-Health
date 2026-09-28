@@ -1,6 +1,11 @@
 import { todayIso } from "./format";
 import { stripPaDemoPortfolio } from "./pa-demo";
-import { clearPortfolio, loadPortfolio, savePortfolio } from "./storage";
+import {
+  clearPortfolio,
+  loadPortfolio,
+  loadPortfolioAsync,
+  savePortfolio,
+} from "./storage";
 import type { PortfolioState } from "./types";
 
 const listeners = new Set<() => void>();
@@ -35,10 +40,37 @@ export function getPortfolioSnapshot(): PortfolioState {
   return memory;
 }
 
+export async function hydratePortfolioFromStorage(): Promise<PortfolioState> {
+  try {
+    const full = await loadPortfolioAsync();
+    if (full && Array.isArray(full.accounts) && full.accounts.length > 0) {
+      const memAccounts = memory?.accounts?.length ?? 0;
+      const memOrders = memory?.orders?.length ?? 0;
+      const fullAccounts = full.accounts.length;
+      const fullOrders = full.orders?.length ?? 0;
+
+      // Update memory if IndexedDB has restored data and memory was empty or smaller (due to quota)
+      if (
+        !memory ||
+        memory === EMPTY_PORTFOLIO ||
+        fullAccounts > memAccounts ||
+        fullOrders > memOrders
+      ) {
+        memory = full;
+        notify();
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return memory ?? EMPTY_PORTFOLIO;
+}
+
 export function reloadPortfolioFromStorage(): void {
   memory = null;
   memory = loadPortfolio() ?? EMPTY_PORTFOLIO;
   notify();
+  void hydratePortfolioFromStorage();
 }
 
 export function getServerPortfolioSnapshot(): PortfolioState {

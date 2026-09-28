@@ -490,7 +490,7 @@ export function OrderAnalyticsDashboard() {
                 criticalCount={totalCriticalAlertsCount}
                 onClick={() => setNotificationSidebarOpen(true)}
               />
-              <PrintReportButton />
+              <PrintReportButton page="orders" onMessage={flash} />
               <ExportReportButton page="orders" onMessage={flash} />
               <ClearDataButton
                 onCleared={(message) => {
@@ -760,6 +760,8 @@ export function OrderAnalyticsDashboard() {
               <TabsContent value="projections" className="space-y-4">
                 <VolumeProjectionChurnPanel
                   summary={projectionsSummary}
+                  repFilter={repFilter}
+                  asOf={state.analysisAsOf ?? analytics.asOf}
                   onSelectAccount={(accountName) => {
                     const tracking =
                       analytics.byAccount.find(

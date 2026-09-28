@@ -7,7 +7,9 @@ import {
   ArrowUpRight,
   BarChart2,
   Bell,
+  Check,
   Download,
+  Printer,
   Search,
   Sparkles,
   Store,
@@ -34,6 +36,9 @@ import { ClearDataButton } from "@/components/clear-data-button";
 import { ExportReportButton } from "@/components/export-report-button";
 import { PrintReportButton } from "@/components/print-report-button";
 import { UploadDialog } from "@/components/upload-dialog";
+import { TrendPointAnalyticsDialog } from "@/components/trend-point-analytics-dialog";
+import { ProductSlowdownReportDialog } from "@/components/product-slowdown-report-dialog";
+import { downloadProductSlowdownPdf } from "@/lib/report-export";
 import {
   NotificationSidebar,
   NotificationSidebarTrigger,
@@ -82,6 +87,7 @@ import {
   type ProductTrendGranularity,
   type ProductTrendMetric,
   type ProductTrendTimeframe,
+  type ProductTrendPoint,
   detectSlowingProductAlerts,
 } from "@/lib/product-trends";
 import { cn } from "@/lib/utils";
@@ -110,20 +116,20 @@ function TrajectoryPill({
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
           <ArrowUpRight className="size-3" />
-          Accelerating{showWindow ? " (28d)" : ""}
+          Accelerating{showWindow ? " (MoM)" : ""}
         </span>
       );
     case "steady":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          Steady{showWindow ? " (28d)" : ""}
+          Steady{showWindow ? " (MoM)" : ""}
         </span>
       );
     case "decelerating":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
           <ArrowDownRight className="size-3" />
-          Decelerating{showWindow ? " (28d)" : ""}
+          Decelerating{showWindow ? " (MoM)" : ""}
         </span>
       );
     case "new":
@@ -157,6 +163,23 @@ export function ProductSalesTrendsDashboard() {
   const [trajectoryFilter, setTrajectoryFilter] = useState<TrajectoryFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDetailProduct, setSelectedDetailProduct] = useState<ProductSummary | null>(null);
+  const [selectedTrendPoint, setSelectedTrendPoint] = useState<ProductTrendPoint | null>(null);
+  const [pointModalOpen, setPointModalOpen] = useState(false);
+  const [focusedProduct, setFocusedProduct] = useState<string | null>(null);
+  const [slowdownReportOpen, setSlowdownReportOpen] = useState(false);
+
+  const handleOpenPointModal = (pt: ProductTrendPoint, productName?: string | null) => {
+    setSelectedTrendPoint(pt);
+    // Default to the selected product for the trajectory curve
+    const defaultProduct =
+      productName && productName.trim().length > 0
+        ? productName
+        : selectedProducts.length > 0
+        ? selectedProducts[0]
+        : null;
+    setFocusedProduct(defaultProduct);
+    setPointModalOpen(true);
+  };
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>("totalBottles");
@@ -263,9 +286,14 @@ export function ProductSalesTrendsDashboard() {
 
   function handleToggleProduct(productName: string) {
     if (selectedProducts.includes(productName)) {
-      setSelectedProducts(selectedProducts.filter((p) => p !== productName));
+      const remaining = selectedProducts.filter((p) => p !== productName);
+      setSelectedProducts(remaining);
+      if (focusedProduct === productName) {
+        setFocusedProduct(remaining.length > 0 ? remaining[0] : null);
+      }
     } else {
       setSelectedProducts([...selectedProducts, productName]);
+      setFocusedProduct(productName);
     }
   }
 
@@ -344,6 +372,21 @@ export function ProductSalesTrendsDashboard() {
     flash("Product sales trends CSV downloaded.");
   }
 
+  function handlePrintSlowdownBriefing() {
+    try {
+      downloadProductSlowdownPdf({
+        repFilter,
+        asOf: state.analysisAsOf ?? snapshot.asOf ?? new Date().toISOString(),
+        generatedAt: new Date().toISOString(),
+        alerts: productAlerts,
+      });
+      flash(`✓ Printable Monthly Slowdown Briefing PDF created (${productAlerts.length} SKUs).`);
+      setSlowdownReportOpen(true);
+    } catch {
+      flash("Could not generate printable PDF for slowdown briefing.");
+    }
+  }
+
   return (
     <div className="min-h-screen">
       {/* App Header */}
@@ -377,8 +420,8 @@ export function ProductSalesTrendsDashboard() {
                 criticalCount={totalCriticalAlertsCount}
                 onClick={() => setNotificationSidebarOpen(true)}
               />
-              <PrintReportButton />
-              <ExportReportButton page="orders" onMessage={flash} />
+              <PrintReportButton page="products" onMessage={flash} />
+              <ExportReportButton page="products" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
               <Button onClick={() => setUploadOpen(true)}>
                 <Upload data-icon="inline-start" />
@@ -435,7 +478,7 @@ export function ProductSalesTrendsDashboard() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-heading font-bold text-sm sm:text-base">
-                    {productAlerts.length} Wine SKU{productAlerts.length === 1 ? "" : "s"} Slowing in Sales (Last 28 Days)
+                    {productAlerts.length} Wine SKU{productAlerts.length === 1 ? "" : "s"} Slowing in Sales (Last Month)
                   </span>
                   {criticalProductAlertsCount > 0 && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white">
@@ -444,7 +487,7 @@ export function ProductSalesTrendsDashboard() {
                   )}
                 </div>
                 <p className="text-xs mt-0.5 opacity-90 max-w-3xl leading-relaxed">
-                  Sales velocity or reorder volume dropped noticeably over the last 28 days compared to the prior 28-day cycle:{" "}
+                  Sales velocity or reorder volume dropped noticeably over the last month compared to the prior monthly cycle:{" "}
                   <span className="font-semibold">
                     {productAlerts.slice(0, 3).map((a) => `${a.productName} (-${a.dropPercentage}%)`).join(", ")}
                     {productAlerts.length > 3 ? `, +${productAlerts.length - 3} more` : ""}.
@@ -453,7 +496,23 @@ export function ProductSalesTrendsDashboard() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+            <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                className={cn(
+                  "text-xs font-semibold h-8 gap-1.5 shadow-2xs transition-all",
+                  criticalProductAlertsCount > 0
+                    ? "bg-white/95 border-rose-300 text-rose-900 hover:bg-white hover:border-rose-400 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-100"
+                    : "bg-white/95 border-amber-300 text-amber-900 hover:bg-white hover:border-amber-400 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-100",
+                )}
+                onClick={handlePrintSlowdownBriefing}
+                title="Create and download a printable PDF report for the monthly product slowdown briefing"
+              >
+                <Printer className="size-3.5" />
+                <span>Print Briefing (PDF)</span>
+              </Button>
+
               <Button
                 size="sm"
                 variant={criticalProductAlertsCount > 0 ? "default" : "secondary"}
@@ -466,7 +525,7 @@ export function ProductSalesTrendsDashboard() {
                 onClick={() => setNotificationSidebarOpen(true)}
               >
                 <Bell className="size-3.5 mr-1.5" />
-                View 28d Slowdown Briefing
+                View Monthly Slowdown Briefing
               </Button>
             </div>
           </div>
@@ -542,7 +601,7 @@ export function ProductSalesTrendsDashboard() {
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingUp className="size-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Top Growth Momentum (28-Day Window)</span>
+                    <span>Top Growth Momentum (Monthly Window)</span>
                   </CardDescription>
                   <CardTitle className="font-heading text-xl truncate" title={trends.topGrowing?.productName}>
                     {trends.topGrowing ? trends.topGrowing.productName : "—"}
@@ -553,10 +612,10 @@ export function ProductSalesTrendsDashboard() {
                     <>
                       <span className="font-semibold text-emerald-600 dark:text-emerald-400">
                         {trends.topGrowing.velocityDeltaPct !== null
-                          ? `+${trends.topGrowing.velocityDeltaPct.toFixed(0)}%`
+                           ? `+${trends.topGrowing.velocityDeltaPct.toFixed(0)}%`
                           : "Expanding"}
                       </span>{" "}
-                      velocity vs prior 28d ({trends.topGrowing.recentVolume} btls in last 28d vs {trends.topGrowing.priorVolume} btls prior)
+                      velocity vs prior month ({trends.topGrowing.recentVolume} btls in last month vs {trends.topGrowing.priorVolume} btls prior)
                     </>
                   ) : (
                     "All products steady"
@@ -568,7 +627,7 @@ export function ProductSalesTrendsDashboard() {
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />
-                    <span>Cooling SKU (28-Day Window)</span>
+                    <span>Cooling SKU (Monthly Window)</span>
                   </CardDescription>
                   <CardTitle className="font-heading text-xl truncate" title={trends.atRiskProduct?.productName}>
                     {trends.atRiskProduct ? trends.atRiskProduct.productName : "None"}
@@ -582,7 +641,7 @@ export function ProductSalesTrendsDashboard() {
                           ? `${trends.atRiskProduct.velocityDeltaPct.toFixed(0)}%`
                           : "Decelerating"}
                       </span>{" "}
-                      velocity vs prior 28d ({trends.atRiskProduct.recentVolume} btls in last 28d vs {trends.atRiskProduct.priorVolume} btls prior)
+                      velocity vs prior month ({trends.atRiskProduct.recentVolume} btls in last month vs {trends.atRiskProduct.priorVolume} btls prior)
                     </>
                   ) : (
                     "No steep deceleration detected"
@@ -591,15 +650,17 @@ export function ProductSalesTrendsDashboard() {
               </Card>
             </section>
 
-            {/* Interactive Product Sales Trend Chart Card */}
-            <Card className="border-border">
-              <CardHeader className="pb-4">
+            {/* Unified Multi-Product Sales Trend Visualizer & Wine Catalog */}
+            <Card className="border-border overflow-hidden shadow-xs">
+              <CardHeader className="pb-4 border-b bg-card">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <CardTitle className="font-heading text-xl flex items-center gap-2">
-                      <span>Multi-Product Sales Trend Visualizer</span>
-                      <span className="text-xs font-normal text-muted-foreground">
-                        ({selectedProducts.length === 0 ? "All Products Aggregate" : `${selectedProducts.length} Product${selectedProducts.length === 1 ? "" : "s"} Compared`})
+                    <CardTitle className="font-heading text-xl flex flex-wrap items-center gap-2">
+                      <span>Multi-Product Sales Trend Visualizer & Wine Catalog</span>
+                      <span className="text-xs font-normal text-muted-foreground bg-muted/80 border px-2.5 py-0.5 rounded-full">
+                        {selectedProducts.length === 0
+                          ? "All Products Aggregate"
+                          : `${selectedProducts.length} Product${selectedProducts.length === 1 ? "" : "s"} Plotted on Chart`}
                       </span>
                     </CardTitle>
                     <CardDescription className="mt-1">
@@ -612,6 +673,7 @@ export function ProductSalesTrendsDashboard() {
                         ? "the last 12 months"
                         : "all recorded order history"}{" "}
                       in {metric === "revenue" ? "revenue ($)" : metric === "accounts" ? "active purchasing accounts" : "bottles sold"}.
+                      Select any wine in the catalog below to plot its sales trajectory curve on the visualizer.
                     </CardDescription>
                   </div>
 
@@ -764,192 +826,274 @@ export function ProductSalesTrendsDashboard() {
                     </p>
                   </div>
                 ) : (
-                  <div className="h-96 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={trends.data}
-                        margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          className="stroke-muted/60"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
-                          tick={{ fill: "currentColor", fontSize: 11 }}
-                          className="text-muted-foreground"
-                          dy={10}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
-                          tick={{ fill: "currentColor", fontSize: 11 }}
-                          className="text-muted-foreground"
-                          tickFormatter={(val: number) => {
-                            if (metric === "revenue") return formatMoney(val);
-                            if (metric === "accounts") return `${val} accs`;
-                            return `${val} btls`;
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground bg-primary/5 border border-primary/15 rounded-lg px-3 py-1.5">
+                      <div className="flex items-center gap-1.5 text-primary font-medium">
+                        <Sparkles className="size-3.5 shrink-0" />
+                        <span>Interactive Analytics: Click any point or dot on the chart to inspect full period data & accounts</span>
+                      </div>
+                      {selectedTrendPoint && (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          className="h-6 text-[11px] gap-1 shrink-0"
+                          onClick={() => setPointModalOpen(true)}
+                        >
+                          Inspect {selectedTrendPoint.label}
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="h-96 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={trends.data}
+                          margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
+                          onClick={(state) => {
+                            const index = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : -1;
+                            const point =
+                              index >= 0
+                                ? trends.data[index]
+                                : trends.data.find((d) => d.label === state?.activeLabel);
+                            if (point) {
+                              const chartPayload = (state as unknown as { activePayload?: Array<{ dataKey?: string }> })?.activePayload;
+                              const activeDataKey = chartPayload?.[0]?.dataKey;
+                              let matchedProduct: string | null = null;
+                              if (typeof activeDataKey === "string") {
+                                const cleanKey = activeDataKey.replace(/__rev$/, "");
+                                if (selectedProducts.includes(cleanKey)) {
+                                  matchedProduct = cleanKey;
+                                }
+                              }
+                              handleOpenPointModal(point, matchedProduct);
+                            }
                           }}
-                          width={metric === "revenue" ? 75 : 65}
-                        />
-                        <Tooltip
-                          content={({ active, payload, label }) => {
-                            if (!active || !payload || !payload.length) return null;
-                            const point = payload[0]?.payload;
-                            if (!point) return null;
+                        >
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            className="stroke-muted/60"
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="label"
+                            tickLine={false}
+                            axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
+                            tick={{ fill: "currentColor", fontSize: 11 }}
+                            className="text-muted-foreground"
+                            dy={10}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
+                            tick={{ fill: "currentColor", fontSize: 11 }}
+                            className="text-muted-foreground"
+                            tickFormatter={(val: number) => {
+                              if (metric === "revenue") return formatMoney(val);
+                              if (metric === "accounts") return `${val} accs`;
+                              return `${val} btls`;
+                            }}
+                            width={metric === "revenue" ? 75 : 65}
+                          />
+                          <Tooltip
+                            content={({ active, payload, label }) => {
+                              if (!active || !payload || !payload.length) return null;
+                              const point = payload[0]?.payload;
+                              if (!point) return null;
 
-                            return (
-                              <div className="rounded-lg border bg-popover/95 p-3 text-popover-foreground shadow-md backdrop-blur-sm max-w-xs text-xs space-y-2">
-                                <div className="border-b pb-1">
-                                  <p className="font-semibold text-foreground">{label}</p>
-                                  <p className="text-muted-foreground">
-                                    Total: {formatNumber(point.totalBottles)} btls · {formatMoney(point.totalRevenue)} · {point.activeAccountsCount} accounts
-                                  </p>
-                                </div>
-                                {selectedProducts.length > 0 && (
-                                  <div className="space-y-1 max-h-48 overflow-y-auto pt-1">
-                                    {selectedProducts.map((pName) => {
-                                      const color = productColorMap.get(pName) || "#881337";
-                                      const btlVal = (point[pName] as number) || 0;
-                                      const revVal = (point[`${pName}__rev`] as number) || 0;
+                              return (
+                                <div className="rounded-lg border bg-popover/95 p-3 text-popover-foreground shadow-md backdrop-blur-sm max-w-xs text-xs space-y-2">
+                                  <div className="border-b pb-1">
+                                    <p className="font-semibold text-foreground">{label}</p>
+                                    <p className="text-muted-foreground">
+                                      Total: {formatNumber(point.totalBottles)} btls · {formatMoney(point.totalRevenue)} · {point.activeAccountsCount} accounts
+                                    </p>
+                                  </div>
+                                  {selectedProducts.length > 0 && (
+                                    <div className="space-y-1 max-h-48 overflow-y-auto pt-1">
+                                      {selectedProducts.map((pName) => {
+                                        const color = productColorMap.get(pName) || "#881337";
+                                        const btlVal = (point[pName] as number) || 0;
+                                        const revVal = (point[`${pName}__rev`] as number) || 0;
 
-                                      return (
-                                        <div key={pName} className="flex items-center justify-between gap-2">
-                                          <div className="flex items-center gap-1.5 truncate">
-                                            <span
-                                              className="size-2.5 rounded-full shrink-0"
-                                              style={{ backgroundColor: color }}
-                                            />
-                                            <span className="truncate text-foreground font-medium">
-                                              {pName}
+                                        return (
+                                          <div key={pName} className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-1.5 truncate">
+                                              <span
+                                                className="size-2.5 rounded-full shrink-0"
+                                                style={{ backgroundColor: color }}
+                                              />
+                                              <span className="truncate text-foreground font-medium">
+                                                {pName}
+                                              </span>
+                                            </div>
+                                            <span className="tabular-nums font-semibold text-foreground shrink-0">
+                                              {metric === "revenue"
+                                                ? formatMoney(revVal)
+                                                : `${formatNumber(btlVal)} btls`}
                                             </span>
                                           </div>
-                                          <span className="tabular-nums font-semibold text-foreground shrink-0">
-                                            {metric === "revenue"
-                                              ? formatMoney(revVal)
-                                              : `${formatNumber(btlVal)} btls`}
-                                          </span>
-                                        </div>
-                                      );
-                                    })}
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                  <div className="pt-1.5 border-t border-border/40 text-center">
+                                    <span className="text-[10px] font-medium text-primary">
+                                      👆 Click dot to open full period data & analytics
+                                    </span>
                                   </div>
-                                )}
-                              </div>
-                            );
-                          }}
-                        />
-                        <Legend
-                          verticalAlign="bottom"
-                          height={36}
-                          wrapperStyle={{ paddingTop: "12px", fontSize: "12px" }}
-                        />
-
-                        {/* If no individual products selected, show overall aggregate line */}
-                        {selectedProducts.length === 0 ? (
-                          <Line
-                            type="monotone"
-                            dataKey={
-                              metric === "revenue"
-                                ? "totalRevenue"
-                                : metric === "accounts"
-                                ? "activeAccountsCount"
-                                : "totalBottles"
-                            }
-                            name={
-                              metric === "revenue"
-                                ? "Total Product Revenue ($)"
-                                : metric === "accounts"
-                                ? "Active Buying Accounts"
-                                : "Total Bottles Sold (btls)"
-                            }
-                            stroke="#881337"
-                            strokeWidth={3}
-                            dot={{ r: 4, fill: "#881337" }}
-                            activeDot={{ r: 6 }}
+                                </div>
+                              );
+                            }}
                           />
-                        ) : (
-                          selectedProducts.map((pName) => {
-                            const color = productColorMap.get(pName) || "#881337";
-                            const dataKey = metric === "revenue" ? `${pName}__rev` : pName;
-                            return (
-                              <Line
-                                key={pName}
-                                type="monotone"
-                                dataKey={dataKey}
-                                name={pName}
-                                stroke={color}
-                                strokeWidth={2.5}
-                                dot={{ r: 3, fill: color }}
-                                activeDot={{ r: 5 }}
-                              />
-                            );
-                          })
-                        )}
-                      </LineChart>
-                    </ResponsiveContainer>
+                          <Legend
+                            verticalAlign="bottom"
+                            height={36}
+                            wrapperStyle={{ paddingTop: "12px", fontSize: "12px" }}
+                          />
+
+                          {/* If no individual products selected, show overall aggregate line */}
+                          {selectedProducts.length === 0 ? (
+                            <Line
+                              type="monotone"
+                              dataKey={
+                                metric === "revenue"
+                                  ? "totalRevenue"
+                                  : metric === "accounts"
+                                  ? "activeAccountsCount"
+                                  : "totalBottles"
+                              }
+                              name={
+                                metric === "revenue"
+                                  ? "Total Product Revenue ($)"
+                                  : metric === "accounts"
+                                  ? "Active Buying Accounts"
+                                  : "Total Bottles Sold (btls)"
+                              }
+                              stroke="#881337"
+                              strokeWidth={3}
+                              dot={{
+                                r: 4.5,
+                                fill: "#881337",
+                                stroke: "#ffffff",
+                                strokeWidth: 1.5,
+                                className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2.5px]",
+                              }}
+                              activeDot={{
+                                r: 7,
+                                fill: "#881337",
+                                stroke: "#ffffff",
+                                strokeWidth: 2.5,
+                                className: "cursor-pointer filter drop-shadow-md",
+                                onClick: (dotProps: unknown) => {
+                                  const pt = (dotProps as { payload?: ProductTrendPoint })?.payload;
+                                  if (pt) {
+                                    handleOpenPointModal(pt, null);
+                                  }
+                                },
+                              }}
+                            />
+                          ) : (
+                            selectedProducts.map((pName) => {
+                              const color = productColorMap.get(pName) || "#881337";
+                              const dataKey = metric === "revenue" ? `${pName}__rev` : pName;
+                              return (
+                                <Line
+                                  key={pName}
+                                  type="monotone"
+                                  dataKey={dataKey}
+                                  name={pName}
+                                  stroke={color}
+                                  strokeWidth={2.5}
+                                  dot={{
+                                    r: 3.5,
+                                    fill: color,
+                                    stroke: "#ffffff",
+                                    strokeWidth: 1.2,
+                                    className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2px]",
+                                  }}
+                                  activeDot={{
+                                    r: 6.5,
+                                    fill: color,
+                                    stroke: "#ffffff",
+                                    strokeWidth: 2,
+                                    className: "cursor-pointer filter drop-shadow-md",
+                                    onClick: (dotProps: unknown) => {
+                                      const pt = (dotProps as { payload?: ProductTrendPoint })?.payload;
+                                      if (pt) {
+                                        handleOpenPointModal(pt, pName);
+                                      }
+                                    },
+                                  }}
+                                />
+                              );
+                            })
+                          )}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 )}
 
-                {/* Product Selection Chip Cloud */}
-                <div className="pt-2 border-t">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      Click wines below to toggle on chart:
-                    </p>
-                    <span className="text-xs text-muted-foreground">
-                      {selectedProducts.length} of {trends.allProductsSorted.length} selected
+                {/* Plotted Trajectory Curves Toolbar */}
+                {selectedProducts.length > 0 && (
+                  <div className="pt-3 border-t flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-semibold text-muted-foreground mr-1 flex items-center gap-1">
+                      <BarChart2 className="size-3.5 text-primary" />
+                      Plotted Curves ({selectedProducts.length}):
                     </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-muted/20 rounded-md">
-                    {trends.productSummaries.map((summary) => {
-                      const isSelected = selectedProducts.includes(summary.productName);
-                      const color = productColorMap.get(summary.productName);
-
+                    {selectedProducts.map((pName) => {
+                      const color = productColorMap.get(pName) || "#881337";
+                      const isFocused = focusedProduct === pName;
                       return (
-                        <button
-                          key={summary.productName}
-                          type="button"
-                          onClick={() => handleToggleProduct(summary.productName)}
+                        <span
+                          key={pName}
                           className={cn(
-                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-all border",
-                            isSelected
-                              ? "bg-primary/10 border-primary/40 text-foreground font-semibold shadow-xs"
-                              : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium border transition-all",
+                            isFocused
+                              ? "bg-foreground text-background font-bold ring-2 ring-primary/40 shadow-xs"
+                              : "bg-muted/70 text-foreground border-border"
                           )}
                         >
-                          {isSelected && (
-                            <span
-                              className="size-2 rounded-full shrink-0"
-                              style={{ backgroundColor: color || "#881337" }}
-                            />
-                          )}
-                          <span className="truncate max-w-[180px]">{summary.productName}</span>
-                          <span className="text-[10px] tabular-nums opacity-75">
-                            ({formatNumber(summary.totalBottles)} btls)
-                          </span>
-                        </button>
+                          <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                          <span className="max-w-[200px] truncate">{pName}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleProduct(pName)}
+                            className="text-muted-foreground hover:text-foreground ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                            title={`Remove ${pName} from chart`}
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </span>
                       );
                     })}
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={handleClearAll}
+                      className="h-6 text-[11px] text-muted-foreground hover:text-foreground ml-1"
+                    >
+                      Reset to Aggregate
+                    </Button>
                   </div>
-                </div>
+                )}
               </CardContent>
-            </Card>
 
-            {/* Product Performance Matrix & Catalog Table */}
-            <Card className="border-border overflow-hidden">
-              <CardHeader className="border-b">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle className="font-heading text-lg">
-                      Individual Wine Catalog & Sales Velocities
-                    </CardTitle>
-                    <CardDescription>
-                      Detailed order velocity, bottle counts, revenue, and placement metrics for each individual wine SKU.
-                    </CardDescription>
-                  </div>
+              {/* Integrated Individual Wine Catalog & Sales Velocities Section */}
+              <div className="border-t bg-muted/5">
+                <div className="p-6 pb-3 space-y-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="font-heading font-bold text-base flex flex-wrap items-center gap-2 text-foreground">
+                        <span>Individual Wine Catalog & Sales Velocities</span>
+                        <span className="text-xs font-normal text-muted-foreground bg-muted border px-2 py-0.5 rounded-md">
+                          Click row or checkbox to plot on chart above
+                        </span>
+                      </h3>
+                      <CardDescription className="text-xs mt-0.5">
+                        Detailed order velocity, bottle counts, revenue, and placement metrics for each individual wine SKU.
+                      </CardDescription>
+                    </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     {/* Search Input */}
@@ -992,15 +1136,15 @@ export function ProductSalesTrendsDashboard() {
                       { id: "all", label: `All Wines (${trends.totalActiveProducts})` },
                       {
                         id: "accelerating",
-                        label: `🚀 Accelerating (28d: ${trends.productSummaries.filter((s) => s.trajectory === "accelerating").length})`,
+                        label: `🚀 Accelerating (MoM: ${trends.productSummaries.filter((s) => s.trajectory === "accelerating").length})`,
                       },
                       {
                         id: "steady",
-                        label: `Steady (28d: ${trends.productSummaries.filter((s) => s.trajectory === "steady").length})`,
+                        label: `Steady (MoM: ${trends.productSummaries.filter((s) => s.trajectory === "steady").length})`,
                       },
                       {
                         id: "decelerating",
-                        label: `📉 Decelerating (28d: ${trends.productSummaries.filter((s) => s.trajectory === "decelerating").length})`,
+                        label: `📉 Decelerating (MoM: ${trends.productSummaries.filter((s) => s.trajectory === "decelerating").length})`,
                       },
                       {
                         id: "new",
@@ -1030,13 +1174,16 @@ export function ProductSalesTrendsDashboard() {
                     );
                   })}
                 </div>
-              </CardHeader>
+              </div>
 
-              <CardContent className="p-0">
-                <div className="w-full">
+              {/* Integrated Catalog Table */}
+                <div className="w-full border-t border-border overflow-x-auto bg-card">
                   <Table className="w-full text-xs">
                     <TableHeader>
-                      <TableRow className="border-b hover:bg-transparent">
+                      <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
+                        <TableHead className="py-2.5 px-3 w-16 text-center font-semibold text-foreground">
+                          Chart
+                        </TableHead>
                         <TableHead
                           className="py-2.5 px-3 cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("productName")}
@@ -1087,7 +1234,7 @@ export function ProductSalesTrendsDashboard() {
                           onClick={() => handleSort("velocityDeltaPct")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
-                            <span>Trajectory (28d vs Prior)</span>
+                            <span>Trajectory (MoM vs Prior)</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
@@ -1100,13 +1247,15 @@ export function ProductSalesTrendsDashboard() {
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
-                        <TableHead className="py-2.5 px-2 w-12 text-right"></TableHead>
+                        <TableHead className="py-2.5 px-2 w-16 text-right">
+                          <span className="font-semibold text-foreground">Details</span>
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {displayedSummaries.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
+                          <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                             No wines match the selected filters or search query.
                           </TableCell>
                         </TableRow>
@@ -1118,20 +1267,58 @@ export function ProductSalesTrendsDashboard() {
                           return (
                             <TableRow
                               key={summary.productName}
-                              className="cursor-pointer hover:bg-muted/50 transition-colors group border-b last:border-0"
-                              onClick={() => setSelectedDetailProduct(summary)}
+                              className={cn(
+                                "cursor-pointer transition-colors group border-b last:border-0",
+                                isSelectedInChart ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/40"
+                              )}
+                              onClick={() => {
+                                handleToggleProduct(summary.productName);
+                              }}
                             >
+                              <TableCell className="py-2.5 px-3 w-16 text-center" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleProduct(summary.productName)}
+                                  className={cn(
+                                    "size-5 rounded-md border flex items-center justify-center transition-all mx-auto",
+                                    isSelectedInChart
+                                      ? "border-transparent text-white shadow-xs"
+                                      : "border-input hover:border-primary/60 bg-background text-transparent hover:text-muted-foreground/40"
+                                  )}
+                                  style={isSelectedInChart ? { backgroundColor: chartColor || "#881337" } : undefined}
+                                  title={
+                                    isSelectedInChart
+                                      ? `Remove ${summary.productName} from chart`
+                                      : `Plot ${summary.productName} curve on chart`
+                                  }
+                                >
+                                  <Check className={cn("size-3.5 stroke-[3]", isSelectedInChart ? "opacity-100" : "opacity-0")} />
+                                </button>
+                              </TableCell>
                               <TableCell className="py-2.5 px-3 font-medium text-foreground">
                                 <div className="flex items-center gap-2">
                                   {isSelectedInChart && (
                                     <span
-                                      className="size-2 rounded-full shrink-0"
+                                      className="size-2 rounded-full shrink-0 ring-2 ring-primary/20"
                                       style={{ backgroundColor: chartColor || "#881337" }}
                                     />
                                   )}
-                                  <span className="group-hover:text-primary transition-colors font-medium">
+                                  <span
+                                    className={cn(
+                                      "transition-colors",
+                                      isSelectedInChart ? "font-bold text-foreground" : "font-medium group-hover:text-primary"
+                                    )}
+                                  >
                                     {summary.productName}
                                   </span>
+                                  {isSelectedInChart && (
+                                    <span
+                                      className="text-[10px] font-bold px-1.5 py-0.2 rounded-full text-white shrink-0"
+                                      style={{ backgroundColor: chartColor || "#881337" }}
+                                    >
+                                      Plotted
+                                    </span>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell className="py-2.5 px-3 text-right font-semibold tabular-nums text-foreground whitespace-nowrap">
@@ -1159,10 +1346,10 @@ export function ProductSalesTrendsDashboard() {
                                           ? "text-rose-600 dark:text-rose-400"
                                           : "text-muted-foreground",
                                       )}
-                                      title="Velocity change over the last 28 days compared to prior 28 days"
+                                      title="Velocity change over the last month compared to prior month"
                                     >
                                       {summary.velocityDeltaPct > 0 ? "+" : ""}
-                                      {summary.velocityDeltaPct.toFixed(0)}% (28d)
+                                      {summary.velocityDeltaPct.toFixed(0)}% (MoM)
                                     </span>
                                   )}
                                 </div>
@@ -1170,7 +1357,7 @@ export function ProductSalesTrendsDashboard() {
                               <TableCell className="py-2.5 px-3 text-right tabular-nums text-muted-foreground text-xs whitespace-nowrap">
                                 {formatDate(summary.lastOrderDate)}
                               </TableCell>
-                              <TableCell className="py-2.5 px-2 text-right whitespace-nowrap">
+                              <TableCell className="py-2.5 px-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                 <Button
                                   size="xs"
                                   variant="ghost"
@@ -1190,7 +1377,7 @@ export function ProductSalesTrendsDashboard() {
                     </TableBody>
                   </Table>
                 </div>
-              </CardContent>
+              </div>
             </Card>
           </>
         )}
@@ -1223,7 +1410,7 @@ export function ProductSalesTrendsDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-medium">Trajectory (28-Day):</span>
+                    <span className="text-xs text-muted-foreground font-medium">Trajectory (Monthly):</span>
                     <TrajectoryPill trajectory={selectedDetailProduct.trajectory} showWindow />
                     {selectedDetailProduct.velocityDeltaPct !== null && (
                       <span
@@ -1237,7 +1424,7 @@ export function ProductSalesTrendsDashboard() {
                         )}
                       >
                         {selectedDetailProduct.velocityDeltaPct > 0 ? "+" : ""}
-                        {selectedDetailProduct.velocityDeltaPct.toFixed(0)}% (last 28d vs prior 28d)
+                        {selectedDetailProduct.velocityDeltaPct.toFixed(0)}% (last month vs prior month)
                       </span>
                     )}
                   </div>
@@ -1373,6 +1560,31 @@ export function ProductSalesTrendsDashboard() {
           if (summary) setSelectedDetailProduct(summary);
           setNotificationSidebarOpen(false);
         }}
+      />
+
+      {/* Point Analytics Pop-up Dialog */}
+      <TrendPointAnalyticsDialog
+        open={pointModalOpen}
+        onOpenChange={setPointModalOpen}
+        point={selectedTrendPoint}
+        allPoints={trends.data}
+        orders={state.orders}
+        granularity={granularity}
+        selectedProducts={selectedProducts}
+        focusedProduct={focusedProduct}
+        onSelectFocusedProduct={setFocusedProduct}
+        onToggleProduct={handleToggleProduct}
+        onSelectPoint={(pt) => setSelectedTrendPoint(pt)}
+      />
+
+      {/* 28-Day Product Slowdown Printable Report Dialog */}
+      <ProductSlowdownReportDialog
+        open={slowdownReportOpen}
+        onOpenChange={setSlowdownReportOpen}
+        alerts={productAlerts}
+        repFilter={repFilter}
+        asOf={state.analysisAsOf ?? snapshot.asOf}
+        onMessage={flash}
       />
     </div>
   );

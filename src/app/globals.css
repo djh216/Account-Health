@@ -131,8 +131,8 @@
 
 @media print {
   @page {
-    margin: 10mm 12mm;
-    size: letter portrait;
+    margin: 8mm 10mm;
+    size: auto;
   }
 
   /* Force background colors and exact color rendering */
@@ -146,10 +146,10 @@
   body {
     background: #ffffff !important;
     color: #111827 !important;
-    font-size: 10pt !important;
+    font-size: 9.5pt !important;
   }
 
-  /* Hide navigation, interactive buttons, search inputs, dialogs, and drawer triggers */
+  /* Hide navigation, interactive buttons, search inputs, dialogs, dropdowns, and drawer triggers */
   nav,
   header .site-nav,
   button,
@@ -159,6 +159,8 @@
   [role="dialog"],
   [data-slot="dialog-content"],
   [data-slot="dialog-overlay"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-portal"],
   .no-print,
   [data-print-hide="true"] {
     display: none !important;
@@ -200,4 +202,26 @@
     width: 100% !important;
     max-width: 100% !important;
   }
+}
+
+/* Interactive Chart Dots & Circles */
+.recharts-line-dots circle {
+  cursor: pointer !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), r 0.2s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.2s ease, stroke-width 0.2s ease, filter 0.2s ease !important;
+  transform-box: fill-box !important;
+  transform-origin: center !important;
+}
+
+.recharts-line-dots circle:hover {
+  r: 7px !important;
+  stroke: #ffffff !important;
+  stroke-width: 2.5px !important;
+  filter: drop-shadow(0 3px 8px rgba(136, 19, 55, 0.55)) !important;
+}
+
+.recharts-active-dot circle {
+  cursor: pointer !important;
+  stroke: #ffffff !important;
+  stroke-width: 2.5px !important;
+  filter: drop-shadow(0 4px 10px rgba(136, 19, 55, 0.65)) !important;
 }

@@ -372,7 +372,7 @@ export function Dashboard() {
                 criticalCount={totalCriticalAlertsCount}
                 onClick={() => setNotificationSidebarOpen(true)}
               />
-              <PrintReportButton />
+              <PrintReportButton page="health" onMessage={flash} />
               <ExportReportButton page="health" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
               <Button onClick={() => setUploadOpen(true)}>
