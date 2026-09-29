@@ -272,7 +272,7 @@ export function NotificationSidebar({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-5xl w-full overflow-hidden flex flex-col p-0 sm:max-w-5xl rounded-2xl shadow-2xl">
+      <DialogContent className="max-h-[92vh] w-[96vw] max-w-6xl sm:max-w-6xl lg:max-w-7xl overflow-hidden flex flex-col p-0 rounded-2xl shadow-2xl">
         {/* Header */}
         <div className="shrink-0 border-b border-border bg-card p-5">
           <div className="flex items-start justify-between gap-4">

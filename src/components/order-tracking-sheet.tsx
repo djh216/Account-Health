@@ -135,7 +135,7 @@ export function AccountTrackingSheet({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-6 py-5 xl:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] xl:gap-8 xl:overflow-hidden">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-6 py-5 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] xl:gap-8 xl:overflow-hidden">
               <div className="min-w-0 space-y-4 xl:overflow-y-auto xl:pr-1">
                 {cadence ? <OrderCadenceAlert cadence={cadence} /> : null}
 
@@ -702,7 +702,7 @@ function ProductCadenceTable({
                   onClick={() => onSelectProduct?.(row.product)}
                   title={`Click to view individual orders for ${row.product}`}
                 >
-                  <TableCell className="truncate font-medium text-primary hover:underline" title={row.product}>
+                  <TableCell className="font-medium text-primary hover:underline break-words min-w-[180px]" title={row.product}>
                     {row.product}
                   </TableCell>
                   <TableCell className="whitespace-normal">
@@ -807,7 +807,7 @@ function ProductChangesTable({
                 onClick={() => onSelectProduct?.(row.product)}
                 title={`Click to view individual orders for ${row.product}`}
               >
-                <TableCell className="truncate font-medium text-primary hover:underline" title={row.product}>
+                <TableCell className="font-medium text-primary hover:underline break-words min-w-[180px]" title={row.product}>
                   {row.product}
                 </TableCell>
                 <TableCell className="whitespace-normal">

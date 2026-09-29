@@ -302,7 +302,7 @@ export function ProductDataPointAccountsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden p-0 sm:max-w-4xl flex flex-col">
+      <DialogContent className="max-h-[92vh] w-[96vw] max-w-6xl sm:max-w-6xl lg:max-w-7xl overflow-hidden p-0 flex flex-col">
         {/* Modal Header */}
         <div className="border-b bg-muted/20 px-6 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -502,7 +502,7 @@ export function ProductDataPointAccountsDialog({
                         <TableCell className="font-medium text-foreground">
                           <div className="flex items-center gap-2">
                             <Store className="size-3.5 text-muted-foreground shrink-0" />
-                            <span className="truncate max-w-[220px]">{acc.accountName}</span>
+                            <span className="break-words">{acc.accountName}</span>
                           </div>
                         </TableCell>
 

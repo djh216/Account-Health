@@ -641,7 +641,7 @@ export function ProductSalesTrendsDashboard() {
                     <BarChart2 className="size-4 text-emerald-600 dark:text-emerald-400" />
                     <span>#1 Volume Leader (All-Time)</span>
                   </CardDescription>
-                  <CardTitle className="font-heading text-xl truncate" title={trends.topPerformer?.productName}>
+                  <CardTitle className="font-heading text-xl break-words leading-tight" title={trends.topPerformer?.productName}>
                     {trends.topPerformer ? trends.topPerformer.productName : "—"}
                   </CardTitle>
                 </CardHeader>
@@ -665,7 +665,7 @@ export function ProductSalesTrendsDashboard() {
                     <TrendingUp className="size-4 text-indigo-600 dark:text-indigo-400" />
                     <span>Top Growth Momentum (28-Day Window)</span>
                   </CardDescription>
-                  <CardTitle className="font-heading text-xl truncate" title={trends.topGrowing?.productName}>
+                  <CardTitle className="font-heading text-xl break-words leading-tight" title={trends.topGrowing?.productName}>
                     {trends.topGrowing ? trends.topGrowing.productName : "—"}
                   </CardTitle>
                 </CardHeader>
@@ -691,7 +691,7 @@ export function ProductSalesTrendsDashboard() {
                     <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />
                     <span>Cooling SKU (28-Day Window)</span>
                   </CardDescription>
-                  <CardTitle className="font-heading text-xl truncate" title={trends.atRiskProduct?.productName}>
+                  <CardTitle className="font-heading text-xl break-words leading-tight" title={trends.atRiskProduct?.productName}>
                     {trends.atRiskProduct ? trends.atRiskProduct.productName : "None"}
                   </CardTitle>
                 </CardHeader>
@@ -1023,7 +1023,7 @@ export function ProductSalesTrendsDashboard() {
                                     className="size-2 rounded-full shrink-0"
                                     style={{ backgroundColor: color }}
                                   />
-                                  <span className="font-medium text-foreground max-w-[130px] truncate" title={pName}>
+                                  <span className="font-medium text-foreground whitespace-nowrap" title={pName}>
                                     {pName}
                                   </span>
                                   <span className="font-bold tabular-nums text-foreground">
@@ -1340,7 +1340,7 @@ export function ProductSalesTrendsDashboard() {
                           )}
                         >
                           <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                          <span className="max-w-[200px] truncate">{pName}</span>
+                          <span className="whitespace-nowrap">{pName}</span>
                           <button
                             type="button"
                             onClick={() => handleToggleProduct(pName)}
@@ -1772,14 +1772,13 @@ export function ProductSalesTrendsDashboard() {
         )}
       </main>
 
-      {/* Individual Product Deep-Dive Dialog */}
       <Dialog
         open={Boolean(selectedDetailProduct)}
         onOpenChange={(open) => {
           if (!open) setSelectedDetailProduct(null);
         }}
       >
-        <DialogContent className="sm:max-w-5xl md:max-w-6xl w-[96vw] max-h-[92vh] flex flex-col p-6 overflow-hidden">
+        <DialogContent className="w-[96vw] max-w-7xl sm:max-w-7xl md:max-w-7xl lg:max-w-[1450px] max-h-[92vh] flex flex-col p-6 overflow-hidden">
           {selectedDetailProduct && (
             <>
               <DialogHeader className="pb-3 border-b shrink-0">

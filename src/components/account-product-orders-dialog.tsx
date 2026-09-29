@@ -90,7 +90,7 @@ export function AccountProductOrdersDialog({
 
   return (
     <Dialog open={Boolean(selection)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100vh-2rem)] w-[min(54rem,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent className="flex max-h-[calc(100vh-2rem)] w-[min(72rem,calc(100vw-2rem))] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
         {selection ? (
           <>
             <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">

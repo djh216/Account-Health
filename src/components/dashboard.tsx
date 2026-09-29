@@ -801,8 +801,8 @@ function RiskAccountsBox({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{item.account.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">
+                  <div className="font-medium text-foreground leading-snug break-words">{item.account.name}</div>
+                  <div className="text-xs text-muted-foreground break-words mt-0.5">
                     {accountTypeLabel(item.account.type)}
                     {item.account.city ? ` · ${item.account.city}` : ""}
                     {item.account.salesRep ? ` · ${item.account.salesRep}` : ""}
@@ -891,8 +891,8 @@ function TerritoryTierCard({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{item.account.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">
+                  <div className="font-medium text-foreground leading-snug break-words">{item.account.name}</div>
+                  <div className="text-xs text-muted-foreground break-words mt-0.5">
                     Rank #{item.territoryRank} ·{" "}
                     {formatNumber(item.territoryValue ?? 0)} vol ·{" "}
                     {Math.round(item.territorySharePct ?? 0)}% of book

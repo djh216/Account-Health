@@ -262,7 +262,7 @@ export function UploadDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="upload-dialog-title"
-        className="relative z-10 grid max-h-[90vh] w-full max-w-2xl gap-4 overflow-y-auto rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10"
+        className="relative z-10 grid max-h-[90vh] w-full max-w-4xl gap-4 overflow-y-auto rounded-xl bg-popover p-5 text-sm text-popover-foreground ring-1 ring-foreground/10"
       >
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
@@ -436,7 +436,7 @@ export function UploadDialog({
                   {parsed.rows.slice(0, 4).map((row, index) => (
                     <tr key={index} className="border-t">
                       {parsed.headers.slice(0, 6).map((header) => (
-                        <td key={header} className="max-w-40 truncate px-3 py-2">
+                        <td key={header} className="px-3 py-2 whitespace-nowrap">
                           {row[header]}
                         </td>
                       ))}

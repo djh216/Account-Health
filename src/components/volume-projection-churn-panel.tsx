@@ -430,10 +430,10 @@ export function VolumeProjectionChurnPanel({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 pr-1">
-                        <span className="font-semibold text-foreground block text-sm truncate" title={account.accountName}>
+                        <span className="font-semibold text-foreground block text-sm break-words leading-tight" title={account.accountName}>
                           {account.accountName}
                         </span>
-                        <span className="text-[11px] text-muted-foreground block truncate">
+                        <span className="text-[11px] text-muted-foreground block break-words mt-0.5">
                           {account.salesRep ? `Rep: ${account.salesRep} · ` : ""}
                           {account.territoryTier ? `${territoryTierLabel(account.territoryTier)} Tier` : ""}
                         </span>
@@ -612,7 +612,7 @@ export function VolumeProjectionChurnPanel({
 
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[1000px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[24%]">
@@ -855,7 +855,7 @@ export function VolumeProjectionChurnPanel({
                         {/* Churn Risk Score */}
                         <TableCell>
                           <ChurnBadge tier={account.churnTier} score={account.churnScore} />
-                          <span className="block text-[11px] text-muted-foreground truncate max-w-[140px]" title={account.churnSignals[0]}>
+                          <span className="block text-[11px] text-muted-foreground break-words mt-0.5" title={account.churnSignals[0]}>
                             {account.churnSignals[0]}
                           </span>
                         </TableCell>

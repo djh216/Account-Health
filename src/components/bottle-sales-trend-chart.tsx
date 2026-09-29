@@ -251,12 +251,12 @@ export function BottleSalesTrendChart({
   return (
     <div className="space-y-6">
       {/* KPI Overview Cards */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="grid gap-3.5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         <Card className="border-border">
-          <CardHeader>
+          <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-1.5">
-              <Wine className="size-4 text-primary" />
-              <span>Total Bottles Sold</span>
+              <Wine className="size-4 text-primary shrink-0" />
+              <span className="font-medium text-xs">Total Bottles Sold</span>
             </CardDescription>
             <CardTitle className="font-heading text-2xl">
               {formatNumber(totalBottles)}{" "}
@@ -675,7 +675,7 @@ export function BottleSalesTrendChart({
                                         key={acc}
                                         className="flex items-center justify-between gap-3 text-[11px]"
                                       >
-                                        <div className="flex items-center gap-1.5 truncate">
+                                        <div className="flex items-center gap-1.5 min-w-0">
                                           <span
                                             className="size-2 rounded-full shrink-0"
                                             style={{
@@ -683,7 +683,7 @@ export function BottleSalesTrendChart({
                                                 accountColorMap.get(acc) || "#9f1239",
                                             }}
                                           />
-                                          <span className="truncate text-muted-foreground">
+                                          <span className="text-muted-foreground whitespace-normal break-words">
                                             {acc}
                                           </span>
                                         </div>
@@ -969,7 +969,7 @@ export function BottleSalesTrendChart({
                       : "bg-background/80 border-transparent hover:bg-card hover:border-border text-muted-foreground",
                   )}
                 >
-                  <div className="flex items-center gap-2 truncate">
+                  <div className="flex items-center gap-2 min-w-0">
                     {isSelected ? (
                       <span
                         className="size-2 rounded-full shrink-0"
@@ -978,7 +978,7 @@ export function BottleSalesTrendChart({
                     ) : (
                       <Square className="size-3.5 text-muted-foreground/60 shrink-0" />
                     )}
-                    <span className="truncate">{account}</span>
+                    <span className="break-words leading-tight">{account}</span>
                   </div>
                   {isSelected && (
                     <Check className="size-3.5 text-primary shrink-0 ml-1" />
