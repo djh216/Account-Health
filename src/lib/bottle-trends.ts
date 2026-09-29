@@ -1,4 +1,5 @@
 import {
+  differenceInCalendarDays,
   differenceInMonths,
   format,
   isAfter,
@@ -11,6 +12,7 @@ import {
 } from "date-fns";
 import type { Order } from "./types";
 import { normalizeName } from "./format";
+import type { ProductTrajectory } from "./product-trends";
 
 export type TrendGranularity = "monthly" | "weekly";
 export type TrendTimeframe = "all" | "12m" | "6m" | "90d";
@@ -36,6 +38,13 @@ export type AccountBottleSummary = {
   firstOrderDate: string;
   lastOrderDate: string;
   avgBottlesPerMonth: number;
+  paceLast3Months: number;
+  pacePrior3Months: number;
+  revenueLast3Months: number;
+  revenuePrior3Months: number;
+  quarterlyPaceDeltaPct: number | null;
+  quarterlyPaceDeltaBtls: number;
+  quarterlyTrajectory: ProductTrajectory;
 };
 
 export const TREND_PALETTE = [
@@ -169,17 +178,42 @@ export function buildBottleTrendData({
     }
   }
 
-  // Account Summaries
-  const accountMap = new Map<string, {
-    accountName: string;
-    totalBottles: number;
-    totalCases: number;
-    totalRevenue: number;
-    orderCount: number;
-    firstOrderDate: string;
-    lastOrderDate: string;
-  }>();
+  // Windows for trajectory: last 3 months (90 days) vs prior 3 months (90 to 180 days ago)
+  const THREE_MONTH_DAYS = 90;
+  const recent3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS);
+  const prior3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS * 2);
 
+  // Valid orders up to asOf for account macro pace
+  const accountMacroOrders = orders.filter((order) => {
+    if (!order.date) return false;
+    const orderDate = parseISO(order.date);
+    if (isNaN(orderDate.getTime())) return false;
+    if (asOf && isAfter(orderDate, asOfDate)) return false;
+    if (!isAllAccounts && !selectedSet.has(normalizeName(order.accountName))) {
+      return false;
+    }
+    return true;
+  });
+
+  // Account Summaries Map
+  const accountMap = new Map<
+    string,
+    {
+      accountName: string;
+      totalBottles: number;
+      totalCases: number;
+      totalRevenue: number;
+      orderCount: number;
+      firstOrderDate: string;
+      lastOrderDate: string;
+      paceLast3Months: number;
+      pacePrior3Months: number;
+      revenueLast3Months: number;
+      revenuePrior3Months: number;
+    }
+  >();
+
+  // Initialize accounts from relevant orders or selected
   for (const order of relevantOrders) {
     const acc = order.accountName;
     const bottles = order.cases > 0 ? order.cases : 1;
@@ -195,6 +229,10 @@ export function buildBottleTrendData({
         orderCount: 0,
         firstOrderDate: order.date,
         lastOrderDate: order.date,
+        paceLast3Months: 0,
+        pacePrior3Months: 0,
+        revenueLast3Months: 0,
+        revenuePrior3Months: 0,
       };
       accountMap.set(acc, item);
     }
@@ -208,15 +246,70 @@ export function buildBottleTrendData({
     if (order.date > item.lastOrderDate) item.lastOrderDate = order.date;
   }
 
+  // Calculate 3-month pace and prior 3-month pace across full history up to asOf
+  for (const order of accountMacroOrders) {
+    const acc = order.accountName;
+    const item = accountMap.get(acc);
+    if (!item) continue;
+
+    const orderDate = parseISO(order.date);
+    const bottles = order.cases > 0 ? order.cases : 1;
+    const revenue = order.revenue || 0;
+
+    if (orderDate >= recent3MonthsStart && orderDate <= asOfDate) {
+      item.paceLast3Months += bottles;
+      item.revenueLast3Months += revenue;
+    } else if (orderDate >= prior3MonthsStart && orderDate < recent3MonthsStart) {
+      item.pacePrior3Months += bottles;
+      item.revenuePrior3Months += revenue;
+    }
+  }
+
   const accountSummaries: AccountBottleSummary[] = Array.from(accountMap.values())
     .map((item) => {
       const months = Math.max(
         1,
         differenceInMonths(parseISO(item.lastOrderDate), parseISO(item.firstOrderDate)) + 1,
       );
+
+      const quarterlyPaceDeltaBtls = item.paceLast3Months - item.pacePrior3Months;
+      let quarterlyPaceDeltaPct: number | null = null;
+      if (item.pacePrior3Months > 0) {
+        quarterlyPaceDeltaPct = Math.round(
+          ((item.paceLast3Months - item.pacePrior3Months) / item.pacePrior3Months) * 100,
+        );
+      } else if (item.paceLast3Months > 0 && item.pacePrior3Months === 0) {
+        quarterlyPaceDeltaPct = 100;
+      }
+
+      const firstDateObj = item.firstOrderDate ? parseISO(item.firstOrderDate) : null;
+      const lastDateObj = item.lastOrderDate ? parseISO(item.lastOrderDate) : null;
+      const isNewQuarterly = firstDateObj
+        ? differenceInCalendarDays(asOfDate, firstDateObj) <= 90
+        : false;
+      const isDormantQuarterly = lastDateObj
+        ? differenceInCalendarDays(asOfDate, lastDateObj) > 90
+        : true;
+
+      let quarterlyTrajectory: ProductTrajectory = "steady";
+      if (isNewQuarterly) {
+        quarterlyTrajectory = "new";
+      } else if (isDormantQuarterly) {
+        quarterlyTrajectory = "dormant";
+      } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct >= 15) {
+        quarterlyTrajectory = "accelerating";
+      } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct <= -15) {
+        quarterlyTrajectory = "decelerating";
+      } else {
+        quarterlyTrajectory = "steady";
+      }
+
       return {
         ...item,
         avgBottlesPerMonth: Math.round(item.totalBottles / months),
+        quarterlyPaceDeltaBtls,
+        quarterlyPaceDeltaPct,
+        quarterlyTrajectory,
       };
     })
     .sort((a, b) => b.totalBottles - a.totalBottles);

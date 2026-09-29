@@ -826,9 +826,30 @@ export function VolumeProjectionChurnPanel({
                           </div>
                         </TableCell>
 
-                        {/* Trajectory */}
+                        {/* Trajectory & 3-Month Pace */}
                         <TableCell>
-                          <TrajectoryBadge trajectory={account.trendTrajectory} />
+                          <div className="flex flex-col gap-0.5">
+                            <TrajectoryBadge trajectory={account.trendTrajectory} />
+                            <span
+                              className={cn(
+                                "text-[11px] font-medium tabular-nums",
+                                account.quarterlyPaceDeltaPct !== null && account.quarterlyPaceDeltaPct > 0
+                                  ? "text-emerald-700 dark:text-emerald-400"
+                                  : account.quarterlyPaceDeltaPct !== null && account.quarterlyPaceDeltaPct < 0
+                                  ? "text-rose-700 dark:text-rose-400"
+                                  : "text-muted-foreground",
+                              )}
+                              title={`3-month pace: ${account.paceLast3Months} btls (last 3M) vs ${account.pacePrior3Months} btls (prior 3M)`}
+                            >
+                              3M:{" "}
+                              {account.quarterlyPaceDeltaPct !== null
+                                ? `${account.quarterlyPaceDeltaPct > 0 ? "+" : ""}${account.quarterlyPaceDeltaPct}%`
+                                : "—"}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                              {account.paceLast3Months} vs {account.pacePrior3Months} btls
+                            </span>
+                          </div>
                         </TableCell>
 
                         {/* Churn Risk Score */}

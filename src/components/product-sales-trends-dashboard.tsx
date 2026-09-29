@@ -43,6 +43,13 @@ import {
   NotificationSidebar,
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
+import {
+  augmentDataWithTrendlines,
+  getSafeTrendKey,
+  describeFitConfidence,
+  formatTrendSlope,
+  type TrendlineDefinition,
+} from "@/lib/trendline";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -100,6 +107,8 @@ type SortField =
   | "avgBottlesPerMonth"
   | "accountCount"
   | "velocityDeltaPct"
+  | "quarterlyPaceDeltaPct"
+  | "paceLast3Months"
   | "lastOrderDate";
 
 type TrajectoryFilter = "all" | ProductTrajectory;
@@ -107,42 +116,45 @@ type TrajectoryFilter = "all" | ProductTrajectory;
 function TrajectoryPill({
   trajectory,
   showWindow = false,
+  windowLabel,
 }: {
   trajectory: ProductTrajectory;
   showWindow?: boolean;
+  windowLabel?: string;
 }) {
+  const windowText = windowLabel ?? (showWindow ? "28d" : "");
   switch (trajectory) {
     case "accelerating":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
           <ArrowUpRight className="size-3" />
-          Accelerating{showWindow ? " (MoM)" : ""}
+          Accelerating{windowText ? ` (${windowText})` : ""}
         </span>
       );
     case "steady":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          Steady{showWindow ? " (MoM)" : ""}
+          Steady{windowText ? ` (${windowText})` : ""}
         </span>
       );
     case "decelerating":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
           <ArrowDownRight className="size-3" />
-          Decelerating{showWindow ? " (MoM)" : ""}
+          Decelerating{windowText ? ` (${windowText})` : ""}
         </span>
       );
     case "new":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-400">
           <Sparkles className="size-3" />
-          New Wine{showWindow ? " (<60d)" : ""}
+          New Wine{windowText ? ` (${windowText})` : ""}
         </span>
       );
     case "dormant":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-          Dormant{showWindow ? " (>60d)" : ""}
+          Dormant{windowText ? ` (${windowText})` : ""}
         </span>
       );
   }
@@ -161,6 +173,7 @@ export function ProductSalesTrendsDashboard() {
   const [timeframe, setTimeframe] = useState<ProductTrendTimeframe>("all");
   const [metric, setMetric] = useState<ProductTrendMetric>("bottles");
   const [trajectoryFilter, setTrajectoryFilter] = useState<TrajectoryFilter>("all");
+  const [trajectoryScope, setTrajectoryScope] = useState<"28d" | "3m">("28d");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDetailProduct, setSelectedDetailProduct] = useState<ProductSummary | null>(null);
   const [selectedTrendPoint, setSelectedTrendPoint] = useState<ProductTrendPoint | null>(null);
@@ -254,6 +267,46 @@ export function ProductSalesTrendsDashboard() {
     return map;
   }, [selectedProducts]);
 
+  const [showTrendlines, setShowTrendlines] = useState(true);
+
+  // Compute linear trendline definitions for products / metric
+  const productTrendlineDefs = useMemo<TrendlineDefinition[]>(() => {
+    const defs: TrendlineDefinition[] = [];
+    if (selectedProducts.length === 0) {
+      const activeKey =
+        metric === "revenue"
+          ? "totalRevenue"
+          : metric === "accounts"
+          ? "activeAccountsCount"
+          : "totalBottles";
+      defs.push({ sourceKey: activeKey, trendKey: `${activeKey}_trend` });
+    } else {
+      for (const pName of selectedProducts) {
+        const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+        defs.push({ sourceKey, trendKey: getSafeTrendKey(sourceKey) });
+      }
+    }
+    return defs;
+  }, [selectedProducts, metric]);
+
+  const { data: chartDataWithTrendlines, statsMap: productTrendStatsMap } = useMemo(() => {
+    return augmentDataWithTrendlines(trends.data, productTrendlineDefs);
+  }, [trends.data, productTrendlineDefs]);
+
+  // Aggregate stats when 0 products selected
+  const aggregateProductTrendStats = useMemo(() => {
+    if (selectedProducts.length === 0) {
+      const activeKey =
+        metric === "revenue"
+          ? "totalRevenue"
+          : metric === "accounts"
+          ? "activeAccountsCount"
+          : "totalBottles";
+      return productTrendStatsMap.get(activeKey);
+    }
+    return null;
+  }, [selectedProducts.length, metric, productTrendStatsMap]);
+
   // Handle Quick Selections
   function handleSelectTopVolume(count = 5) {
     const top = trends.productSummaries.slice(0, count).map((s) => s.productName);
@@ -301,7 +354,8 @@ export function ProductSalesTrendsDashboard() {
   const displayedSummaries = useMemo(() => {
     return trends.productSummaries
       .filter((s) => {
-        if (trajectoryFilter !== "all" && s.trajectory !== trajectoryFilter) return false;
+        const activeTrajectory = trajectoryScope === "3m" ? s.quarterlyTrajectory : s.trajectory;
+        if (trajectoryFilter !== "all" && activeTrajectory !== trajectoryFilter) return false;
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
           return s.productName.toLowerCase().includes(q);
@@ -318,7 +372,7 @@ export function ProductSalesTrendsDashboard() {
         }
         return sortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
       });
-  }, [trends.productSummaries, trajectoryFilter, searchQuery, sortField, sortAsc]);
+  }, [trends.productSummaries, trajectoryFilter, trajectoryScope, searchQuery, sortField, sortAsc]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -338,8 +392,12 @@ export function ProductSalesTrendsDashboard() {
       "Avg Bottles / Order",
       "Monthly Velocity (Btls/Mo)",
       "Buying Accounts Count",
-      "Trend Trajectory",
-      "Velocity Δ (%)",
+      "28d Trajectory",
+      "28d Velocity Δ (%)",
+      "Pace Last 3 Months (Btls)",
+      "Pace Prior 3 Months (Btls)",
+      "3-Mo Pace Δ (%)",
+      "3-Mo Macro Trajectory",
       "First Order Date",
       "Last Order Date",
     ];
@@ -353,6 +411,10 @@ export function ProductSalesTrendsDashboard() {
       s.accountCount,
       s.trajectory,
       s.velocityDeltaPct !== null ? `${s.velocityDeltaPct.toFixed(1)}%` : "N/A",
+      s.paceLast3Months,
+      s.pacePrior3Months,
+      s.quarterlyPaceDeltaPct !== null ? `${s.quarterlyPaceDeltaPct}%` : "N/A",
+      s.quarterlyTrajectory,
       s.firstOrderDate,
       s.lastOrderDate,
     ]);
@@ -380,7 +442,7 @@ export function ProductSalesTrendsDashboard() {
         generatedAt: new Date().toISOString(),
         alerts: productAlerts,
       });
-      flash(`✓ Printable Monthly Slowdown Briefing PDF created (${productAlerts.length} SKUs).`);
+      flash(`✓ Printable 28-Day Slowdown Briefing PDF created (${productAlerts.length} SKUs).`);
       setSlowdownReportOpen(true);
     } catch {
       flash("Could not generate printable PDF for slowdown briefing.");
@@ -478,7 +540,7 @@ export function ProductSalesTrendsDashboard() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-heading font-bold text-sm sm:text-base">
-                    {productAlerts.length} Wine SKU{productAlerts.length === 1 ? "" : "s"} Slowing in Sales (Last Month)
+                    {productAlerts.length} Wine SKU{productAlerts.length === 1 ? "" : "s"} Slowing in Sales (Last 28 Days)
                   </span>
                   {criticalProductAlertsCount > 0 && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white">
@@ -487,7 +549,7 @@ export function ProductSalesTrendsDashboard() {
                   )}
                 </div>
                 <p className="text-xs mt-0.5 opacity-90 max-w-3xl leading-relaxed">
-                  Sales velocity or reorder volume dropped noticeably over the last month compared to the prior monthly cycle:{" "}
+                  Sales velocity or reorder volume dropped noticeably over the last 28 days compared to the prior 28-day cycle:{" "}
                   <span className="font-semibold">
                     {productAlerts.slice(0, 3).map((a) => `${a.productName} (-${a.dropPercentage}%)`).join(", ")}
                     {productAlerts.length > 3 ? `, +${productAlerts.length - 3} more` : ""}.
@@ -507,7 +569,7 @@ export function ProductSalesTrendsDashboard() {
                     : "bg-white/95 border-amber-300 text-amber-900 hover:bg-white hover:border-amber-400 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-100",
                 )}
                 onClick={handlePrintSlowdownBriefing}
-                title="Create and download a printable PDF report for the monthly product slowdown briefing"
+                title="Create and download a printable PDF report for the 28-day product slowdown briefing"
               >
                 <Printer className="size-3.5" />
                 <span>Print Briefing (PDF)</span>
@@ -525,7 +587,7 @@ export function ProductSalesTrendsDashboard() {
                 onClick={() => setNotificationSidebarOpen(true)}
               >
                 <Bell className="size-3.5 mr-1.5" />
-                View Monthly Slowdown Briefing
+                View 28d Slowdown Briefing
               </Button>
             </div>
           </div>
@@ -601,7 +663,7 @@ export function ProductSalesTrendsDashboard() {
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingUp className="size-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Top Growth Momentum (Monthly Window)</span>
+                    <span>Top Growth Momentum (28-Day Window)</span>
                   </CardDescription>
                   <CardTitle className="font-heading text-xl truncate" title={trends.topGrowing?.productName}>
                     {trends.topGrowing ? trends.topGrowing.productName : "—"}
@@ -612,10 +674,10 @@ export function ProductSalesTrendsDashboard() {
                     <>
                       <span className="font-semibold text-emerald-600 dark:text-emerald-400">
                         {trends.topGrowing.velocityDeltaPct !== null
-                           ? `+${trends.topGrowing.velocityDeltaPct.toFixed(0)}%`
+                          ? `+${trends.topGrowing.velocityDeltaPct.toFixed(0)}%`
                           : "Expanding"}
                       </span>{" "}
-                      velocity vs prior month ({trends.topGrowing.recentVolume} btls in last month vs {trends.topGrowing.priorVolume} btls prior)
+                      velocity vs prior 28d ({trends.topGrowing.recentVolume} btls in last 28d vs {trends.topGrowing.priorVolume} btls prior)
                     </>
                   ) : (
                     "All products steady"
@@ -627,7 +689,7 @@ export function ProductSalesTrendsDashboard() {
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />
-                    <span>Cooling SKU (Monthly Window)</span>
+                    <span>Cooling SKU (28-Day Window)</span>
                   </CardDescription>
                   <CardTitle className="font-heading text-xl truncate" title={trends.atRiskProduct?.productName}>
                     {trends.atRiskProduct ? trends.atRiskProduct.productName : "None"}
@@ -641,7 +703,7 @@ export function ProductSalesTrendsDashboard() {
                           ? `${trends.atRiskProduct.velocityDeltaPct.toFixed(0)}%`
                           : "Decelerating"}
                       </span>{" "}
-                      velocity vs prior month ({trends.atRiskProduct.recentVolume} btls in last month vs {trends.atRiskProduct.priorVolume} btls prior)
+                      velocity vs prior 28d ({trends.atRiskProduct.recentVolume} btls in last 28d vs {trends.atRiskProduct.priorVolume} btls prior)
                     </>
                   ) : (
                     "No steep deceleration detected"
@@ -762,6 +824,22 @@ export function ProductSalesTrendsDashboard() {
                         <SelectItem value="90d">Last 90 Days</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    {/* Trendlines Toggle */}
+                    <Button
+                      size="xs"
+                      variant={showTrendlines ? "default" : "outline"}
+                      onClick={() => setShowTrendlines((prev) => !prev)}
+                      className={cn(
+                        "h-8 text-xs gap-1.5 transition-colors font-medium",
+                        showTrendlines
+                          ? "bg-rose-950 text-rose-100 hover:bg-rose-900 border-rose-800"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <TrendingUp className="size-3.5" />
+                      Trendlines {showTrendlines ? "ON" : "OFF"}
+                    </Button>
                   </div>
                 </div>
 
@@ -844,17 +922,153 @@ export function ProductSalesTrendsDashboard() {
                       )}
                     </div>
 
+                    {/* Trendline Regression Analytics Banner */}
+                    {showTrendlines && chartDataWithTrendlines.length >= 2 && (
+                      selectedProducts.length === 0 && aggregateProductTrendStats ? (
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200/60 bg-rose-50/50 p-2.5 text-xs dark:border-rose-950/40 dark:bg-rose-950/20">
+                          <div className="flex flex-wrap items-center gap-3.5">
+                            <div className="flex items-center gap-1.5 font-semibold text-rose-900 dark:text-rose-100">
+                              <TrendingUp className="size-4 text-rose-600 dark:text-rose-400" />
+                              <span>
+                                {metric === "revenue"
+                                  ? "Aggregate Revenue Trendline:"
+                                  : metric === "accounts"
+                                  ? "Active Accounts Trendline:"
+                                  : "Aggregate Bottle Trendline:"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <span>Slope:</span>
+                              <span className="font-bold text-foreground tabular-nums">
+                                {formatTrendSlope(
+                                  aggregateProductTrendStats.slope,
+                                  metric === "revenue" ? "$" : metric === "accounts" ? "accs" : "btls",
+                                  granularity
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-muted-foreground">Trajectory:</span>
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold",
+                                  aggregateProductTrendStats.direction === "up"
+                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                                    : aggregateProductTrendStats.direction === "down"
+                                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                                    : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                                )}
+                              >
+                                {aggregateProductTrendStats.direction === "up" ? (
+                                  <ArrowUpRight className="size-3" />
+                                ) : aggregateProductTrendStats.direction === "down" ? (
+                                  <ArrowDownRight className="size-3" />
+                                ) : null}
+                                {aggregateProductTrendStats.direction === "up"
+                                  ? "Expanding Velocity"
+                                  : aggregateProductTrendStats.direction === "down"
+                                  ? "Contracting Velocity"
+                                  : "Steady"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <span>Fit Confidence:</span>
+                              <span
+                                className={cn(
+                                  "text-[11px] px-1.5 py-0.5 rounded font-medium border",
+                                  describeFitConfidence(aggregateProductTrendStats.rSquared).badgeClass
+                                )}
+                              >
+                                R² = {(aggregateProductTrendStats.rSquared * 100).toFixed(0)}% ·{" "}
+                                {describeFitConfidence(aggregateProductTrendStats.rSquared).label}
+                              </span>
+                            </div>
+                            {aggregateProductTrendStats.pctChange !== null && (
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <span>Projected Net Drift:</span>
+                                <span className="font-semibold text-foreground tabular-nums">
+                                  {aggregateProductTrendStats.pctChange > 0 ? "+" : ""}
+                                  {aggregateProductTrendStats.pctChange}%
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground hidden sm:block">
+                            Dashed lines show OLS linear regressions
+                          </div>
+                        </div>
+                      ) : selectedProducts.length > 0 ? (
+                        <div className="rounded-lg border border-border/80 bg-muted/30 p-2.5 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-foreground flex items-center gap-1.5">
+                              <TrendingUp className="size-3.5 text-primary" />
+                              Plotted Product Trendline Fits (OLS):
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              Dashed curves represent linear trajectories
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
+                            {selectedProducts.map((pName) => {
+                              const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+                              const stats = productTrendStatsMap.get(sourceKey);
+                              const color = productColorMap.get(pName) || "#881337";
+                              if (!stats) return null;
+                              return (
+                                <div
+                                  key={pName}
+                                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-[11px] shadow-2xs"
+                                >
+                                  <span
+                                    className="size-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                  <span className="font-medium text-foreground max-w-[130px] truncate" title={pName}>
+                                    {pName}
+                                  </span>
+                                  <span className="font-bold tabular-nums text-foreground">
+                                    {formatTrendSlope(
+                                      stats.slope,
+                                      metric === "revenue" ? "$" : "btls",
+                                      granularity
+                                    )}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center px-1 py-0.5 rounded text-[10px] font-semibold",
+                                      stats.direction === "up"
+                                        ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300"
+                                        : stats.direction === "down"
+                                        ? "text-rose-700 bg-rose-50 dark:bg-rose-950 dark:text-rose-300"
+                                        : "text-muted-foreground bg-muted"
+                                    )}
+                                  >
+                                    {stats.direction === "up" ? (
+                                      <ArrowUpRight className="size-2.5" />
+                                    ) : stats.direction === "down" ? (
+                                      <ArrowDownRight className="size-2.5" />
+                                    ) : null}
+                                    R² {(stats.rSquared * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null
+                    )}
+
                     <div className="h-96 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
-                          data={trends.data}
+                          data={chartDataWithTrendlines}
                           margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
                           onClick={(state) => {
                             const index = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : -1;
                             const point =
                               index >= 0
-                                ? trends.data[index]
-                                : trends.data.find((d) => d.label === state?.activeLabel);
+                                ? chartDataWithTrendlines[index]
+                                : chartDataWithTrendlines.find((d) => d.label === state?.activeLabel);
                             if (point) {
                               const chartPayload = (state as unknown as { activePayload?: Array<{ dataKey?: string }> })?.activePayload;
                               const activeDataKey = chartPayload?.[0]?.dataKey;
@@ -907,6 +1121,17 @@ export function ProductSalesTrendsDashboard() {
                                     <p className="text-muted-foreground">
                                       Total: {formatNumber(point.totalBottles)} btls · {formatMoney(point.totalRevenue)} · {point.activeAccountsCount} accounts
                                     </p>
+                                    {showTrendlines && selectedProducts.length === 0 && (
+                                      <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium pt-0.5">
+                                        {metric === "revenue" && typeof point.totalRevenue_trend === "number"
+                                          ? `Linear Trend: ${formatMoney(point.totalRevenue_trend)}`
+                                          : metric === "accounts" && typeof point.activeAccountsCount_trend === "number"
+                                          ? `Linear Trend: ${Math.round(point.activeAccountsCount_trend)} accounts`
+                                          : typeof point.totalBottles_trend === "number"
+                                          ? `Linear Trend: ${formatNumber(Math.round(point.totalBottles_trend))} btls`
+                                          : null}
+                                      </p>
+                                    )}
                                   </div>
                                   {selectedProducts.length > 0 && (
                                     <div className="space-y-1 max-h-48 overflow-y-auto pt-1">
@@ -914,6 +1139,9 @@ export function ProductSalesTrendsDashboard() {
                                         const color = productColorMap.get(pName) || "#881337";
                                         const btlVal = (point[pName] as number) || 0;
                                         const revVal = (point[`${pName}__rev`] as number) || 0;
+                                        const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+                                        const trendKey = getSafeTrendKey(sourceKey);
+                                        const trendVal = point[trendKey] as number | undefined;
 
                                         return (
                                           <div key={pName} className="flex items-center justify-between gap-2">
@@ -926,11 +1154,18 @@ export function ProductSalesTrendsDashboard() {
                                                 {pName}
                                               </span>
                                             </div>
-                                            <span className="tabular-nums font-semibold text-foreground shrink-0">
-                                              {metric === "revenue"
-                                                ? formatMoney(revVal)
-                                                : `${formatNumber(btlVal)} btls`}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              <span className="tabular-nums font-semibold text-foreground">
+                                                {metric === "revenue"
+                                                  ? formatMoney(revVal)
+                                                  : `${formatNumber(btlVal)} btls`}
+                                              </span>
+                                              {showTrendlines && typeof trendVal === "number" && (
+                                                <span className="text-[10px] text-muted-foreground tabular-nums">
+                                                  ~{metric === "revenue" ? formatMoney(Math.round(trendVal)) : `${formatNumber(Math.round(trendVal))} btls`}
+                                                </span>
+                                              )}
+                                            </div>
                                           </div>
                                         );
                                       })}
@@ -953,80 +1188,130 @@ export function ProductSalesTrendsDashboard() {
 
                           {/* If no individual products selected, show overall aggregate line */}
                           {selectedProducts.length === 0 ? (
-                            <Line
-                              type="monotone"
-                              dataKey={
-                                metric === "revenue"
-                                  ? "totalRevenue"
-                                  : metric === "accounts"
-                                  ? "activeAccountsCount"
-                                  : "totalBottles"
-                              }
-                              name={
-                                metric === "revenue"
-                                  ? "Total Product Revenue ($)"
-                                  : metric === "accounts"
-                                  ? "Active Buying Accounts"
-                                  : "Total Bottles Sold (btls)"
-                              }
-                              stroke="#881337"
-                              strokeWidth={3}
-                              dot={{
-                                r: 4.5,
-                                fill: "#881337",
-                                stroke: "#ffffff",
-                                strokeWidth: 1.5,
-                                className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2.5px]",
-                              }}
-                              activeDot={{
-                                r: 7,
-                                fill: "#881337",
-                                stroke: "#ffffff",
-                                strokeWidth: 2.5,
-                                className: "cursor-pointer filter drop-shadow-md",
-                                onClick: (dotProps: unknown) => {
-                                  const pt = (dotProps as { payload?: ProductTrendPoint })?.payload;
-                                  if (pt) {
-                                    handleOpenPointModal(pt, null);
-                                  }
-                                },
-                              }}
-                            />
-                          ) : (
-                            selectedProducts.map((pName) => {
-                              const color = productColorMap.get(pName) || "#881337";
-                              const dataKey = metric === "revenue" ? `${pName}__rev` : pName;
-                              return (
+                            <>
+                              <Line
+                                type="monotone"
+                                dataKey={
+                                  metric === "revenue"
+                                    ? "totalRevenue"
+                                    : metric === "accounts"
+                                    ? "activeAccountsCount"
+                                    : "totalBottles"
+                                }
+                                name={
+                                  metric === "revenue"
+                                    ? "Total Product Revenue ($)"
+                                    : metric === "accounts"
+                                    ? "Active Buying Accounts"
+                                    : "Total Bottles Sold (btls)"
+                                }
+                                stroke="#881337"
+                                strokeWidth={3}
+                                dot={{
+                                  r: 4.5,
+                                  fill: "#881337",
+                                  stroke: "#ffffff",
+                                  strokeWidth: 1.5,
+                                  className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2.5px]",
+                                }}
+                                activeDot={{
+                                  r: 7,
+                                  fill: "#881337",
+                                  stroke: "#ffffff",
+                                  strokeWidth: 2.5,
+                                  className: "cursor-pointer filter drop-shadow-md",
+                                  onClick: (dotProps: unknown) => {
+                                    const pt = (dotProps as { payload?: ProductTrendPoint })?.payload;
+                                    if (pt) {
+                                      handleOpenPointModal(pt, null);
+                                    }
+                                  },
+                                }}
+                              />
+                              {showTrendlines && (
                                 <Line
-                                  key={pName}
-                                  type="monotone"
-                                  dataKey={dataKey}
-                                  name={pName}
-                                  stroke={color}
-                                  strokeWidth={2.5}
-                                  dot={{
-                                    r: 3.5,
-                                    fill: color,
-                                    stroke: "#ffffff",
-                                    strokeWidth: 1.2,
-                                    className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2px]",
-                                  }}
-                                  activeDot={{
-                                    r: 6.5,
-                                    fill: color,
-                                    stroke: "#ffffff",
-                                    strokeWidth: 2,
-                                    className: "cursor-pointer filter drop-shadow-md",
-                                    onClick: (dotProps: unknown) => {
-                                      const pt = (dotProps as { payload?: ProductTrendPoint })?.payload;
-                                      if (pt) {
-                                        handleOpenPointModal(pt, pName);
-                                      }
-                                    },
-                                  }}
+                                  type="linear"
+                                  dataKey={
+                                    metric === "revenue"
+                                      ? "totalRevenue_trend"
+                                      : metric === "accounts"
+                                      ? "activeAccountsCount_trend"
+                                      : "totalBottles_trend"
+                                  }
+                                  name={
+                                    metric === "revenue"
+                                      ? "Revenue Trend (Linear Fit)"
+                                      : metric === "accounts"
+                                      ? "Active Accounts Trend (Linear Fit)"
+                                      : "Total Bottles Trend (Linear Fit)"
+                                  }
+                                  stroke="#be123c"
+                                  strokeWidth={2}
+                                  strokeDasharray="6 4"
+                                  dot={false}
+                                  activeDot={false}
+                                  isAnimationActive={false}
                                 />
-                              );
-                            })
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {selectedProducts.map((pName) => {
+                                const color = productColorMap.get(pName) || "#881337";
+                                const dataKey = metric === "revenue" ? `${pName}__rev` : pName;
+                                return (
+                                  <Line
+                                    key={pName}
+                                    type="monotone"
+                                    dataKey={dataKey}
+                                    name={pName}
+                                    stroke={color}
+                                    strokeWidth={2.5}
+                                    dot={{
+                                      r: 3.5,
+                                      fill: color,
+                                      stroke: "#ffffff",
+                                      strokeWidth: 1.2,
+                                      className: "cursor-pointer transition-all hover:scale-125 hover:stroke-[2px]",
+                                    }}
+                                    activeDot={{
+                                      r: 6.5,
+                                      fill: color,
+                                      stroke: "#ffffff",
+                                      strokeWidth: 2,
+                                      className: "cursor-pointer filter drop-shadow-md",
+                                      onClick: (dotProps: unknown) => {
+                                        const pt = (dotProps as { payload?: ProductTrendPoint })?.payload;
+                                        if (pt) {
+                                          handleOpenPointModal(pt, pName);
+                                        }
+                                      },
+                                    }}
+                                  />
+                                );
+                              })}
+                              {showTrendlines &&
+                                selectedProducts.map((pName) => {
+                                  const color = productColorMap.get(pName) || "#881337";
+                                  const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+                                  const trendKey = getSafeTrendKey(sourceKey);
+                                  return (
+                                    <Line
+                                      key={trendKey}
+                                      type="linear"
+                                      dataKey={trendKey}
+                                      name={`${pName} (Trend)`}
+                                      stroke={color}
+                                      strokeWidth={1.6}
+                                      strokeDasharray="5 4"
+                                      strokeOpacity={0.65}
+                                      dot={false}
+                                      activeDot={false}
+                                      isAnimationActive={false}
+                                    />
+                                  );
+                                })}
+                            </>
                           )}
                         </LineChart>
                       </ResponsiveContainer>
@@ -1129,50 +1414,117 @@ export function ProductSalesTrendsDashboard() {
                   </div>
                 </div>
 
-                {/* Trajectory Segment Tabs */}
-                <div className="flex flex-wrap gap-1 pt-3">
-                  {(
-                    [
-                      { id: "all", label: `All Wines (${trends.totalActiveProducts})` },
-                      {
-                        id: "accelerating",
-                        label: `🚀 Accelerating (MoM: ${trends.productSummaries.filter((s) => s.trajectory === "accelerating").length})`,
-                      },
-                      {
-                        id: "steady",
-                        label: `Steady (MoM: ${trends.productSummaries.filter((s) => s.trajectory === "steady").length})`,
-                      },
-                      {
-                        id: "decelerating",
-                        label: `📉 Decelerating (MoM: ${trends.productSummaries.filter((s) => s.trajectory === "decelerating").length})`,
-                      },
-                      {
-                        id: "new",
-                        label: `🆕 New Wines (<60d: ${trends.productSummaries.filter((s) => s.trajectory === "new").length})`,
-                      },
-                      {
-                        id: "dormant",
-                        label: `⏸️ Dormant (>60d: ${trends.productSummaries.filter((s) => s.trajectory === "dormant").length})`,
-                      },
-                    ] as const
-                  ).map((tab) => {
-                    const active = trajectoryFilter === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setTrajectoryFilter(tab.id as TrajectoryFilter)}
-                        className={cn(
-                          "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                          active
-                            ? "bg-primary text-primary-foreground font-semibold"
-                            : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
-                        )}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
+                {/* Trajectory Scope & Segment Tabs */}
+                <div className="flex flex-col gap-2 pt-3 border-t border-border/50">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground font-medium">Trajectory Metric:</span>
+                      <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setTrajectoryScope("28d")}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md transition text-xs",
+                            trajectoryScope === "28d"
+                              ? "bg-background text-foreground shadow-2xs font-semibold"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          28-Day Velocity
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTrajectoryScope("3m")}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md transition text-xs",
+                            trajectoryScope === "3m"
+                              ? "bg-background text-foreground shadow-2xs font-semibold"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          3-Month Macro Pace (Last 3M vs Prior)
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      Filtering by {trajectoryScope === "3m" ? "3-Month Macro Pace (last 90d vs prior 90d)" : "28-Day Rolling Velocity"}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {(
+                      [
+                        { id: "all", label: `All Wines (${trends.totalActiveProducts})` },
+                        {
+                          id: "accelerating",
+                          label: `🚀 Accelerating (${trajectoryScope === "3m" ? "3M" : "28d"}: ${
+                            trends.productSummaries.filter((s) =>
+                              trajectoryScope === "3m"
+                                ? s.quarterlyTrajectory === "accelerating"
+                                : s.trajectory === "accelerating",
+                            ).length
+                          })`,
+                        },
+                        {
+                          id: "steady",
+                          label: `Steady (${trajectoryScope === "3m" ? "3M" : "28d"}: ${
+                            trends.productSummaries.filter((s) =>
+                              trajectoryScope === "3m"
+                                ? s.quarterlyTrajectory === "steady"
+                                : s.trajectory === "steady",
+                            ).length
+                          })`,
+                        },
+                        {
+                          id: "decelerating",
+                          label: `📉 Decelerating (${trajectoryScope === "3m" ? "3M" : "28d"}: ${
+                            trends.productSummaries.filter((s) =>
+                              trajectoryScope === "3m"
+                                ? s.quarterlyTrajectory === "decelerating"
+                                : s.trajectory === "decelerating",
+                            ).length
+                          })`,
+                        },
+                        {
+                          id: "new",
+                          label: `🆕 New Wines (<${trajectoryScope === "3m" ? "90d" : "60d"}: ${
+                            trends.productSummaries.filter((s) =>
+                              trajectoryScope === "3m"
+                                ? s.quarterlyTrajectory === "new"
+                                : s.trajectory === "new",
+                            ).length
+                          })`,
+                        },
+                        {
+                          id: "dormant",
+                          label: `⏸️ Dormant (>${trajectoryScope === "3m" ? "90d" : "60d"}: ${
+                            trends.productSummaries.filter((s) =>
+                              trajectoryScope === "3m"
+                                ? s.quarterlyTrajectory === "dormant"
+                                : s.trajectory === "dormant",
+                            ).length
+                          })`,
+                        },
+                      ] as const
+                    ).map((tab) => {
+                      const active = trajectoryFilter === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setTrajectoryFilter(tab.id as TrajectoryFilter)}
+                          className={cn(
+                            "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                            active
+                              ? "bg-primary text-primary-foreground font-semibold"
+                              : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -1234,7 +1586,16 @@ export function ProductSalesTrendsDashboard() {
                           onClick={() => handleSort("velocityDeltaPct")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
-                            <span>Trajectory (MoM vs Prior)</span>
+                            <span>28d Trajectory</span>
+                            <ArrowUpDown className="size-3 text-muted-foreground" />
+                          </div>
+                        </TableHead>
+                        <TableHead
+                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          onClick={() => handleSort("quarterlyPaceDeltaPct")}
+                        >
+                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                            <span>3-Mo Pace vs Prior</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
@@ -1255,7 +1616,7 @@ export function ProductSalesTrendsDashboard() {
                     <TableBody>
                       {displayedSummaries.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+                          <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
                             No wines match the selected filters or search query.
                           </TableCell>
                         </TableRow>
@@ -1346,12 +1707,40 @@ export function ProductSalesTrendsDashboard() {
                                           ? "text-rose-600 dark:text-rose-400"
                                           : "text-muted-foreground",
                                       )}
-                                      title="Velocity change over the last month compared to prior month"
+                                      title="Velocity change over the last 28 days compared to prior 28 days"
                                     >
                                       {summary.velocityDeltaPct > 0 ? "+" : ""}
-                                      {summary.velocityDeltaPct.toFixed(0)}% (MoM)
+                                      {summary.velocityDeltaPct.toFixed(0)}% (28d)
                                     </span>
                                   )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <TrajectoryPill trajectory={summary.quarterlyTrajectory} windowLabel="3M" />
+                                    {summary.quarterlyPaceDeltaPct !== null ? (
+                                      <span
+                                        className={cn(
+                                          "text-xs font-semibold tabular-nums",
+                                          summary.quarterlyPaceDeltaPct > 0
+                                            ? "text-emerald-600 dark:text-emerald-400"
+                                            : summary.quarterlyPaceDeltaPct < 0
+                                            ? "text-rose-600 dark:text-rose-400"
+                                            : "text-muted-foreground",
+                                        )}
+                                        title={`3-month pace: ${formatNumber(summary.paceLast3Months)} btls (last 90d) vs ${formatNumber(summary.pacePrior3Months)} btls (prior 90d)`}
+                                      >
+                                        {summary.quarterlyPaceDeltaPct > 0 ? "+" : ""}
+                                        {summary.quarterlyPaceDeltaPct}%
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                                    {formatNumber(summary.paceLast3Months)} vs {formatNumber(summary.pacePrior3Months)} btls
+                                  </span>
                                 </div>
                               </TableCell>
                               <TableCell className="py-2.5 px-3 text-right tabular-nums text-muted-foreground text-xs whitespace-nowrap">
@@ -1409,57 +1798,98 @@ export function ProductSalesTrendsDashboard() {
                       </DialogDescription>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-medium">Trajectory (Monthly):</span>
-                    <TrajectoryPill trajectory={selectedDetailProduct.trajectory} showWindow />
-                    {selectedDetailProduct.velocityDeltaPct !== null && (
-                      <span
-                        className={cn(
-                          "text-xs font-semibold tabular-nums px-2 py-0.5 rounded-md",
-                          selectedDetailProduct.velocityDeltaPct > 0
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                            : selectedDetailProduct.velocityDeltaPct < 0
-                            ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {selectedDetailProduct.velocityDeltaPct > 0 ? "+" : ""}
-                        {selectedDetailProduct.velocityDeltaPct.toFixed(0)}% (last month vs prior month)
-                      </span>
-                    )}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground font-medium">28d Velocity:</span>
+                      <TrajectoryPill trajectory={selectedDetailProduct.trajectory} showWindow />
+                      {selectedDetailProduct.velocityDeltaPct !== null && (
+                        <span
+                          className={cn(
+                            "text-xs font-semibold tabular-nums px-2 py-0.5 rounded-md",
+                            selectedDetailProduct.velocityDeltaPct > 0
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                              : selectedDetailProduct.velocityDeltaPct < 0
+                              ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {selectedDetailProduct.velocityDeltaPct > 0 ? "+" : ""}
+                          {selectedDetailProduct.velocityDeltaPct.toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 sm:border-l sm:pl-3">
+                      <span className="text-xs text-muted-foreground font-medium">3-Mo Pace:</span>
+                      <TrajectoryPill trajectory={selectedDetailProduct.quarterlyTrajectory} windowLabel="3M" />
+                      {selectedDetailProduct.quarterlyPaceDeltaPct !== null && (
+                        <span
+                          className={cn(
+                            "text-xs font-semibold tabular-nums px-2 py-0.5 rounded-md",
+                            selectedDetailProduct.quarterlyPaceDeltaPct > 0
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                              : selectedDetailProduct.quarterlyPaceDeltaPct < 0
+                              ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {selectedDetailProduct.quarterlyPaceDeltaPct > 0 ? "+" : ""}
+                          {selectedDetailProduct.quarterlyPaceDeltaPct}% vs prior 3M
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </DialogHeader>
 
               <div className="flex-1 overflow-y-auto space-y-5 pt-4 pr-1">
                 {/* Product Stats Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <div className="rounded-lg border p-3.5 bg-muted/20">
                     <p className="text-xs text-muted-foreground font-medium">Total Volume (All-Time)</p>
-                    <p className="font-heading text-2xl font-bold mt-1 text-foreground">
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {formatNumber(selectedDetailProduct.totalBottles)}{" "}
                       <span className="text-xs font-normal text-muted-foreground">btls</span>
                     </p>
                   </div>
                   <div className="rounded-lg border p-3.5 bg-muted/20">
                     <p className="text-xs text-muted-foreground font-medium">Active Placements</p>
-                    <p className="font-heading text-2xl font-bold mt-1 text-foreground">
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {selectedDetailProduct.accountCount}{" "}
                       <span className="text-xs font-normal text-muted-foreground">accounts</span>
                     </p>
                   </div>
                   <div className="rounded-lg border p-3.5 bg-muted/20">
                     <p className="text-xs text-muted-foreground font-medium">Monthly Velocity</p>
-                    <p className="font-heading text-2xl font-bold mt-1 text-foreground">
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {formatNumber(selectedDetailProduct.avgBottlesPerMonth)}{" "}
-                      <span className="text-xs font-normal text-muted-foreground">btls/month</span>
+                      <span className="text-xs font-normal text-muted-foreground">btls/mo</span>
                     </p>
                   </div>
                   <div className="rounded-lg border p-3.5 bg-muted/20">
-                    <p className="text-xs text-muted-foreground font-medium">Avg per Order Event</p>
-                    <p className="font-heading text-2xl font-bold mt-1 text-foreground">
+                    <p className="text-xs text-muted-foreground font-medium">Avg per Order</p>
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {selectedDetailProduct.avgBottlesPerOrder}{" "}
-                      <span className="text-xs font-normal text-muted-foreground">btls/event</span>
+                      <span className="text-xs font-normal text-muted-foreground">btls</span>
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/50">
+                    <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">3-Mo Pace (Last 90d)</p>
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
+                      {formatNumber(selectedDetailProduct.paceLast3Months)}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">btls</span>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {formatMoney(selectedDetailProduct.revenueLast3Months)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3.5 bg-muted/20">
+                    <p className="text-xs text-muted-foreground font-medium">Prior 3-Mo (90-180d)</p>
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
+                      {formatNumber(selectedDetailProduct.pacePrior3Months)}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">btls</span>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {formatMoney(selectedDetailProduct.revenuePrior3Months)}
                     </p>
                   </div>
                 </div>
@@ -1483,6 +1913,7 @@ export function ProductSalesTrendsDashboard() {
                           <TableHead className="py-2.5 px-3 font-semibold text-foreground">Account Name</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Bottles Purchased</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Share of SKU Volume</TableHead>
+                          <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">3-Mo Pace vs Prior</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Total Orders</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">First Order</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Last Order</TableHead>
@@ -1507,6 +1938,27 @@ export function ProductSalesTrendsDashboard() {
                                 </div>
                                 <span className="font-medium text-foreground tabular-nums">
                                   {formatPct(acc.shareOfProductPct)}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
+                              <div className="flex flex-col items-end">
+                                <span
+                                  className={cn(
+                                    "font-semibold text-xs",
+                                    acc.quarterlyPaceDeltaPct !== null && acc.quarterlyPaceDeltaPct > 0
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : acc.quarterlyPaceDeltaPct !== null && acc.quarterlyPaceDeltaPct < 0
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : "text-muted-foreground",
+                                  )}
+                                >
+                                  {acc.quarterlyPaceDeltaPct !== null
+                                    ? `${acc.quarterlyPaceDeltaPct > 0 ? "+" : ""}${acc.quarterlyPaceDeltaPct}%`
+                                    : "—"}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {formatNumber(acc.paceLast3Months)} vs {formatNumber(acc.pacePrior3Months)} btls
                                 </span>
                               </div>
                             </TableCell>

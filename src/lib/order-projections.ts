@@ -3,6 +3,7 @@ import { normalizeName } from "./format";
 import { AVG_DAYS_PER_MONTH } from "./order-frequency";
 import type { AccountHealth, TerritoryValueTier } from "./types";
 import type { AccountOrderTracking, OrderAnalyticsSnapshot } from "./order-analytics";
+import type { ProductTrajectory } from "./product-trends";
 
 export type ChurnRiskTier = "high" | "moderate" | "low";
 export type ProjectionHorizon = 30 | 60 | 90;
@@ -37,6 +38,12 @@ export type AccountProjectionAndChurn = {
   projectedOrderCount90: number;
   trendTrajectory: VolumeTrendTrajectory;
   momentumMultiplier: number;
+  // 3-Month Macro Pace vs Prior 3-Month Pace
+  paceLast3Months: number;
+  pacePrior3Months: number;
+  quarterlyPaceDeltaPct: number | null;
+  quarterlyPaceDeltaBtls: number;
+  quarterlyTrajectory: ProductTrajectory;
   // Churn Prediction
   churnScore: number; // 0 to 100
   churnTier: ChurnRiskTier;
@@ -303,6 +310,25 @@ export function projectSingleAccount(
       "Maintain regular reorder cadence. Present new vintage allocations to expand basket size.";
   }
 
+  // 3-Month Macro Pace vs Prior 3-Month Pace
+  const paceLast3Months = tracking.volumeRecent90;
+  const pacePrior3Months = tracking.volumePrior90;
+  const quarterlyPaceDeltaBtls = paceLast3Months - pacePrior3Months;
+  const quarterlyPaceDeltaPct = tracking.volumeDeltaPct;
+
+  let quarterlyTrajectory: ProductTrajectory = "steady";
+  if (tracking.frequency.orderEventCount <= 1 && daysSince <= 90) {
+    quarterlyTrajectory = "new";
+  } else if (daysSince > 90) {
+    quarterlyTrajectory = "dormant";
+  } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct >= 15) {
+    quarterlyTrajectory = "accelerating";
+  } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct <= -15) {
+    quarterlyTrajectory = "decelerating";
+  } else {
+    quarterlyTrajectory = "steady";
+  }
+
   return {
     accountName: tracking.accountName,
     salesRep: health?.account.salesRep,
@@ -329,6 +355,11 @@ export function projectSingleAccount(
     projectedOrderCount90,
     trendTrajectory,
     momentumMultiplier,
+    paceLast3Months,
+    pacePrior3Months,
+    quarterlyPaceDeltaPct,
+    quarterlyPaceDeltaBtls,
+    quarterlyTrajectory,
     churnScore,
     churnTier,
     churnProbabilityPct,

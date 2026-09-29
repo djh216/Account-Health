@@ -26,6 +26,9 @@ export type ProductAccountPlacement = {
   firstOrderDate: string;
   lastOrderDate: string;
   shareOfProductPct: number;
+  paceLast3Months: number;
+  pacePrior3Months: number;
+  quarterlyPaceDeltaPct: number | null;
 };
 
 export type ProductSlowingAlert = {
@@ -58,6 +61,13 @@ export type ProductSummary = {
   historicalVolume: number;
   velocityDeltaPct: number | null;
   trajectory: ProductTrajectory;
+  paceLast3Months: number;
+  pacePrior3Months: number;
+  revenueLast3Months: number;
+  revenuePrior3Months: number;
+  quarterlyPaceDeltaPct: number | null;
+  quarterlyPaceDeltaBtls: number;
+  quarterlyTrajectory: ProductTrajectory;
   topAccounts: ProductAccountPlacement[];
 };
 
@@ -92,6 +102,8 @@ export const PRODUCT_PALETTE = [
   "#047857", // emerald-700
 ];
 
+const PERIOD_DAYS = 28;
+
 /**
  * Calculates time-series trend data and analytics summaries for all individual products.
  */
@@ -117,6 +129,11 @@ export function buildProductTrendData({
   topPerformer: ProductSummary | null;
   topGrowing: ProductSummary | null;
   atRiskProduct: ProductSummary | null;
+  topGrowingQuarterly: ProductSummary | null;
+  coolingQuarterly: ProductSummary | null;
+  portfolioPaceLast3Months: number;
+  portfolioPacePrior3Months: number;
+  portfolioQuarterlyPaceDeltaPct: number | null;
   peakPeriod: { label: string; bottles: number; revenue: number } | null;
   avgMonthlyBottles: number;
 } {
@@ -136,9 +153,15 @@ export function buildProductTrendData({
     cutoffDate = subMonths(asOfDate, 12);
   }
 
-  // Windows for trajectory: recent month vs prior month
-  const recentStart = subMonths(asOfDate, 1);
-  const priorStart = subMonths(asOfDate, 2);
+  // Windows for trajectory:
+  // Short-term: recent 28 days vs prior 28 days
+  const recentStart = subDays(asOfDate, PERIOD_DAYS);
+  const priorStart = subDays(asOfDate, PERIOD_DAYS * 2);
+
+  // 3-Month Macro Pace: last 90 days vs prior 90 days (180d to 90d ago)
+  const THREE_MONTH_DAYS = 90;
+  const recent3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS);
+  const prior3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS * 2);
 
   // Group all valid orders by product
   const productOrderMap = new Map<string, Order[]>();
@@ -160,9 +183,21 @@ export function buildProductTrendData({
     let totalRevenue = 0;
     let recentVolume = 0;
     let priorVolume = 0;
+    let paceLast3Months = 0;
+    let pacePrior3Months = 0;
+    let revenueLast3Months = 0;
+    let revenuePrior3Months = 0;
+
     const accountMap = new Map<
       string,
-      { bottles: number; revenue: number; orderCount: number; dates: string[] }
+      {
+        bottles: number;
+        revenue: number;
+        orderCount: number;
+        dates: string[];
+        paceLast3Months: number;
+        pacePrior3Months: number;
+      }
     >();
 
     const sortedOrders = [...pOrders].sort((a, b) => a.date.localeCompare(b.date));
@@ -177,26 +212,43 @@ export function buildProductTrendData({
 
       const orderDate = parseISO(order.date.slice(0, 10));
       if (!isNaN(orderDate.getTime())) {
+        // 28-day window
         if (orderDate >= recentStart && orderDate <= asOfDate) {
           recentVolume += btls;
         } else if (orderDate >= priorStart && orderDate < recentStart) {
           priorVolume += btls;
         }
+
+        // 3-Month (90-day) window
+        if (orderDate >= recent3MonthsStart && orderDate <= asOfDate) {
+          paceLast3Months += btls;
+          revenueLast3Months += rev;
+        } else if (orderDate >= prior3MonthsStart && orderDate < recent3MonthsStart) {
+          pacePrior3Months += btls;
+          revenuePrior3Months += rev;
+        }
       }
 
       const accName = order.accountName || "Unknown Account";
+      const isRecent3M = !isNaN(orderDate.getTime()) && orderDate >= recent3MonthsStart && orderDate <= asOfDate;
+      const isPrior3M = !isNaN(orderDate.getTime()) && orderDate >= prior3MonthsStart && orderDate < recent3MonthsStart;
+
       const accExisting = accountMap.get(accName);
       if (accExisting) {
         accExisting.bottles += btls;
         accExisting.revenue += rev;
         accExisting.orderCount += 1;
         accExisting.dates.push(order.date);
+        if (isRecent3M) accExisting.paceLast3Months += btls;
+        if (isPrior3M) accExisting.pacePrior3Months += btls;
       } else {
         accountMap.set(accName, {
           bottles: btls,
           revenue: rev,
           orderCount: 1,
           dates: [order.date],
+          paceLast3Months: isRecent3M ? btls : 0,
+          pacePrior3Months: isPrior3M ? btls : 0,
         });
       }
     }
@@ -205,6 +257,15 @@ export function buildProductTrendData({
     const topAccounts: ProductAccountPlacement[] = Array.from(accountMap.entries())
       .map(([accName, info]) => {
         info.dates.sort();
+        let quarterlyPaceDeltaPct: number | null = null;
+        if (info.pacePrior3Months > 0) {
+          quarterlyPaceDeltaPct = Math.round(
+            ((info.paceLast3Months - info.pacePrior3Months) / info.pacePrior3Months) * 100,
+          );
+        } else if (info.paceLast3Months > 0 && info.pacePrior3Months === 0) {
+          quarterlyPaceDeltaPct = 100;
+        }
+
         return {
           accountName: accName,
           bottles: info.bottles,
@@ -213,6 +274,9 @@ export function buildProductTrendData({
           firstOrderDate: info.dates[0] ?? "",
           lastOrderDate: info.dates.at(-1) ?? "",
           shareOfProductPct: totalBottles > 0 ? (info.bottles / totalBottles) * 100 : 0,
+          paceLast3Months: info.paceLast3Months,
+          pacePrior3Months: info.pacePrior3Months,
+          quarterlyPaceDeltaPct,
         };
       })
       .sort((a, b) => b.bottles - a.bottles);
@@ -227,7 +291,7 @@ export function buildProductTrendData({
       avgBottlesPerMonth = Math.round(totalBottles / monthsSpan);
     }
 
-    // Trajectory calculation
+    // 28-day Trajectory calculation
     let velocityDeltaPct: number | null = null;
     if (priorVolume > 0) {
       velocityDeltaPct = ((recentVolume - priorVolume) / priorVolume) * 100;
@@ -253,6 +317,37 @@ export function buildProductTrendData({
       trajectory = "steady";
     }
 
+    // 3-Month Macro Pace calculation
+    let quarterlyPaceDeltaPct: number | null = null;
+    if (pacePrior3Months > 0) {
+      quarterlyPaceDeltaPct = Math.round(
+        ((paceLast3Months - pacePrior3Months) / pacePrior3Months) * 100,
+      );
+    } else if (paceLast3Months > 0 && pacePrior3Months === 0) {
+      quarterlyPaceDeltaPct = 100;
+    }
+    const quarterlyPaceDeltaBtls = paceLast3Months - pacePrior3Months;
+
+    const isNewQuarterly = firstDateObj
+      ? differenceInCalendarDays(asOfDate, firstDateObj) <= 90
+      : false;
+    const isDormantQuarterly = lastDateObj
+      ? differenceInCalendarDays(asOfDate, lastDateObj) > 90
+      : true;
+
+    let quarterlyTrajectory: ProductTrajectory = "steady";
+    if (isNewQuarterly) {
+      quarterlyTrajectory = "new";
+    } else if (isDormantQuarterly) {
+      quarterlyTrajectory = "dormant";
+    } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct >= 15) {
+      quarterlyTrajectory = "accelerating";
+    } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct <= -15) {
+      quarterlyTrajectory = "decelerating";
+    } else {
+      quarterlyTrajectory = "steady";
+    }
+
     allSummaries.push({
       productName: pName,
       totalBottles,
@@ -268,6 +363,13 @@ export function buildProductTrendData({
       historicalVolume: totalBottles,
       velocityDeltaPct,
       trajectory,
+      paceLast3Months,
+      pacePrior3Months,
+      revenueLast3Months,
+      revenuePrior3Months,
+      quarterlyPaceDeltaPct,
+      quarterlyPaceDeltaBtls,
+      quarterlyTrajectory,
       topAccounts,
     });
   }
@@ -402,6 +504,30 @@ export function buildProductTrendData({
     .sort((a, b) => (a.velocityDeltaPct ?? 0) - (b.velocityDeltaPct ?? 0));
   const atRiskProduct = deceleratingSummaries[0] || null;
 
+  // Top growing quarterly (highest positive 3-month pace delta with at least 6 bottles in last 3M)
+  const growingQuarterlySummaries = allSummaries
+    .filter((s) => s.quarterlyTrajectory === "accelerating" && s.paceLast3Months >= 6)
+    .sort((a, b) => (b.quarterlyPaceDeltaPct ?? 0) - (a.quarterlyPaceDeltaPct ?? 0));
+  const topGrowingQuarterly = growingQuarterlySummaries[0] || null;
+
+  // Cooling quarterly (steepest negative 3-month pace delta with at least 6 bottles in prior 3M)
+  const coolingQuarterlySummaries = allSummaries
+    .filter((s) => s.quarterlyTrajectory === "decelerating" && s.pacePrior3Months >= 6)
+    .sort((a, b) => (a.quarterlyPaceDeltaPct ?? 0) - (b.quarterlyPaceDeltaPct ?? 0));
+  const coolingQuarterly = coolingQuarterlySummaries[0] || null;
+
+  // Portfolio-wide 3-month pace
+  const portfolioPaceLast3Months = allSummaries.reduce((acc, s) => acc + s.paceLast3Months, 0);
+  const portfolioPacePrior3Months = allSummaries.reduce((acc, s) => acc + s.pacePrior3Months, 0);
+  let portfolioQuarterlyPaceDeltaPct: number | null = null;
+  if (portfolioPacePrior3Months > 0) {
+    portfolioQuarterlyPaceDeltaPct = Math.round(
+      ((portfolioPaceLast3Months - portfolioPacePrior3Months) / portfolioPacePrior3Months) * 100,
+    );
+  } else if (portfolioPaceLast3Months > 0 && portfolioPacePrior3Months === 0) {
+    portfolioQuarterlyPaceDeltaPct = 100;
+  }
+
   return {
     data: timePoints,
     productSummaries: allSummaries,
@@ -412,13 +538,18 @@ export function buildProductTrendData({
     topPerformer,
     topGrowing,
     atRiskProduct,
+    topGrowingQuarterly,
+    coolingQuarterly,
+    portfolioPaceLast3Months,
+    portfolioPacePrior3Months,
+    portfolioQuarterlyPaceDeltaPct,
     peakPeriod,
     avgMonthlyBottles,
   };
 }
 
 /**
- * Detects wine products whose reorder volume or sales velocity has slowed significantly over the last month.
+ * Detects wine products whose reorder volume or sales velocity has slowed significantly over the last 28 days.
  */
 export function detectSlowingProductAlerts(
   summaries: ProductSummary[],
@@ -426,10 +557,10 @@ export function detectSlowingProductAlerts(
   const alerts: ProductSlowingAlert[] = [];
 
   for (const s of summaries) {
-    // Only evaluate wines with established sales history (at least 3 bottles in prior monthly cycle or multiple orders)
+    // Only evaluate wines with established sales history (at least 3 bottles in prior 28-day cycle or multiple orders)
     if (s.priorVolume < 3 && s.orderCount < 2) continue;
 
-    // Check if volume is slowing over the last month
+    // Check if volume is slowing over the last 28 days
     const delta = s.velocityDeltaPct ?? 0;
     const dropBtls = Math.max(0, s.priorVolume - s.recentVolume);
 
@@ -444,19 +575,19 @@ export function detectSlowingProductAlerts(
 
       if (s.recentVolume === 0 && s.priorVolume >= 4) {
         severity = "critical";
-        message = `Zero reorders in the last month (down from ${s.priorVolume} btls in the prior month).`;
+        message = `Zero reorders in the last 28 days (down from ${s.priorVolume} btls in the prior 28-day window).`;
         recommendation = `Target top previous purchasing accounts (${s.topAccounts.slice(0, 3).map((a) => a.accountName).join(", ") || "historical buyers"}) to check depletion levels and restock before losing placement.`;
       } else if (dropPct >= 50 && s.priorVolume >= 4) {
         severity = "critical";
-        message = `Severe monthly slowdown: volume plunged ${dropPct}% (${s.recentVolume} btls vs ${s.priorVolume} btls prior month).`;
+        message = `Severe 28-day slowdown: volume plunged ${dropPct}% (${s.recentVolume} btls vs ${s.priorVolume} btls prior).`;
         recommendation = `Review BTG (by-the-glass) and menu rotation status with key placements to determine if wine was rotated off the list.`;
       } else if (dropPct >= 25 || (s.recentVolume === 0 && s.priorVolume >= 2)) {
         severity = "warning";
-        message = `Notable monthly sales deceleration: volume down ${dropPct}% vs prior month.`;
+        message = `Notable 28-day sales deceleration: volume down ${dropPct}% vs prior 28-day period.`;
         recommendation = `Schedule staff re-tasting or distributor check-in with accounts carrying this SKU to revitalize momentum.`;
       } else if (dropPct >= 15) {
         severity = "watch";
-        message = `Mild monthly sales cooling: down ${dropPct}% compared to prior month.`;
+        message = `Mild 28-day sales cooling: down ${dropPct}% compared to prior 28 days.`;
         recommendation = `Monitor upcoming order cadence across active placements over the next 2-4 weeks.`;
       } else {
         continue;

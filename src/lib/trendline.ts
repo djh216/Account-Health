@@ -143,18 +143,69 @@ export function augmentDataWithTrendlines<T extends Record<string, unknown>>(
   }
 
   const augmentedData = data.map((item, idx) => {
-    const newItem = { ...item } as T & Record<string, number>;
+    const newItem: Record<string, unknown> = { ...item };
     for (const def of definitions) {
       const series = trendSeriesMap.get(def.trendKey);
       if (series && idx < series.length) {
         newItem[def.trendKey] = series[idx];
       }
     }
-    return newItem;
+    return newItem as T & Record<string, number>;
   });
 
   return {
     data: augmentedData,
     statsMap,
   };
+}
+
+/**
+ * Returns a sanitized key for trendline property mapping in Recharts to prevent dot-notation path splitting
+ */
+export function getSafeTrendKey(sourceKey: string): string {
+  return `trend__${sourceKey.replace(/\./g, "_")}`;
+}
+
+/**
+ * Provides a user-friendly confidence classification for R-squared goodness of fit
+ */
+export function describeFitConfidence(rSquared: number): {
+  label: string;
+  badgeClass: string;
+} {
+  if (rSquared >= 0.7) {
+    return {
+      label: "Strong Fit",
+      badgeClass:
+        "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800",
+    };
+  }
+  if (rSquared >= 0.4) {
+    return {
+      label: "Moderate Fit",
+      badgeClass:
+        "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-800",
+    };
+  }
+  return {
+    label: "Volatile / Weak Fit",
+    badgeClass:
+      "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800",
+  };
+}
+
+/**
+ * Formats trendline slope with unit and granularity period
+ */
+export function formatTrendSlope(
+  slope: number,
+  unit: string = "btls",
+  granularity: string = "monthly"
+): string {
+  const periodLabel = granularity === "weekly" ? "wk" : "mo";
+  const sign = slope > 0 ? "+" : "";
+  if (unit === "$") {
+    return `${sign}$${Math.abs(Math.round(slope)).toLocaleString()} / ${periodLabel}`;
+  }
+  return `${sign}${slope.toFixed(1)} ${unit} / ${periodLabel}`;
 }

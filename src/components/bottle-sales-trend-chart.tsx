@@ -12,6 +12,8 @@ import {
   YAxis,
 } from "recharts";
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   BarChart2,
   Check,
   Layers,
@@ -22,6 +24,13 @@ import {
   X,
   Sparkles,
 } from "lucide-react";
+import {
+  augmentDataWithTrendlines,
+  getSafeTrendKey,
+  describeFitConfidence,
+  formatTrendSlope,
+  type TrendlineDefinition,
+} from "@/lib/trendline";
 import { TrendPointAnalyticsDialog } from "@/components/trend-point-analytics-dialog";
 import type { ProductTrendPoint } from "@/lib/product-trends";
 import {
@@ -50,7 +59,46 @@ import {
   type TrendTimeframe,
 } from "@/lib/bottle-trends";
 import type { Order } from "@/lib/types";
+import type { ProductTrajectory } from "@/lib/product-trends";
 import { cn } from "@/lib/utils";
+
+function AccountTrajectoryPill({ trajectory }: { trajectory: ProductTrajectory }) {
+  switch (trajectory) {
+    case "accelerating":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+          <ArrowUpRight className="size-3" />
+          Accelerating (3M)
+        </span>
+      );
+    case "steady":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+          Steady (3M)
+        </span>
+      );
+    case "decelerating":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
+          <ArrowDownRight className="size-3" />
+          Decelerating (3M)
+        </span>
+      );
+    case "new":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-400">
+          <Sparkles className="size-3" />
+          New (&lt;90d)
+        </span>
+      );
+    case "dormant":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+          Dormant (&gt;90d)
+        </span>
+      );
+  }
+}
 
 type BottleSalesTrendChartProps = {
   orders: Order[];
@@ -121,15 +169,37 @@ export function BottleSalesTrendChart({
     });
   }, [orders, selectedAccounts, granularity, timeframe, asOf]);
 
+  const [showTrendlines, setShowTrendlines] = useState(true);
+
+  // Compute trendline definitions for aggregate and selected accounts
+  const trendlineDefs = useMemo<TrendlineDefinition[]>(() => {
+    const defs: TrendlineDefinition[] = [];
+    if (showAggregateLine) {
+      defs.push({ sourceKey: "totalBottles", trendKey: "totalBottles_trend" });
+    }
+    if (showIndividualLines) {
+      for (const acc of selectedAccounts) {
+        defs.push({ sourceKey: acc, trendKey: getSafeTrendKey(acc) });
+      }
+    }
+    return defs;
+  }, [showAggregateLine, showIndividualLines, selectedAccounts]);
+
+  const { data: chartDataWithTrendlines, statsMap: trendStatsMap } = useMemo(() => {
+    return augmentDataWithTrendlines(data, trendlineDefs);
+  }, [data, trendlineDefs]);
+
+  const aggregateTrendStats = trendStatsMap.get("totalBottles");
+
   const [selectedPoint, setSelectedPoint] = useState<ProductTrendPoint | null>(null);
   const [pointModalOpen, setPointModalOpen] = useState(false);
 
   const convertedPoints = useMemo((): ProductTrendPoint[] => {
-    return data.map((d) => ({
+    return chartDataWithTrendlines.map((d) => ({
       ...d,
       activeAccountsCount: 0,
     }));
-  }, [data]);
+  }, [chartDataWithTrendlines]);
 
   // Filtered account list for selector
   const filteredAccountsForSelection = useMemo(() => {
@@ -159,10 +229,29 @@ export function BottleSalesTrendChart({
     setSelectedAccounts([]);
   }
 
+  // Aggregate 3-Month Macro Pace across selected accounts
+  const aggregatePaceLast3Months = useMemo(() => {
+    return accountSummaries.reduce((sum, a) => sum + a.paceLast3Months, 0);
+  }, [accountSummaries]);
+
+  const aggregatePacePrior3Months = useMemo(() => {
+    return accountSummaries.reduce((sum, a) => sum + a.pacePrior3Months, 0);
+  }, [accountSummaries]);
+
+  const aggregatePaceDeltaPct = useMemo(() => {
+    if (aggregatePacePrior3Months > 0) {
+      return Math.round(
+        ((aggregatePaceLast3Months - aggregatePacePrior3Months) / aggregatePacePrior3Months) * 100,
+      );
+    }
+    if (aggregatePaceLast3Months > 0 && aggregatePacePrior3Months === 0) return 100;
+    return null;
+  }, [aggregatePaceLast3Months, aggregatePacePrior3Months]);
+
   return (
     <div className="space-y-6">
       {/* KPI Overview Cards */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="border-border">
           <CardHeader>
             <CardDescription className="flex items-center gap-1.5">
@@ -195,6 +284,45 @@ export function BottleSalesTrendChart({
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             ~{formatNumber(avgMonthlyBottles)} bottles/mo aggregate pace
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader>
+            <CardDescription className="flex items-center gap-1.5">
+              {aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct < 0 ? (
+                <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
+              ) : (
+                <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
+              )}
+              <span>3-Mo Pace vs Prior</span>
+            </CardDescription>
+            <CardTitle className="font-heading text-2xl flex items-baseline gap-2">
+              <span
+                className={cn(
+                  "tabular-nums",
+                  aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct > 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct < 0
+                    ? "text-rose-600 dark:text-rose-400"
+                    : "text-foreground",
+                )}
+              >
+                {aggregatePaceDeltaPct !== null
+                  ? `${aggregatePaceDeltaPct > 0 ? "+" : ""}${aggregatePaceDeltaPct}%`
+                  : "—"}
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">
+                {aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct > 0
+                  ? "expanding"
+                  : aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct < 0
+                  ? "slowing"
+                  : "steady"}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground tabular-nums">
+            {formatNumber(aggregatePaceLast3Months)} btls (last 3M) vs {formatNumber(aggregatePacePrior3Months)} (prior 3M)
           </CardContent>
         </Card>
 
@@ -323,6 +451,20 @@ export function BottleSalesTrendChart({
                 >
                   Account Lines
                 </Button>
+                <Button
+                  size="xs"
+                  variant={showTrendlines ? "default" : "outline"}
+                  onClick={() => setShowTrendlines((prev) => !prev)}
+                  className={cn(
+                    "text-xs gap-1.5 transition-colors font-medium",
+                    showTrendlines
+                      ? "bg-rose-950 text-rose-100 hover:bg-rose-900 border-rose-800"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <TrendingUp className="size-3" />
+                  Trendlines {showTrendlines ? "ON" : "OFF"}
+                </Button>
               </div>
             </div>
           </div>
@@ -372,17 +514,83 @@ export function BottleSalesTrendChart({
                 )}
               </div>
 
+              {/* Trendline Regression Analytics Banner */}
+              {showTrendlines && aggregateTrendStats && chartDataWithTrendlines.length >= 2 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200/60 bg-rose-50/50 p-2.5 text-xs dark:border-rose-950/40 dark:bg-rose-950/20">
+                  <div className="flex flex-wrap items-center gap-3.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-rose-900 dark:text-rose-100">
+                      <TrendingUp className="size-4 text-rose-600 dark:text-rose-400" />
+                      <span>Aggregate Trendline:</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <span>Velocity:</span>
+                      <span className="font-bold text-foreground tabular-nums">
+                        {formatTrendSlope(aggregateTrendStats.slope, "btls", granularity)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">Trajectory:</span>
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold",
+                          aggregateTrendStats.direction === "up"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                            : aggregateTrendStats.direction === "down"
+                            ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                            : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                        )}
+                      >
+                        {aggregateTrendStats.direction === "up" ? (
+                          <ArrowUpRight className="size-3" />
+                        ) : aggregateTrendStats.direction === "down" ? (
+                          <ArrowDownRight className="size-3" />
+                        ) : null}
+                        {aggregateTrendStats.direction === "up"
+                          ? "Expanding Pace"
+                          : aggregateTrendStats.direction === "down"
+                          ? "Contracting Pace"
+                          : "Steady"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <span>Confidence:</span>
+                      <span
+                        className={cn(
+                          "text-[11px] px-1.5 py-0.5 rounded font-medium border",
+                          describeFitConfidence(aggregateTrendStats.rSquared).badgeClass
+                        )}
+                      >
+                        R² = {(aggregateTrendStats.rSquared * 100).toFixed(0)}% ·{" "}
+                        {describeFitConfidence(aggregateTrendStats.rSquared).label}
+                      </span>
+                    </div>
+                    {aggregateTrendStats.pctChange !== null && (
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <span>Net Drift:</span>
+                        <span className="font-semibold text-foreground tabular-nums">
+                          {aggregateTrendStats.pctChange > 0 ? "+" : ""}
+                          {aggregateTrendStats.pctChange}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground hidden sm:block">
+                    Dashed lines represent linear regression fits
+                  </div>
+                </div>
+              )}
+
               <div className="h-96 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={data}
+                    data={chartDataWithTrendlines}
                     margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
                     onClick={(state) => {
                       const index = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : -1;
                       const raw =
                         index >= 0
-                          ? data[index]
-                          : data.find((d) => d.label === state?.activeLabel);
+                          ? chartDataWithTrendlines[index]
+                          : chartDataWithTrendlines.find((d) => d.label === state?.activeLabel);
                       if (raw) {
                         setSelectedPoint(
                           convertedPoints.find((p) => p.key === raw.key) || {
@@ -418,19 +626,26 @@ export function BottleSalesTrendChart({
                     <Tooltip
                       content={({ active, payload, label }) => {
                         if (!active || !payload || !payload.length) return null;
-                        const point = payload[0].payload as (typeof data)[0];
+                        const point = payload[0].payload as (typeof chartDataWithTrendlines)[0];
 
                         return (
-                          <div className="rounded-xl border border-border bg-popover/95 p-3.5 shadow-xl backdrop-blur-md text-xs min-w-[200px]">
+                          <div className="rounded-xl border border-border bg-popover/95 p-3.5 shadow-xl backdrop-blur-md text-xs min-w-[210px]">
                             <div className="border-b pb-2 mb-2">
                               <span className="font-heading font-semibold text-sm text-foreground block">
                                 {label}
                               </span>
                               <div className="flex items-center justify-between text-muted-foreground mt-0.5">
                                 <span>Aggregate Total:</span>
-                                <span className="font-bold text-foreground tabular-nums">
-                                  {formatNumber(point.totalBottles)} bottles
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-foreground tabular-nums">
+                                    {formatNumber(point.totalBottles)} bottles
+                                  </span>
+                                  {showTrendlines && typeof point.totalBottles_trend === "number" && (
+                                    <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium tabular-nums">
+                                      (trend: {formatNumber(Math.round(point.totalBottles_trend))})
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="flex items-center justify-between text-muted-foreground">
                                 <span>Revenue:</span>
@@ -452,28 +667,39 @@ export function BottleSalesTrendChart({
                                       ((point[b] as number) || 0) -
                                       ((point[a] as number) || 0),
                                   )
-                                  .map((acc) => (
-                                    <div
-                                      key={acc}
-                                      className="flex items-center justify-between gap-3 text-[11px]"
-                                    >
-                                      <div className="flex items-center gap-1.5 truncate">
-                                        <span
-                                          className="size-2 rounded-full shrink-0"
-                                          style={{
-                                            backgroundColor:
-                                              accountColorMap.get(acc) || "#9f1239",
-                                          }}
-                                        />
-                                        <span className="truncate text-muted-foreground">
-                                          {acc}
-                                        </span>
+                                  .map((acc) => {
+                                    const trendKey = getSafeTrendKey(acc);
+                                    const trendVal = point[trendKey] as number | undefined;
+                                    return (
+                                      <div
+                                        key={acc}
+                                        className="flex items-center justify-between gap-3 text-[11px]"
+                                      >
+                                        <div className="flex items-center gap-1.5 truncate">
+                                          <span
+                                            className="size-2 rounded-full shrink-0"
+                                            style={{
+                                              backgroundColor:
+                                                accountColorMap.get(acc) || "#9f1239",
+                                            }}
+                                          />
+                                          <span className="truncate text-muted-foreground">
+                                            {acc}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          <span className="font-semibold tabular-nums text-foreground">
+                                            {formatNumber(point[acc] as number)} btls
+                                          </span>
+                                          {showTrendlines && typeof trendVal === "number" && (
+                                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                                              ~{formatNumber(Math.round(trendVal))}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
-                                      <span className="font-semibold tabular-nums text-foreground shrink-0">
-                                        {formatNumber(point[acc] as number)} btls
-                                      </span>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                               </div>
                             )}
 
@@ -519,7 +745,7 @@ export function BottleSalesTrendChart({
                           strokeWidth: 2.5,
                           className: "cursor-pointer filter drop-shadow-md",
                           onClick: (dotProps: unknown) => {
-                            const raw = (dotProps as { payload?: (typeof data)[0] })?.payload;
+                            const raw = (dotProps as { payload?: (typeof chartDataWithTrendlines)[0] })?.payload;
                             if (raw) {
                               setSelectedPoint(
                                 convertedPoints.find((p) => p.key === raw.key) || {
@@ -531,6 +757,21 @@ export function BottleSalesTrendChart({
                             }
                           },
                         }}
+                      />
+                    )}
+
+                    {/* Aggregate Linear Trendline */}
+                    {showAggregateLine && showTrendlines && (
+                      <Line
+                        type="linear"
+                        dataKey="totalBottles_trend"
+                        name="Aggregate Trend (Linear Fit)"
+                        stroke="#be123c"
+                        strokeWidth={2}
+                        strokeDasharray="6 4"
+                        dot={false}
+                        activeDot={false}
+                        isAnimationActive={false}
                       />
                     )}
 
@@ -559,7 +800,7 @@ export function BottleSalesTrendChart({
                             strokeWidth: 2,
                             className: "cursor-pointer",
                             onClick: (dotProps: unknown) => {
-                              const raw = (dotProps as { payload?: (typeof data)[0] })?.payload;
+                              const raw = (dotProps as { payload?: (typeof chartDataWithTrendlines)[0] })?.payload;
                               if (raw) {
                                 setSelectedPoint(
                                   convertedPoints.find((p) => p.key === raw.key) || {
@@ -573,6 +814,29 @@ export function BottleSalesTrendChart({
                           }}
                         />
                       ))}
+
+                    {/* Individual Selected Account Linear Trendlines */}
+                    {showIndividualLines &&
+                      showTrendlines &&
+                      selectedAccounts.map((account) => {
+                        const trendKey = getSafeTrendKey(account);
+                        const color = accountColorMap.get(account) || "#2563eb";
+                        return (
+                          <Line
+                            key={trendKey}
+                            type="linear"
+                            dataKey={trendKey}
+                            name={`${account} (Trend)`}
+                            stroke={color}
+                            strokeWidth={1.5}
+                            strokeDasharray="4 4"
+                            strokeOpacity={0.65}
+                            dot={false}
+                            activeDot={false}
+                            isAnimationActive={false}
+                          />
+                        );
+                      })}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -748,6 +1012,8 @@ export function BottleSalesTrendChart({
                     <TableHead className="text-right">Avg Bottles / Order</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Monthly Velocity</TableHead>
+                    <TableHead className="text-right">3-Mo Pace vs Prior</TableHead>
+                    <TableHead className="text-right">Trajectory (3M)</TableHead>
                     <TableHead className="text-right">Orders</TableHead>
                     <TableHead className="text-right">Last Order Date</TableHead>
                   </TableRow>
@@ -784,6 +1050,31 @@ export function BottleSalesTrendChart({
                         </TableCell>
                         <TableCell className="text-right font-medium tabular-nums text-foreground">
                           {formatNumber(summary.avgBottlesPerMonth)} btls/mo
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <div className="flex flex-col items-end">
+                            <span
+                              className={cn(
+                                "font-semibold text-xs tabular-nums",
+                                summary.quarterlyPaceDeltaPct !== null && summary.quarterlyPaceDeltaPct > 0
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : summary.quarterlyPaceDeltaPct !== null && summary.quarterlyPaceDeltaPct < 0
+                                  ? "text-rose-600 dark:text-rose-400"
+                                  : "text-muted-foreground",
+                              )}
+                              title={`Pace: ${formatNumber(summary.paceLast3Months)} btls (last 3M) vs ${formatNumber(summary.pacePrior3Months)} btls (prior 3M)`}
+                            >
+                              {summary.quarterlyPaceDeltaPct !== null
+                                ? `${summary.quarterlyPaceDeltaPct > 0 ? "+" : ""}${summary.quarterlyPaceDeltaPct}%`
+                                : "—"}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                              {formatNumber(summary.paceLast3Months)} vs {formatNumber(summary.pacePrior3Months)} btls
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap">
+                          <AccountTrajectoryPill trajectory={summary.quarterlyTrajectory} />
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {summary.orderCount}
