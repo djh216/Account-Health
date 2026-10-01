@@ -1,6 +1,9 @@
 import { addDays, differenceInCalendarDays, parseISO } from "date-fns";
 import { normalizeName } from "./format";
-import { AVG_DAYS_PER_MONTH } from "./order-frequency";
+import {
+  AVG_DAYS_PER_MONTH,
+  averageOrdersPerMonthFromOrderDates,
+} from "./order-frequency";
 import type { AccountHealth, TerritoryValueTier } from "./types";
 import type { AccountOrderTracking, OrderAnalyticsSnapshot } from "./order-analytics";
 import type { ProductTrajectory } from "./product-trends";
@@ -104,7 +107,9 @@ export function projectSingleAccount(
     1,
     tracking.frequency.avgDaysBetweenOrders ?? health?.typicalIntervalDays ?? 28,
   );
-  const historicalOrdersPerMonth = Number((AVG_DAYS_PER_MONTH / typicalDays).toFixed(1));
+  const historicalOrdersPerMonth =
+    tracking.frequency.ordersPerMonth ??
+    Number((AVG_DAYS_PER_MONTH / typicalDays).toFixed(1));
 
   // Order Volume & Basket Size
   const orderEvents = Math.max(1, tracking.frequency.orderEventCount);
@@ -145,7 +150,13 @@ export function projectSingleAccount(
   }
 
   // 2. Velocity Drop Score (0 - 25 points)
-  const recentOrdersPerMonth = tracking.frequency.ordersPerMonth ?? 0;
+  const recentOrdersPerMonth =
+    averageOrdersPerMonthFromOrderDates(
+      tracking.orders.map((order) => order.date),
+      asOf,
+    ) ??
+    tracking.frequency.ordersPerMonth ??
+    0;
   const velocityRatio =
     historicalOrdersPerMonth > 0
       ? recentOrdersPerMonth / historicalOrdersPerMonth
@@ -215,7 +226,7 @@ export function projectSingleAccount(
   }
   if (deltaPct !== null && deltaPct <= -20) {
     churnSignals.push(
-      `Volume decline: ${deltaPct}% in recent 90 days vs prior period`,
+      `Volume decline: ${deltaPct}% in recent 45 days vs prior 45 days`,
     );
   }
   if (velocityRatio < 0.7 && historicalOrdersPerMonth > 0) {
@@ -247,22 +258,26 @@ export function projectSingleAccount(
         ? Math.round(historicalOrdersPerMonth * avgRevenuePerOrder * 0.5)
         : 0;
 
-  // --- Trend Trajectory & Momentum Factor ---
+  // --- Trend Trajectory & Momentum Factor (volume pace; churn tier is separate) ---
   let trendTrajectory: VolumeTrendTrajectory;
   let momentumMultiplier = 1.0;
 
-  if (churnTier === "high") {
-    trendTrajectory = "churning";
-    momentumMultiplier = 0.3; // severe discount
-  } else if (deltaPct !== null && deltaPct <= -25) {
+  if (deltaPct !== null && deltaPct <= -25) {
     trendTrajectory = "decelerating";
     momentumMultiplier = 0.7;
   } else if (deltaPct !== null && deltaPct >= 15) {
     trendTrajectory = "expanding";
     momentumMultiplier = 1.15;
+  } else if (churnTier === "high" && isOverdueForOrder) {
+    trendTrajectory = "churning";
+    momentumMultiplier = 0.3;
   } else {
     trendTrajectory = "steady";
-    momentumMultiplier = 1.0;
+    momentumMultiplier = churnTier === "high" ? 0.5 : 1.0;
+  }
+
+  if (churnTier === "high" && trendTrajectory === "expanding") {
+    momentumMultiplier = Math.min(momentumMultiplier, 0.85);
   }
 
   // --- Future Volume Projections ---

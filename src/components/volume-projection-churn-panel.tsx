@@ -41,6 +41,7 @@ import {
   formatDays,
   formatMoney,
   formatNumber,
+  formatPct,
   todayIso,
 } from "@/lib/format";
 import { downloadImminentChurnPdf } from "@/lib/report-export";
@@ -66,16 +67,16 @@ function ChurnBadge({
   switch (tier) {
     case "high":
       return (
-        <span className="inline-flex items-center gap-1 font-semibold text-rose-700 dark:text-rose-400">
+        <span className="inline-flex max-w-full flex-wrap items-center gap-1 font-semibold text-rose-700 dark:text-rose-400">
           <ShieldAlert className="size-3.5 shrink-0" />
-          <span>High ({score}%)</span>
+          <span className="break-words">High ({score}%)</span>
         </span>
       );
     case "moderate":
       return (
-        <span className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-400">
+        <span className="inline-flex max-w-full flex-wrap items-center gap-1 font-semibold text-amber-700 dark:text-amber-400">
           <AlertTriangle className="size-3.5 shrink-0" />
-          <span>Moderate ({score}%)</span>
+          <span className="break-words">Moderate ({score}%)</span>
         </span>
       );
     case "low":
@@ -610,16 +611,15 @@ export function VolumeProjectionChurnPanel({
           </div>
         </CardHeader>
 
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className="min-w-[1000px]">
+        <CardContent className="p-0 [&_[data-slot=table-container]]:overflow-x-hidden">
+          <Table className="table-fixed w-full min-w-0 text-xs [&_th]:whitespace-normal [&_th]:break-words [&_th]:align-top [&_th]:leading-snug [&_th]:px-1.5 [&_td]:whitespace-normal [&_td]:break-words [&_td]:align-top [&_td]:px-1.5">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[24%]">
+                  <TableHead className="w-[17%]">
                     <button
                       type="button"
                       onClick={() => toggleSort("accountName")}
-                      className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                      className="inline-flex max-w-full items-start gap-1 text-left font-medium hover:text-foreground"
                     >
                       Account
                       {sort.column === "accountName" ? (
@@ -630,11 +630,11 @@ export function VolumeProjectionChurnPanel({
                     </button>
                   </TableHead>
 
-                  <TableHead className="w-[14%]">
+                  <TableHead className="w-[12%]">
                     <button
                       type="button"
                       onClick={() => toggleSort("daysSinceLastOrder")}
-                      className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                      className="inline-flex max-w-full flex-wrap items-center justify-center gap-1 font-medium hover:text-foreground"
                     >
                       Cadence & Elapsed
                       {sort.column === "daysSinceLastOrder" ? (
@@ -645,11 +645,11 @@ export function VolumeProjectionChurnPanel({
                     </button>
                   </TableHead>
 
-                  <TableHead className="w-[14%]">
+                  <TableHead className="w-[12%]">
                     <button
                       type="button"
                       onClick={() => toggleSort("expectedNextOrderDate")}
-                      className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                      className="inline-flex max-w-full flex-wrap items-center justify-center gap-1 font-medium hover:text-foreground"
                     >
                       Next Order Target
                       {sort.column === "expectedNextOrderDate" ? (
@@ -660,7 +660,7 @@ export function VolumeProjectionChurnPanel({
                     </button>
                   </TableHead>
 
-                  <TableHead className="w-[12%] text-right">
+                  <TableHead className="w-[11%] text-right">
                     <button
                       type="button"
                       onClick={() =>
@@ -670,7 +670,7 @@ export function VolumeProjectionChurnPanel({
                             : "projectedVolume90",
                         )
                       }
-                      className="inline-flex w-full items-center justify-end gap-1 font-medium hover:text-foreground"
+                      className="inline-flex w-full max-w-full flex-wrap items-center justify-end gap-1 font-medium hover:text-foreground"
                     >
                       Proj. Vol ({horizon}d)
                       {sort.column === (horizon === 30 ? "projectedVolume30" : "projectedVolume90") ? (
@@ -681,11 +681,11 @@ export function VolumeProjectionChurnPanel({
                     </button>
                   </TableHead>
 
-                  <TableHead className="w-[11%]">
+                  <TableHead className="w-[12%]">
                     <button
                       type="button"
                       onClick={() => toggleSort("trendTrajectory")}
-                      className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                      className="inline-flex max-w-full flex-wrap items-center justify-center gap-1 font-medium hover:text-foreground"
                     >
                       Trajectory
                       {sort.column === "trendTrajectory" ? (
@@ -696,11 +696,11 @@ export function VolumeProjectionChurnPanel({
                     </button>
                   </TableHead>
 
-                  <TableHead className="w-[13%]">
+                  <TableHead className="w-[24%]">
                     <button
                       type="button"
                       onClick={() => toggleSort("churnScore")}
-                      className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                      className="inline-flex max-w-full flex-wrap items-center justify-center gap-1 font-medium hover:text-foreground"
                     >
                       Churn Risk
                       {sort.column === "churnScore" ? (
@@ -715,7 +715,7 @@ export function VolumeProjectionChurnPanel({
                     <button
                       type="button"
                       onClick={() => toggleSort("monthlyVolumeAtRisk")}
-                      className="inline-flex w-full items-center justify-end gap-1 font-medium hover:text-foreground"
+                      className="inline-flex w-full max-w-full flex-wrap items-center justify-end gap-1 font-medium hover:text-foreground"
                     >
                       Vol at Risk
                       {sort.column === "monthlyVolumeAtRisk" ? (
@@ -764,11 +764,11 @@ export function VolumeProjectionChurnPanel({
                         )}
                       >
                         {/* Account Name & Info */}
-                        <TableCell>
-                          <div className="font-medium text-foreground">
+                        <TableCell className="min-w-0">
+                          <div className="font-medium text-foreground break-words">
                             {account.accountName}
                           </div>
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                             {account.salesRep ? (
                               <span>{account.salesRep}</span>
                             ) : null}
@@ -826,7 +826,7 @@ export function VolumeProjectionChurnPanel({
                           </div>
                         </TableCell>
 
-                        {/* Trajectory & 3-Month Pace */}
+                        {/* Trajectory & 45-day volume pace */}
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
                             <TrajectoryBadge trajectory={account.trendTrajectory} />
@@ -839,11 +839,11 @@ export function VolumeProjectionChurnPanel({
                                   ? "text-rose-700 dark:text-rose-400"
                                   : "text-muted-foreground",
                               )}
-                              title={`3-month pace: ${account.paceLast3Months} btls (last 3M) vs ${account.pacePrior3Months} btls (prior 3M)`}
+                              title={`45-day volume: ${account.paceLast3Months} btls (recent) vs ${account.pacePrior3Months} btls (prior 45 days)`}
                             >
-                              3M:{" "}
+                              45d:{" "}
                               {account.quarterlyPaceDeltaPct !== null
-                                ? `${account.quarterlyPaceDeltaPct > 0 ? "+" : ""}${account.quarterlyPaceDeltaPct}%`
+                                ? formatPct(account.quarterlyPaceDeltaPct)
                                 : "—"}
                             </span>
                             <span className="text-[10px] text-muted-foreground tabular-nums">
@@ -853,9 +853,12 @@ export function VolumeProjectionChurnPanel({
                         </TableCell>
 
                         {/* Churn Risk Score */}
-                        <TableCell>
+                        <TableCell className="min-w-0">
                           <ChurnBadge tier={account.churnTier} score={account.churnScore} />
-                          <span className="block text-[11px] text-muted-foreground break-words mt-0.5" title={account.churnSignals[0]}>
+                          <span
+                            className="mt-0.5 block text-[11px] leading-snug text-muted-foreground break-words"
+                            title={account.churnSignals[0]}
+                          >
                             {account.churnSignals[0]}
                           </span>
                         </TableCell>
@@ -881,7 +884,6 @@ export function VolumeProjectionChurnPanel({
                 )}
               </TableBody>
             </Table>
-          </div>
         </CardContent>
       </Card>
     </div>

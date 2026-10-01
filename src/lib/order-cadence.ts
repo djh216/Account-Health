@@ -41,8 +41,8 @@ export function daysPastTypicalFrequency(
   daysSinceOrder: number | null,
   intervalDays: number | null,
 ): number | null {
-  if (daysSinceOrder === null) return null;
-  return daysSinceOrder - resolveTypicalIntervalDays(intervalDays);
+  if (daysSinceOrder === null || intervalDays === null) return null;
+  return daysSinceOrder - intervalDays;
 }
 
 export function riskFromOrderCadence(input: {

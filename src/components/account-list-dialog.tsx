@@ -13,10 +13,13 @@ import {
   accountTypeLabel,
   formatDate,
   formatDays,
+  formatIntervalDays,
   formatMoney,
   formatNumber,
   formatPct,
+  normalizeName,
 } from "@/lib/format";
+import type { LastOrderGap } from "@/lib/order-analytics";
 import type { AccountHealth } from "@/lib/types";
 
 function trendClass(item: AccountHealth): string {
@@ -35,6 +38,7 @@ export function AccountListDialog({
   showHistory = false,
   emptyMessage = "No accounts in this group right now.",
   onSelectAccount,
+  orderGaps,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -44,20 +48,25 @@ export function AccountListDialog({
   showHistory?: boolean;
   emptyMessage?: string;
   onSelectAccount: (accountId: string) => void;
+  orderGaps?: Map<string, LastOrderGap>;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100vh-1.5rem)] w-[min(64rem,calc(100vw-1.5rem))] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent className="flex h-[min(90vh,calc(100vh-2rem))] w-[min(90rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none md:max-w-none">
         <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
           <DialogTitle className="font-heading text-2xl">{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <div className="max-h-[min(34rem,calc(100vh-10rem))] overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {accounts.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">{emptyMessage}</p>
           ) : (
             <ul className="space-y-2.5">
-              {accounts.map((item) => (
+              {accounts.map((item) => {
+                const orderGap =
+                  orderGaps?.get(item.account.id) ??
+                  orderGaps?.get(normalizeName(item.account.name));
+                return (
                 <li key={item.account.id}>
                   <button
                     type="button"
@@ -95,6 +104,15 @@ export function AccountListDialog({
                             : "No order date"}
                         </span>
                       </span>
+                      {orderGap ? (
+                        <span>
+                          Prior order:{" "}
+                          <span className="text-foreground">
+                            {formatDate(orderGap.priorOrderDate)} ·{" "}
+                            {formatIntervalDays(orderGap.daysBetween)} between orders
+                          </span>
+                        </span>
+                      ) : null}
                       <span>
                         Last visit:{" "}
                         <span className="text-foreground">
@@ -128,7 +146,8 @@ export function AccountListDialog({
                     </div>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>

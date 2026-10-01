@@ -59,7 +59,15 @@ export type UploadedReport = {
 };
 
 export type HealthFactor = {
-  key: "recency" | "trend" | "coverage" | "consistency" | "relationship";
+  key:
+    | "recency"
+    | "trend"
+    | "coverage"
+    | "consistency"
+    | "frequency"
+    | "relationship"
+    | "volume"
+    | "pace";
   label: string;
   score: number;
   weight: number;

@@ -214,7 +214,10 @@ export function AccountDetail({
               {orderTracking ? (
                 <div className="space-y-4 xl:overflow-y-auto xl:pl-1">
                   <h3 className="font-heading text-lg">Order tracking</h3>
-                  <AccountTrackingSummary tracking={orderTracking} />
+                  <AccountTrackingSummary
+                    tracking={orderTracking}
+                    accountHealth={account}
+                  />
                   {orderTracking.products.length > 0 ? (
                     <div className="space-y-2">
                       <p className="text-sm font-medium">Product mix</p>

@@ -1,10 +1,12 @@
 import { differenceInCalendarDays, parseISO, subDays } from "date-fns";
 import { normalizeName } from "./format";
+import { hasSpecifiedProduct } from "./order-analytics";
 import {
   typicalFrequencyDaysFromOrderDates,
   AVG_DAYS_PER_MONTH,
 } from "./order-frequency";
 import { daysPastTypicalFrequency } from "./order-cadence";
+import { orderEventCountFromOrders } from "./order-weeks";
 import type { AccountHealth, Order, TerritoryValueTier } from "./types";
 
 export type FrequencyAlertSeverity = "critical" | "warning" | "watch";
@@ -70,7 +72,9 @@ export function detectOrderFrequencyDrops(
 
   for (const health of accounts) {
     const { account } = health;
-    const accountOrders = ordersByAccount.get(normalizeName(account.name)) ?? [];
+    const accountOrders = (ordersByAccount.get(normalizeName(account.name)) ?? []).filter(
+      hasSpecifiedProduct,
+    );
 
     // Determine typical interval in days
     let typicalDays = health.typicalIntervalDays;
@@ -114,12 +118,12 @@ export function detectOrderFrequencyDrops(
       const date = parseISO(order.date.slice(0, 10));
       return date >= recentStart90 && date <= asOfDate;
     });
-    const uniqueRecentDates = new Set(recentOrders.map((o) => o.date.slice(0, 10)));
+    const recentOrderEvents = orderEventCountFromOrders(recentOrders);
     const actualOrders90 =
       health.mode === "history"
         ? health.orderCount90
-        : uniqueRecentDates.size > 0
-          ? uniqueRecentDates.size
+        : recentOrderEvents > 0
+          ? recentOrderEvents
           : daysSince <= 90
             ? 1
             : 0;
@@ -225,13 +229,10 @@ export function detectOrderFrequencyDrops(
       (sum, o) => sum + (o.cases || 0) * 12,
       0,
     );
-    const uniqueOrderDatesCount = Math.max(
-      1,
-      new Set(accountOrders.map((o) => o.date)).size,
-    );
+    const orderEventCount = Math.max(1, orderEventCountFromOrders(accountOrders));
     const avgBottlesPerOrder =
       accountOrders.length > 0
-        ? Math.round(totalAccountBottles / uniqueOrderDatesCount)
+        ? Math.round(totalAccountBottles / orderEventCount)
         : 24;
 
     const bottlesAtRisk = Math.round(

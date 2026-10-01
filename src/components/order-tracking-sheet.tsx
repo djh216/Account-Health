@@ -110,7 +110,7 @@ export function AccountTrackingSheet({
 
   return (
     <Dialog open={Boolean(tracking)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100vh-1.5rem)] w-[min(96rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent className="flex max-h-[calc(100vh-1.5rem)] w-[min(96rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none md:max-w-none">
         {tracking ? (
           <>
             <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
@@ -141,7 +141,11 @@ export function AccountTrackingSheet({
               <div className="min-w-0 space-y-4 xl:overflow-y-auto xl:pr-1">
                 {cadence ? <OrderCadenceAlert cadence={cadence} /> : null}
 
-                <AccountTrackingSummary tracking={tracking} compact />
+                <AccountTrackingSummary
+                  tracking={tracking}
+                  accountHealth={accountHealth}
+                  compact
+                />
 
                 {projection ? (
                   <div className="rounded-xl border border-border bg-card p-3.5 space-y-3 text-xs">
@@ -305,14 +309,13 @@ export function RestaurantTrackingSheet({
                     value={formatOrderFrequency(frequency.avgDaysBetweenOrders)}
                     hint={
                       frequency.ordersPerMonth
-                        ? `${frequency.ordersPerMonth.toFixed(1)} orders / month`
+                        ? `${frequency.ordersPerMonth} orders / month (lifetime)`
                         : undefined
                     }
                   />
                   <Stat
                     label="Total orders"
                     value={String(frequency.orderEventCount)}
-                    hint={`${frequency.lineCount} product lines`}
                   />
                   <Stat
                     label="Last order"
@@ -415,12 +418,11 @@ export function ProductTrackingSheet({
                   <Stat
                     label="Total volume"
                     value={formatNumber(catalog.volume)}
-                    hint={`${formatNumber(catalog.avgVolumePerLine)} avg per line`}
+                    hint={`${formatNumber(catalog.avgVolumePerLine)} avg per purchase`}
                   />
                   <Stat
                     label="Restaurants"
                     value={String(catalog.restaurantCount)}
-                    hint={`${catalog.lineCount} order lines`}
                   />
                   <Stat
                     label="Last purchased"
@@ -479,9 +481,11 @@ export function ProductTrackingSheet({
 
 export function AccountTrackingSummary({
   tracking,
+  accountHealth,
   compact = false,
 }: {
   tracking: AccountOrderTracking;
+  accountHealth?: AccountHealth | null;
   compact?: boolean;
 }) {
   const { frequency } = tracking;
@@ -523,16 +527,16 @@ export function AccountTrackingSummary({
           hint={`${formatNumber(tracking.volumeRecent90)} recent · ${formatNumber(tracking.volumePrior90)} prior 45d`}
         />
         <Stat
-          label="Frequency change (45d)"
+          label="Frequency change"
           value={formatFrequencyDeltaDays(tracking.frequencyDeltaDays)}
-          hint="Recent 45d cadence vs prior 45d (days)"
+          hint="Change in typical frequency after the latest order (weekly events)"
         />
         <Stat
           label="Order frequency"
           value={formatOrderFrequency(frequency.avgDaysBetweenOrders)}
           hint={
             frequency.ordersPerMonth
-              ? `${frequency.ordersPerMonth.toFixed(1)} orders / month`
+              ? `${frequency.ordersPerMonth} orders / month (lifetime)`
               : undefined
           }
         />
@@ -540,6 +544,15 @@ export function AccountTrackingSummary({
           label="Last order"
           value={formatDate(frequency.lastOrderDate)}
           hint={`${frequency.daysSinceLastOrder} days ago`}
+        />
+        <Stat
+          label="Last visit"
+          value={formatDate(accountHealth?.lastVisitDate ?? null)}
+          hint={
+            accountHealth?.daysSinceVisit != null
+              ? formatDays(accountHealth.daysSinceVisit)
+              : "No visit on file"
+          }
         />
         <Stat
           label="Products"
@@ -812,7 +825,7 @@ function ProductCadenceTable({
                   onClick={() => onSelectProduct?.(row.product)}
                   title={`Click to view individual orders for ${row.product}`}
                 >
-                  <TableCell className="font-medium text-primary hover:underline break-words min-w-[180px]" title={row.product}>
+                  <TableCell className="align-top font-medium whitespace-normal break-words text-primary hover:underline" title={row.product}>
                     {row.product}
                   </TableCell>
                   <TableCell className="whitespace-normal">
@@ -917,7 +930,7 @@ function ProductChangesTable({
                 onClick={() => onSelectProduct?.(row.product)}
                 title={`Click to view individual orders for ${row.product}`}
               >
-                <TableCell className="font-medium text-primary hover:underline break-words min-w-[180px]" title={row.product}>
+                <TableCell className="align-top font-medium whitespace-normal break-words text-primary hover:underline" title={row.product}>
                   {row.product}
                 </TableCell>
                 <TableCell className="whitespace-normal">

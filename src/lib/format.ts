@@ -1,6 +1,12 @@
 import { format, parseISO } from "date-fns";
 import type { AccountType, ReportKind, RiskLevel } from "./types";
 
+function formatSignedFrequencyDays(value: number): string {
+  if (value > 0) return `+${value}d`;
+  if (value < 0) return `${value}d`;
+  return "0d";
+}
+
 export function formatMoney(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -18,17 +24,18 @@ export function formatNumber(value: number, digits = 0): string {
 
 export function formatFrequencyDeltaDays(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "—";
-  if (value === 0) return "Unchanged";
+  const signed = formatSignedFrequencyDays(value);
+  if (value === 0) return `Unchanged (${signed})`;
   const days = Math.abs(value);
-  if (value < 0) return `Shortened ${days} day${days === 1 ? "" : "s"}`;
-  return `Lengthened ${days} day${days === 1 ? "" : "s"}`;
+  const label = value < 0 ? "Shortened" : "Lengthened";
+  return `${label} ${days} day${days === 1 ? "" : "s"} (${signed})`;
 }
 
 export function frequencyDeltaTone(value: number | null): "shortened" | "lengthened" | "neutral" | "unknown" {
   if (value === null || Number.isNaN(value)) return "unknown";
+  if (value === 0) return "neutral";
   if (value < 0) return "shortened";
-  if (value > 0) return "lengthened";
-  return "neutral";
+  return "lengthened";
 }
 
 export function formatPct(value: number | null): string {

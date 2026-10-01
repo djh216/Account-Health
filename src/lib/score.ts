@@ -1,9 +1,15 @@
 import { differenceInCalendarDays, parseISO, subDays } from "date-fns";
 import { clamp, normalizeName, todayIso } from "./format";
 import {
+  averageOrdersPerMonthFromOrderDates,
+  averageOrdersPerMonthLifetimeFromOrderDates,
+  FREQUENCY_DELTA_UNCHANGED_DAYS,
+  latestOrderGapComparison,
   typicalFrequencyDaysFromOrderDates,
 } from "./order-frequency";
 import { orderCadenceStatus, riskFromOrderCadence, daysPastTypicalFrequency, RISK_AT_RISK_MIN_DAYS, RISK_HEALTHY_GRACE_DAYS } from "./order-cadence";
+import { ANALYTICS_PERIOD_DAYS } from "./order-analytics";
+import { orderEventCountFromOrders, uniqueOrderWeekAnchorDates } from "./order-weeks";
 import type {
   Account,
   AccountHealth,
@@ -156,36 +162,84 @@ function coverageScore(
   return { score, detail: `${visitNote}${missNote}` };
 }
 
-function consistencyScore(
-  orderCount90: number,
-  orderCountPrior90: number,
-  interval: number | null,
+function bottleVolume(order: Order): number {
+  return order.cases > 0 ? order.cases : 1;
+}
+
+function volumeChangeScore(
+  recent: number,
+  prior: number,
+  windowDays: number,
 ): { score: number; detail: string } {
-  const expected = interval ? Math.max(1, Math.round(90 / interval)) : 3;
-  const ratio = orderCount90 / expected;
-  if (orderCount90 === 0) {
-    return { score: 10, detail: "Zero orders in the last 90 days." };
-  }
-  if (ratio >= 0.85) {
+  const bottles = (value: number) =>
+    `${Math.round(value).toLocaleString("en-US")} btls`;
+  if (prior <= 0 && recent <= 0) {
     return {
-      score: 90,
-      detail: `${orderCount90} orders in 90 days, near the expected ${expected}.`,
+      score: 18,
+      detail: `No bottle volume in the last ${windowDays} days or the ${windowDays} days before that.`,
     };
   }
-  if (ratio >= 0.55) {
+  if (prior <= 0) {
     return {
-      score: 64,
-      detail: `${orderCount90} orders in 90 days versus an expected ${expected}.`,
+      score: 78,
+      detail: `${bottles(recent)} in the last ${windowDays} days, with no prior ${windowDays}-day volume to compare.`,
     };
   }
-  const drop =
-    orderCountPrior90 > 0
-      ? `, down from ${orderCountPrior90} in the prior period`
-      : "";
-  return {
-    score: 30,
-    detail: `Only ${orderCount90} order${orderCount90 === 1 ? "" : "s"} in 90 days${drop}. Expected about ${expected}.`,
-  };
+  const delta = ((recent - prior) / prior) * 100;
+  const comparison = `${bottles(recent)} in the last ${windowDays} days versus ${bottles(prior)} in the prior ${windowDays} (${Math.round(delta)}%).`;
+  if (delta >= 15) return { score: 95, detail: `Volume is up. ${comparison}` };
+  if (delta >= 0) return { score: 80, detail: `Volume is steady. ${comparison}` };
+  if (delta >= -18) return { score: 62, detail: `Volume is down. ${comparison}` };
+  if (delta >= -40) return { score: 38, detail: `Volume slipped. ${comparison}` };
+  return { score: 14, detail: `Volume dropped sharply. ${comparison}` };
+}
+
+function orderFrequencyChangeScore(
+  orders: Order[],
+  asOf: string,
+): { score: number; detail: string } {
+  const comparison = latestOrderGapComparison(orders, asOf);
+  if (!comparison) {
+    return {
+      score: 82,
+      detail:
+        "Not enough order events to measure how the latest order changed typical frequency (need 2+ weekly orders).",
+    };
+  }
+
+  const { currentFrequencyDays, priorFrequencyDays, deltaDays: rawDelta } = comparison;
+  const delta =
+    Math.abs(rawDelta) <= FREQUENCY_DELTA_UNCHANGED_DAYS ? 0 : rawDelta;
+  const gapNote = `Typical frequency moved from ${priorFrequencyDays} to ${currentFrequencyDays} days after the latest order.`;
+  if (delta <= -7) return { score: 95, detail: `Ordering more often. ${gapNote}` };
+  if (delta < 0) return { score: 88, detail: `Ordering a little more often. ${gapNote}` };
+  if (delta <= 2) return { score: 82, detail: `Order spacing is steady. ${gapNote}` };
+  if (delta <= 7) return { score: 58, detail: `Ordering slowed — gap lengthened by ${delta} days. ${gapNote}` };
+  if (delta <= 14) return { score: 34, detail: `Ordering slowed — gap lengthened by ${delta} days. ${gapNote}` };
+  return { score: 14, detail: `Ordering slowed — gap lengthened by ${delta} days. ${gapNote}` };
+}
+
+function overallVolumeScore(volume: number): { score: number; detail: string } {
+  const bottles = `${Math.round(volume).toLocaleString("en-US")} bottles all time`;
+  if (volume <= 0) return { score: 8, detail: "No bottle volume on file." };
+  if (volume < 100) return { score: 28, detail: `Low overall volume. ${bottles}.` };
+  if (volume < 400) return { score: 48, detail: `Modest overall volume. ${bottles}.` };
+  if (volume < 1000) return { score: 64, detail: `Solid overall volume. ${bottles}.` };
+  if (volume < 2500) return { score: 78, detail: `Strong overall volume. ${bottles}.` };
+  if (volume < 5000) return { score: 88, detail: `High overall volume. ${bottles}.` };
+  return { score: 96, detail: `Top overall volume. ${bottles}.` };
+}
+
+function ordersPerMonthScore(ordersPerMonth: number | null): { score: number; detail: string } {
+  if (ordersPerMonth === null || ordersPerMonth <= 0) {
+    return { score: 15, detail: "No order history on file." };
+  }
+  const rate = `${ordersPerMonth.toFixed(1)} orders per month over account history`;
+  if (ordersPerMonth < 0.5) return { score: 32, detail: `Ordering rarely. ${rate}.` };
+  if (ordersPerMonth < 1) return { score: 50, detail: `Ordering less than monthly. ${rate}.` };
+  if (ordersPerMonth < 2) return { score: 68, detail: `Ordering about monthly. ${rate}.` };
+  if (ordersPerMonth < 4) return { score: 84, detail: `Ordering several times a month. ${rate}.` };
+  return { score: 95, detail: `Ordering often. ${rate}.` };
 }
 
 function relationshipScore(
@@ -549,9 +603,13 @@ export function scoreAccount(
   const revenue90 = recentOrders.reduce((sum, order) => sum + order.revenue, 0);
   const revenuePrior90 = priorOrders.reduce((sum, order) => sum + order.revenue, 0);
   const cases90 = recentOrders.reduce((sum, order) => sum + order.cases, 0);
-  const interval = typicalInterval(accountOrders.map((order) => order.date), asOf);
+  const cadenceOrderDates = accountOrders
+    .filter((order) => Boolean(order.product?.trim()))
+    .map((order) => order.date);
+  const interval = typicalInterval(cadenceOrderDates, asOf);
   const snapshotMode =
     accountOrders.length <= 1 || !accountOrders.some((order) => order.revenue > 0);
+  const hasOrderHistory = uniqueOrderWeekAnchorDates(accountOrders).length > 1;
 
   const visitsWithoutOrder = recentVisits.filter((visit) => {
     const visitDate = toDate(visit.date);
@@ -562,6 +620,22 @@ export function scoreAccount(
     });
   }).length;
 
+  const periodStart = subDays(asOfDate, ANALYTICS_PERIOD_DAYS);
+  const priorPeriodStart = subDays(asOfDate, ANALYTICS_PERIOD_DAYS * 2);
+  const historyOrders = accountOrders.filter((order) => Boolean(order.product?.trim()));
+  const periodOrders = historyOrders.filter((order) => {
+    const date = toDate(order.date);
+    return date >= periodStart && date <= asOfDate;
+  });
+  const priorPeriodOrders = historyOrders.filter((order) => {
+    const date = toDate(order.date);
+    return date >= priorPeriodStart && date < periodStart;
+  });
+  const periodVolume = periodOrders.reduce((sum, order) => sum + bottleVolume(order), 0);
+  const priorPeriodVolume = priorPeriodOrders.reduce(
+    (sum, order) => sum + bottleVolume(order),
+    0,
+  );
   const recency = recencyScore(daysSinceOrder, interval);
   const coverage = coverageScore(
     daysSinceVisit,
@@ -570,10 +644,22 @@ export function scoreAccount(
     snapshotMode,
   );
   const trend = trendScore(revenue90, revenuePrior90);
-  const consistency = consistencyScore(recentOrders.length, priorOrders.length, interval);
+  const volumeChange = volumeChangeScore(
+    periodVolume,
+    priorPeriodVolume,
+    ANALYTICS_PERIOD_DAYS,
+  );
+  const frequencyChange = orderFrequencyChangeScore(historyOrders, asOf);
+  const allTimeVolume = historyOrders.reduce((sum, order) => sum + bottleVolume(order), 0);
+  const monthlyOrders = averageOrdersPerMonthLifetimeFromOrderDates(
+    historyOrders.map((order) => order.date),
+    asOf,
+  );
+  const overallVolume = overallVolumeScore(allTimeVolume);
+  const orderPace = ordersPerMonthScore(monthlyOrders);
   const relationship = relationshipScore(daysSinceOrder, daysSinceVisit);
 
-  const factors: HealthFactor[] = snapshotMode
+  const factors: HealthFactor[] = !hasOrderHistory && snapshotMode
     ? [
         {
           key: "recency",
@@ -602,29 +688,43 @@ export function scoreAccount(
           key: "recency",
           label: "Order recency",
           score: recency.score,
-          weight: 0.35,
+          weight: 0.25,
           detail: recency.detail,
         },
         {
+          key: "volume",
+          label: "Overall volume",
+          score: overallVolume.score,
+          weight: 0.2,
+          detail: overallVolume.detail,
+        },
+        {
+          key: "pace",
+          label: "Orders per month",
+          score: orderPace.score,
+          weight: 0.15,
+          detail: orderPace.detail,
+        },
+        {
           key: "trend",
-          label: "Volume trend",
-          score: trend.score,
-          weight: 0.25,
-          detail: trend.detail,
+          label: "Volume change",
+          score: volumeChange.score,
+          weight: 0.15,
+          detail: volumeChange.detail,
+        },
+        {
+          key: "frequency",
+          label: "Order frequency change",
+          score: frequencyChange.score,
+          weight: 0.15,
+          detail: frequencyChange.detail,
         },
         {
           key: "coverage",
           label: "Visit coverage",
           score: coverage.score,
-          weight: 0.2,
+          weight: 0.1,
           detail: coverage.detail,
-        },
-        {
-          key: "consistency",
-          label: "Order cadence",
-          score: consistency.score,
-          weight: 0.2,
-          detail: consistency.detail,
         },
       ];
 
@@ -667,8 +767,8 @@ export function scoreAccount(
     revenue90,
     revenuePrior90,
     revenueDeltaPct: trend.delta,
-    orderCount90: recentOrders.length,
-    orderCountPrior90: priorOrders.length,
+    orderCount90: orderEventCountFromOrders(recentOrders),
+    orderCountPrior90: orderEventCountFromOrders(priorOrders),
     typicalIntervalDays: interval,
     orderCadenceOverdue: cadence.orderCadenceOverdue,
     orderCadenceDaysOverdue: cadence.orderCadenceDaysOverdue,

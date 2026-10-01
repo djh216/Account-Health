@@ -1,9 +1,16 @@
 import { differenceInCalendarDays, format, parseISO, subDays } from "date-fns";
 import { normalizeName } from "./format";
 import {
-  averageOrdersPerMonthFromOrderDates,
+  averageOrdersPerMonthLifetimeFromOrderDates,
+  frequencyDeltaFromLatestOrderGap,
   typicalFrequencyDaysFromOrderDates,
 } from "./order-frequency";
+import {
+  orderEventCountFromOrders,
+  orderWeekKey,
+  uniqueOrderWeekAnchorDates,
+  uniqueOrderWeekAnchorDatesFromDays,
+} from "./order-weeks";
 import { daysPastTypicalFrequency, riskFromOrderCadence } from "./order-cadence";
 import type { Order, RiskLevel } from "./types";
 
@@ -150,6 +157,9 @@ export type AccountOrderTracking = {
     prior: number;
     before: number | null;
   };
+  healthScore?: number | null;
+  /** All-time territory value rank (1 = highest volume). */
+  territoryRank?: number | null;
 };
 
 export type AccountTrackingSortKey =
@@ -160,7 +170,9 @@ export type AccountTrackingSortKey =
   | "frequencyDeltaDays"
   | "volumeDeltaPct"
   | "lastOrderDate"
-  | "orderFrequency";
+  | "orderFrequency"
+  | "healthScore"
+  | "territoryRank";
 
 export type RestaurantFrequencySortKey =
   | "accountName"
@@ -286,6 +298,13 @@ export function sortAccountTrackingRows(
           a.frequency.avgDaysBetweenOrders,
           b.frequency.avgDaysBetweenOrders,
         );
+      case "healthScore":
+        return compareNullableNumbers(a.healthScore ?? null, b.healthScore ?? null);
+      case "territoryRank": {
+        const rankA = a.territoryRank ?? Number.MAX_SAFE_INTEGER;
+        const rankB = b.territoryRank ?? Number.MAX_SAFE_INTEGER;
+        return compareNumbers(rankA, rankB);
+      }
     }
   });
 }
@@ -327,37 +346,52 @@ function analyticsOrders(orders: Order[]): Order[] {
   return orders.filter(hasSpecifiedProduct);
 }
 
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1] + sorted[mid]) / 2
-    : sorted[mid];
-}
-
-function medianIntervalDays(dates: string[]): number | null {
-  if (dates.length < 2) return null;
-  const unique = [...new Set(dates.map((date) => date.slice(0, 10)))].sort();
-  const gaps: number[] = [];
-  for (let i = 1; i < unique.length; i++) {
-    const gap = differenceInCalendarDays(
-      parseISO(unique[i]),
-      parseISO(unique[i - 1]),
-    );
-    if (gap > 0) gaps.push(gap);
-  }
-  const med = median(gaps);
-  if (med === null) return null;
-  return Math.max(1, Math.round(med));
-}
-
 function uniqueOrderDates(orders: Order[]): string[] {
   return [...new Set(orders.map((order) => order.date.slice(0, 10)))].sort();
 }
 
+export type LastOrderGap = {
+  priorOrderDate: string;
+  daysBetween: number;
+};
+
+/** Calendar days between each account's latest order date and the order date before it. */
+export function lastOrderGapsByAccount(orders: Order[]): Map<string, LastOrderGap> {
+  const datesByKey = new Map<string, { dates: Set<string>; keys: Set<string> }>();
+
+  for (const order of orders) {
+    const day = order.date.slice(0, 10);
+    const primary = order.accountId || normalizeName(order.accountName);
+    let bucket = datesByKey.get(primary);
+    if (!bucket) {
+      bucket = {
+        dates: new Set(),
+        keys: new Set([primary, normalizeName(order.accountName)]),
+      };
+      datesByKey.set(primary, bucket);
+    }
+    bucket.dates.add(day);
+    if (order.accountId) bucket.keys.add(order.accountId);
+    bucket.keys.add(normalizeName(order.accountName));
+  }
+
+  const gaps = new Map<string, LastOrderGap>();
+  for (const bucket of datesByKey.values()) {
+    const sorted = uniqueOrderWeekAnchorDatesFromDays([...bucket.dates]);
+    const last = sorted.at(-1);
+    const prior = sorted.at(-2);
+    if (!last || !prior) continue;
+    const gap: LastOrderGap = {
+      priorOrderDate: prior,
+      daysBetween: differenceInCalendarDays(parseISO(last), parseISO(prior)),
+    };
+    for (const key of bucket.keys) gaps.set(key, gap);
+  }
+  return gaps;
+}
+
 function ordersPerMonth(orderDates: string[], asOf: string): number | null {
-  return averageOrdersPerMonthFromOrderDates(orderDates, asOf);
+  return averageOrdersPerMonthLifetimeFromOrderDates(orderDates, asOf);
 }
 
 function typicalFrequencyForOrders(orderDates: string[], asOf: string): number | null {
@@ -367,7 +401,7 @@ function typicalFrequencyForOrders(orderDates: string[], asOf: string): number |
 function volumeDeltaPct(recent: number, prior: number): number | null {
   if (prior <= 0 && recent <= 0) return null;
   if (prior <= 0) return null;
-  return ((recent - prior) / prior) * 100;
+  return Math.round(((recent - prior) / prior) * 100);
 }
 
 const PERIOD_WINDOW_DAYS = 45;
@@ -424,7 +458,7 @@ export function listNewAccountsWithRecentOrders(
     if (!isNewAccountWithRecentOrder(orders, accountName, asOf, windowDays)) continue;
 
     const accountOrders = ordersForAccountName(orders, accountName);
-    const orderDates = [...new Set(accountOrders.map((order) => order.date.slice(0, 10)))].sort();
+    const calendarDates = uniqueOrderDates(accountOrders);
     const recentOrders = accountOrders.filter((order) => {
       const date = parseISO(order.date.slice(0, 10));
       return date >= windowStart && date <= asOfDate;
@@ -433,9 +467,9 @@ export function listNewAccountsWithRecentOrders(
     rows.push({
       accountName,
       accountId: accountOrders[0]?.accountId ?? "",
-      firstOrderDate: orderDates[0] ?? accountOrders.at(-1)!.date,
-      lastOrderDate: orderDates.at(-1) ?? accountOrders[0]!.date,
-      orderEventCount: orderDates.length,
+      firstOrderDate: calendarDates[0] ?? accountOrders.at(-1)!.date,
+      lastOrderDate: calendarDates.at(-1) ?? accountOrders[0]!.date,
+      orderEventCount: orderEventCountFromOrders(accountOrders),
       recentVolume: recentOrders.reduce((sum, order) => sum + lineVolume(order), 0),
       totalVolume: accountOrders.reduce((sum, order) => sum + lineVolume(order), 0),
     });
@@ -485,7 +519,7 @@ function accountOrderActivity(
       else hasOlder = true;
     }
 
-    const orderDates = [...new Set(accountOrders.map((order) => order.date.slice(0, 10)))].sort();
+    const calendarDates = uniqueOrderDates(accountOrders);
     const recentOrders = accountOrders.filter((order) => {
       const date = parseISO(order.date.slice(0, 10));
       return date >= windowStart && date <= asOfDate;
@@ -498,9 +532,9 @@ function accountOrderActivity(
       summary: {
         accountName: name,
         accountId: accountOrders[0]?.accountId ?? "",
-        firstOrderDate: orderDates[0] ?? accountOrders[0]!.date,
-        lastOrderDate: orderDates.at(-1) ?? accountOrders[0]!.date,
-        orderEventCount: orderDates.length,
+        firstOrderDate: calendarDates[0] ?? accountOrders[0]!.date,
+        lastOrderDate: calendarDates.at(-1) ?? accountOrders[0]!.date,
+        orderEventCount: orderEventCountFromOrders(accountOrders),
         recentVolume: recentOrders.reduce((sum, order) => sum + lineVolume(order), 0),
         totalVolume: accountOrders.reduce((sum, order) => sum + lineVolume(order), 0),
       },
@@ -563,19 +597,6 @@ function historicalPeriodDaysBeforeRecent(
   return differenceInCalendarDays(recentStart, parseISO(firstDate.slice(0, 10)));
 }
 
-function periodOrderFrequencyDays(orderEventCount: number): number | null {
-  if (orderEventCount <= 0) return null;
-  return Math.max(1, Math.round(PERIOD_WINDOW_DAYS / orderEventCount));
-}
-
-/** Positive = lengthened interval (ordering less often); negative = shortened. */
-function frequencyDeltaDays(recentOrderCount: number, priorOrderCount: number): number | null {
-  const recentFreq = periodOrderFrequencyDays(recentOrderCount);
-  const priorFreq = periodOrderFrequencyDays(priorOrderCount);
-  if (recentFreq === null || priorFreq === null) return null;
-  return recentFreq - priorFreq;
-}
-
 function classifyProductChange(
   recentVolume: number,
   priorVolume: number,
@@ -615,11 +636,11 @@ function buildMonthlyVolumeForAccount(accountOrders: Order[]): AccountMonthlyVol
 
   for (const row of monthMap.values()) {
     const monthOrders = accountOrders.filter((order) => order.date.startsWith(row.month));
-    row.orderEventCount = uniqueOrderDates(monthOrders).length;
+    row.orderEventCount = uniqueOrderWeekAnchorDates(monthOrders).length;
     row.products.sort();
   }
 
-  return [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
+  return [...monthMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
 
 type AccountTrackingContext = {
@@ -633,21 +654,31 @@ function buildFrequencyForAccount(
   asOf: string,
 ): RestaurantOrderFrequency {
   const asOfDate = parseISO(asOf);
-  const orderDates = uniqueOrderDates(accountOrders);
-  const firstOrderDate = orderDates[0] ?? accountOrders.at(-1)!.date;
-  const lastOrderDate = orderDates.at(-1) ?? accountOrders[0]!.date;
+  const calendarDates = uniqueOrderDates(accountOrders);
+  const weekAnchors = uniqueOrderWeekAnchorDates(accountOrders);
+  const firstOrderDate = calendarDates[0] ?? accountOrders.at(-1)!.date;
+  const lastOrderDate = calendarDates.at(-1) ?? accountOrders[0]!.date;
   const productsOrdered = [
     ...new Set(accountOrders.map((order) => productLabel(order))),
   ].sort();
   return {
     accountName,
-    orderEventCount: orderDates.length,
+    orderEventCount: weekAnchors.length,
     lineCount: accountOrders.length,
     firstOrderDate,
     lastOrderDate,
     daysSinceLastOrder: differenceInCalendarDays(asOfDate, parseISO(lastOrderDate)),
-    avgDaysBetweenOrders: typicalFrequencyForOrders(orderDates, asOf),
-    ordersPerMonth: ordersPerMonth(orderDates, asOf),
+    avgDaysBetweenOrders:
+      weekAnchors.length <= 1
+        ? null
+        : typicalFrequencyForOrders(
+            accountOrders.map((order) => order.date),
+            asOf,
+          ),
+    ordersPerMonth: ordersPerMonth(
+      accountOrders.map((order) => order.date),
+      asOf,
+    ),
     productsOrdered,
     productCount: productsOrdered.length,
     totalVolume: accountOrders.reduce((sum, order) => sum + lineVolume(order), 0),
@@ -666,20 +697,27 @@ function buildProductCadenceForAccount(
       const productOrders = accountOrders.filter(
         (order) => productLabel(order) === product,
       );
-      const orderDates = uniqueOrderDates(productOrders);
-      const firstOrdered = orderDates[0] ?? productOrders.at(-1)!.date;
-      const lastOrdered = orderDates.at(-1) ?? productOrders[0]!.date;
+      const calendarDates = uniqueOrderDates(productOrders);
+      const weekAnchors = uniqueOrderWeekAnchorDates(productOrders);
+      const firstOrdered = calendarDates[0] ?? productOrders.at(-1)!.date;
+      const lastOrdered = calendarDates.at(-1) ?? productOrders[0]!.date;
       const daysSinceLastOrder = differenceInCalendarDays(
         asOfDate,
         parseISO(lastOrdered.slice(0, 10)),
       );
-      const avgDaysBetweenOrders = typicalFrequencyForOrders(orderDates, asOf);
+      const avgDaysBetweenOrders =
+        weekAnchors.length <= 1
+          ? null
+          : typicalFrequencyForOrders(
+              productOrders.map((order) => order.date),
+              asOf,
+            );
 
       return {
         product,
         firstOrdered,
         lastOrdered,
-        orderEventCount: orderDates.length,
+        orderEventCount: weekAnchors.length,
         avgDaysBetweenOrders,
         daysSinceLastOrder,
         daysPastTypical: daysPastTypicalFrequency(
@@ -735,7 +773,7 @@ function buildProductsForAccount(
     const productOrders = accountOrders.filter(
       (order) => productLabel(order) === row.product,
     );
-    row.orderEventCount = uniqueOrderDates(productOrders).length;
+    row.orderEventCount = uniqueOrderWeekAnchorDates(productOrders).length;
   }
 
   return [...mixMap.values()].sort(
@@ -783,8 +821,6 @@ export function buildAccountOrderTracking(
     0,
   );
   const volumeAllTime = frequency.totalVolume;
-  const recentOrderEvents = uniqueOrderDates(recentOrders).length;
-  const priorOrderEvents = uniqueOrderDates(priorOrders).length;
 
   const recentByProduct = new Map<string, number>();
   for (const order of recentOrders) {
@@ -857,7 +893,7 @@ export function buildAccountOrderTracking(
     volumeBeforeRecent90,
     volumeAllTime,
     volumeDeltaPct: volumeDeltaPct(volumeRecent90, volumePrior90),
-    frequencyDeltaDays: frequencyDeltaDays(recentOrderEvents, priorOrderEvents),
+    frequencyDeltaDays: frequencyDeltaFromLatestOrderGap(accountOrders, asOf),
     productChanges,
     productCadence: buildProductCadenceForAccount(accountOrders, asOf),
     newProducts: productChanges.filter((row) => row.status === "new").map((row) => row.product),
@@ -973,21 +1009,31 @@ export function buildOrderAnalytics(
 
   const byFrequency: RestaurantOrderFrequency[] = [...ordersByRestaurant.entries()]
     .map(([accountName, accountOrders]) => {
-      const orderDates = uniqueOrderDates(accountOrders);
-      const firstOrderDate = orderDates[0] ?? accountOrders.at(-1)!.date;
-      const lastOrderDate = orderDates.at(-1) ?? accountOrders[0]!.date;
+      const calendarDates = uniqueOrderDates(accountOrders);
+      const weekAnchors = uniqueOrderWeekAnchorDates(accountOrders);
+      const firstOrderDate = calendarDates[0] ?? accountOrders.at(-1)!.date;
+      const lastOrderDate = calendarDates.at(-1) ?? accountOrders[0]!.date;
       const productsOrdered = [
         ...new Set(accountOrders.map((order) => productLabel(order))),
       ].sort();
       return {
         accountName,
-        orderEventCount: orderDates.length,
+        orderEventCount: weekAnchors.length,
         lineCount: accountOrders.length,
         firstOrderDate,
         lastOrderDate,
         daysSinceLastOrder: differenceInCalendarDays(asOfDate, parseISO(lastOrderDate)),
-        avgDaysBetweenOrders: typicalFrequencyForOrders(orderDates, asOf),
-        ordersPerMonth: ordersPerMonth(orderDates, asOf),
+        avgDaysBetweenOrders:
+          weekAnchors.length <= 1
+            ? null
+            : typicalFrequencyForOrders(
+                accountOrders.map((order) => order.date),
+                asOf,
+              ),
+        ordersPerMonth: ordersPerMonth(
+          accountOrders.map((order) => order.date),
+          asOf,
+        ),
         productsOrdered,
         productCount: productsOrdered.length,
         totalVolume: accountOrders.reduce((sum, order) => sum + lineVolume(order), 0),
@@ -1014,7 +1060,8 @@ export function buildOrderAnalytics(
 
   const productCatalog: ProductPurchaseTracking[] = [...ordersByProduct.entries()]
     .map(([product, productOrders]) => {
-      const orderDates = uniqueOrderDates(productOrders);
+      const calendarDates = uniqueOrderDates(productOrders);
+      const weekAnchors = uniqueOrderWeekAnchorDates(productOrders);
       const restaurants = [
         ...new Set(productOrders.map((order) => order.accountName)),
       ].sort();
@@ -1023,12 +1070,18 @@ export function buildOrderAnalytics(
         product,
         volume,
         lineCount: productOrders.length,
-        orderEventCount: orderDates.length,
+        orderEventCount: weekAnchors.length,
         restaurantCount: restaurants.length,
         restaurants,
-        firstOrdered: orderDates[0] ?? productOrders.at(-1)!.date,
-        lastOrdered: orderDates.at(-1) ?? productOrders[0]!.date,
-        avgDaysBetweenPurchases: medianIntervalDays(orderDates),
+        firstOrdered: calendarDates[0] ?? productOrders.at(-1)!.date,
+        lastOrdered: calendarDates.at(-1) ?? productOrders[0]!.date,
+        avgDaysBetweenPurchases:
+          weekAnchors.length <= 1
+            ? null
+            : typicalFrequencyForOrders(
+                productOrders.map((order) => order.date),
+                asOf,
+              ),
         avgVolumePerLine: productOrders.length > 0 ? volume / productOrders.length : 0,
       };
     })
@@ -1065,7 +1118,7 @@ export function buildOrderAnalytics(
       (order) =>
         order.accountName === row.accountName && productLabel(order) === row.product,
     );
-    row.orderEventCount = uniqueOrderDates(productOrders).length;
+    row.orderEventCount = uniqueOrderWeekAnchorDates(productOrders).length;
   }
 
   const byRestaurantProduct = [...mixMap.values()].sort(
@@ -1078,7 +1131,7 @@ export function buildOrderAnalytics(
   const restaurants = new Set(sorted.map((order) => order.accountName));
   const products = new Set(sorted.map((order) => productLabel(order)));
   const orderEvents = new Set(
-    sorted.map((order) => `${order.accountName}::${order.date.slice(0, 10)}`),
+    sorted.map((order) => `${order.accountName}::${orderWeekKey(order.date)}`),
   ).size;
 
   const byAccount = sortAccountTracking(

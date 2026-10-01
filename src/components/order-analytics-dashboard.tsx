@@ -1,15 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Grape, Search, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Grape, Upload } from "lucide-react";
 import { AccountListDialog } from "@/components/account-list-dialog";
 import { ClearDataButton } from "@/components/clear-data-button";
 import { ExportReportButton } from "@/components/export-report-button";
 import { PrintReportButton } from "@/components/print-report-button";
-import {
-  AccountTrackingSheet,
-  ProductTrackingSheet,
-} from "@/components/order-tracking-sheet";
+import { AccountTrackingSheet } from "@/components/order-tracking-sheet";
 import {
   AccountProductOrdersDialog,
   type AccountProductSelection,
@@ -29,14 +26,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -60,7 +49,6 @@ import {
   formatIntervalDays,
   formatMoney,
   formatNumber,
-  formatOrderFrequency,
   formatPct,
   frequencyDeltaTone,
   normalizeName,
@@ -80,8 +68,8 @@ import {
 } from "@/lib/order-cadence";
 import {
   buildOrderAnalytics,
-  getProductTracking,
   getRestaurantTracking,
+  lastOrderGapsByAccount,
   listNewAccountsWithRecentOrders,
   listRetainedAccounts,
   listReturningCustomers,
@@ -246,6 +234,7 @@ type AccountListDialogState = {
   description: string;
   accounts: AccountHealth[];
   emptyMessage?: string;
+  showPriorOrder?: boolean;
 };
 
 export function OrderAnalyticsDashboard() {
@@ -253,13 +242,8 @@ export function OrderAnalyticsDashboard() {
     useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [restaurantFilter, setRestaurantFilter] = useState("all");
-  const [productFilter, setProductFilter] = useState("all");
-  const [mixRestaurant, setMixRestaurant] = useState("all");
   const [selectedAccount, setSelectedAccount] =
     useState<AccountOrderTracking | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [selectedAccountProduct, setSelectedAccountProduct] =
     useState<AccountProductSelection | null>(null);
   const [accountListDialog, setAccountListDialog] = useState<AccountListDialogState | null>(
@@ -269,7 +253,7 @@ export function OrderAnalyticsDashboard() {
   const [accountSort, setAccountSort] = useState<{
     column: AccountTrackingSortKey;
     direction: SortDirection;
-  }>({ column: "orderFrequency", direction: "asc" });
+  }>({ column: "territoryRank", direction: "asc" });
   const [frequencySort, setFrequencySort] = useState<{
     column: RestaurantFrequencySortKey;
     direction: SortDirection;
@@ -296,6 +280,11 @@ export function OrderAnalyticsDashboard() {
         state.analysisAsOf ?? analytics.asOf,
       ),
     [state.orders, state.analysisAsOf, analytics.asOf],
+  );
+
+  const lastOrderGaps = useMemo(
+    () => lastOrderGapsByAccount(state.orders),
+    [state.orders],
   );
 
   const returningCustomers = useMemo(
@@ -400,11 +389,18 @@ export function OrderAnalyticsDashboard() {
   const sortedAccounts = useMemo(
     () =>
       sortAccountTrackingRows(
-        analytics.byAccount,
+        analytics.byAccount.map((row) => {
+          const health = healthByAccountName.get(normalizeName(row.accountName));
+          return {
+            ...row,
+            healthScore: health?.score ?? null,
+            territoryRank: health?.territoryRank ?? null,
+          };
+        }),
         accountSort.column,
         accountSort.direction,
       ),
-    [analytics.byAccount, accountSort],
+    [analytics.byAccount, accountSort, healthByAccountName],
   );
 
   const sortedFrequencyRows = useMemo(
@@ -424,7 +420,11 @@ export function OrderAnalyticsDashboard() {
         : {
             column,
             direction:
-              column === "accountName" || column === "orderFrequency" ? "asc" : "desc",
+              column === "accountName" ||
+              column === "orderFrequency" ||
+              column === "territoryRank"
+                ? "asc"
+                : "desc",
           },
     );
   }
@@ -441,38 +441,6 @@ export function OrderAnalyticsDashboard() {
     );
   }
 
-  const restaurants = useMemo(
-    () => [...new Set(analytics.orders.map((order) => order.accountName))].sort(),
-    [analytics.orders],
-  );
-
-  const products = useMemo(
-    () =>
-      [
-        ...new Set(
-          analytics.orders.map((order) => order.product!.trim()),
-        ),
-      ].sort(),
-    [analytics.orders],
-  );
-
-  const filteredOrders = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return analytics.orders.filter((order) => {
-      const product = order.product!.trim();
-      if (restaurantFilter !== "all" && order.accountName !== restaurantFilter) return false;
-      if (productFilter !== "all" && product !== productFilter) return false;
-      if (!needle) return true;
-      return [order.accountName, product, order.date]
-        .some((value) => value.toLowerCase().includes(needle));
-    });
-  }, [analytics.orders, query, restaurantFilter, productFilter]);
-
-  const filteredVolume = filteredOrders.reduce(
-    (sum, order) => sum + (order.cases > 0 ? order.cases : 1),
-    0,
-  );
-
   const selectedAccountTracking = selectedAccount
     ? getRestaurantTracking(analytics, selectedAccount.accountName)
     : null;
@@ -480,17 +448,6 @@ export function OrderAnalyticsDashboard() {
   const selectedAccountHealth = selectedAccount
     ? (healthByAccountName.get(normalizeName(selectedAccount.accountName)) ?? null)
     : null;
-
-  const productTracking = selectedProduct
-    ? getProductTracking(analytics, selectedProduct)
-    : null;
-
-  const productMixRows = useMemo(() => {
-    if (mixRestaurant === "all") return analytics.byRestaurantProduct;
-    return analytics.byRestaurantProduct.filter(
-      (row) => row.accountName === mixRestaurant,
-    );
-  }, [analytics.byRestaurantProduct, mixRestaurant]);
 
   function flash(message: string) {
     setToast(message);
@@ -538,7 +495,6 @@ export function OrderAnalyticsDashboard() {
               <ClearDataButton
                 onCleared={(message) => {
                   setSelectedAccount(null);
-                  setSelectedProduct(null);
                   flash(message);
                 }}
               />
@@ -631,7 +587,7 @@ export function OrderAnalyticsDashboard() {
               <Kpi
                 label="Total volume"
                 value={`${formatNumber(analytics.totals.totalVolume)} btls`}
-                hint="Total bottles across all order lines"
+                hint="Total bottles purchased"
               />
               <Kpi
                 label="Restaurants"
@@ -661,6 +617,7 @@ export function OrderAnalyticsDashboard() {
                     description: `Accounts that ordered in the last ${NEW_ACCOUNT_WINDOW_DAYS} days and also ordered before that window.`,
                     accounts: retainedAccountHealthRows,
                     emptyMessage: `No retained customers with orders in the last ${NEW_ACCOUNT_WINDOW_DAYS} days.`,
+                    showPriorOrder: true,
                   })
                 }
               />
@@ -697,7 +654,6 @@ export function OrderAnalyticsDashboard() {
                   ) : null}
                 </TabsTrigger>
                 <TabsTrigger value="frequency">Order frequency</TabsTrigger>
-                <TabsTrigger value="products">Products tracked</TabsTrigger>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
               </TabsList>
 
@@ -724,6 +680,20 @@ export function OrderAnalyticsDashboard() {
                               column="accountName"
                               sort={accountSort}
                               onSort={toggleAccountSort}
+                            />
+                            <SortableAccountHead
+                              label="Value rank"
+                              column="territoryRank"
+                              sort={accountSort}
+                              onSort={toggleAccountSort}
+                              className="text-right"
+                            />
+                            <SortableAccountHead
+                              label="Health score"
+                              column="healthScore"
+                              sort={accountSort}
+                              onSort={toggleAccountSort}
+                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Typical frequency"
@@ -782,6 +752,12 @@ export function OrderAnalyticsDashboard() {
                               onClick={() => setSelectedAccount(row)}
                             >
                               <TableCell className="font-medium">{row.accountName}</TableCell>
+                              <TableCell className="text-right tabular-nums text-muted-foreground">
+                                {row.territoryRank != null ? `#${row.territoryRank}` : "—"}
+                              </TableCell>
+                              <TableCell className="text-right font-semibold tabular-nums">
+                                {row.healthScore ?? "—"}
+                              </TableCell>
                               <TableCell className="tabular-nums">
                                 {formatIntervalDays(row.frequency.avgDaysBetweenOrders)}
                               </TableCell>
@@ -950,149 +926,6 @@ export function OrderAnalyticsDashboard() {
                 />
               </TabsContent>
 
-              <TabsContent value="products" className="space-y-4">
-                <Card>
-                  <CardHeader className="border-b">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                      <div>
-                        <CardTitle className="font-heading text-xl">
-                          Individual products ordered
-                        </CardTitle>
-                        <CardDescription>
-                          Every product purchased across your accounts, with repurchase
-                          frequency and which restaurants order it.
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Product</TableHead>
-                            <TableHead className="text-right">Volume</TableHead>
-                            <TableHead className="text-right">Lines</TableHead>
-                            <TableHead>Repurchase frequency</TableHead>
-                            <TableHead className="text-right">Restaurants</TableHead>
-                            <TableHead>Last ordered</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {analytics.productCatalog.map((row) => (
-                            <TableRow
-                              key={row.product}
-                              className="cursor-pointer"
-                              onClick={() => setSelectedProduct(row.product)}
-                            >
-                              <TableCell className="font-medium">{row.product}</TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {formatNumber(row.volume)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {row.lineCount}
-                              </TableCell>
-                              <TableCell>
-                                {formatOrderFrequency(row.avgDaysBetweenPurchases)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {row.restaurantCount}
-                              </TableCell>
-                              <TableCell>{formatDate(row.lastOrdered)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="border-b">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                      <div>
-                        <CardTitle className="font-heading text-xl">
-                          Product mix by restaurant
-                        </CardTitle>
-                        <CardDescription>
-                          Which individual products each restaurant orders and how
-                          much of their volume each product represents. Click any product
-                          row to view its orders with volume.
-                        </CardDescription>
-                      </div>
-                      <Select
-                        value={mixRestaurant}
-                        onValueChange={(value) => setMixRestaurant(value ?? "all")}
-                      >
-                        <SelectTrigger className="w-[220px]">
-                          <SelectValue placeholder="Restaurant" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All restaurants</SelectItem>
-                          {restaurants.map((name) => (
-                            <SelectItem key={name} value={name}>
-                              {name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Restaurant</TableHead>
-                            <TableHead>Product</TableHead>
-                            <TableHead className="text-right">Volume</TableHead>
-                            <TableHead className="text-right">Order events</TableHead>
-                            <TableHead className="text-right">Share</TableHead>
-                            <TableHead>Last ordered</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {productMixRows.map((row) => (
-                            <TableRow
-                              key={`${row.accountName}-${row.product}`}
-                              className="group cursor-pointer transition-colors hover:bg-primary/6"
-                              onClick={() =>
-                                setSelectedAccountProduct({
-                                  accountName: row.accountName,
-                                  product: row.product,
-                                })
-                              }
-                              title={`Click to view individual orders for ${row.product}`}
-                            >
-                              <TableCell className="font-medium text-foreground">
-                                {row.accountName}
-                              </TableCell>
-                              <TableCell>
-                                <span className="font-medium text-primary group-hover:underline">
-                                  {row.product}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums font-semibold">
-                                {formatNumber(row.volume)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {row.orderEventCount}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {Math.round(row.shareOfRestaurantVolumePct)}%
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatDate(row.lastOrdered)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
               <TabsContent value="overview" className="space-y-4">
                 <section className="grid gap-4 lg:grid-cols-2">
               <Card>
@@ -1126,7 +959,7 @@ export function OrderAnalyticsDashboard() {
                       <div className="flex items-baseline justify-between gap-3 text-sm">
                         <span className="font-medium">{row.accountName}</span>
                         <span className="tabular-nums text-muted-foreground">
-                          {formatNumber(row.volume)} · {row.orderCount} lines
+                          {formatNumber(row.volume)} btls
                         </span>
                       </div>
                       <VolumeBar
@@ -1156,7 +989,6 @@ export function OrderAnalyticsDashboard() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Month</TableHead>
-                          <TableHead className="text-right">Order lines</TableHead>
                           <TableHead className="text-right">Volume</TableHead>
                           <TableHead className="text-right">Revenue</TableHead>
                         </TableRow>
@@ -1165,9 +997,6 @@ export function OrderAnalyticsDashboard() {
                         {analytics.byMonth.map((row) => (
                           <TableRow key={row.month}>
                             <TableCell>{row.label}</TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {row.orderCount}
-                            </TableCell>
                             <TableCell className="text-right tabular-nums">
                               {formatNumber(row.volume)}
                             </TableCell>
@@ -1180,93 +1009,6 @@ export function OrderAnalyticsDashboard() {
                     </Table>
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="border-b">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <CardTitle className="font-heading text-xl">Order lines</CardTitle>
-                    <CardDescription>
-                      {filteredOrders.length} of {analytics.orders.length} lines ·{" "}
-                      {formatNumber(filteredVolume)} volume shown
-                    </CardDescription>
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                    <div className="relative min-w-[200px]">
-                      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        placeholder="Search restaurant or product"
-                        className="pl-8"
-                      />
-                    </div>
-                    <Select
-                      value={restaurantFilter}
-                      onValueChange={(value) => setRestaurantFilter(value ?? "all")}
-                    >
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Restaurant" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All restaurants</SelectItem>
-                        {restaurants.map((name) => (
-                          <SelectItem key={name} value={name}>
-                            {name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={productFilter}
-                      onValueChange={(value) => setProductFilter(value ?? "all")}
-                    >
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All products</SelectItem>
-                        {products.map((name) => (
-                          <SelectItem key={name} value={name}>
-                            {name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Restaurant</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead className="text-right">Volume</TableHead>
-                        <TableHead className="text-right">Revenue</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredOrders.map((order) => (
-                        <TableRow key={order.id}>
-                          <TableCell>{formatDate(order.date)}</TableCell>
-                          <TableCell className="font-medium">{order.accountName}</TableCell>
-                          <TableCell>{order.product ?? "—"}</TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatNumber(order.cases > 0 ? order.cases : 1)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {order.revenue > 0 ? formatMoney(order.revenue) : "—"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
               </CardContent>
             </Card>
               </TabsContent>
@@ -1300,26 +1042,10 @@ export function OrderAnalyticsDashboard() {
         description={accountListDialog?.description ?? ""}
         accounts={accountListDialog?.accounts ?? []}
         emptyMessage={accountListDialog?.emptyMessage}
+        orderGaps={accountListDialog?.showPriorOrder ? lastOrderGaps : undefined}
         onSelectAccount={(accountId) => {
           openAccountFromHealth(accountId);
           setAccountListDialog(null);
-        }}
-      />
-
-      <ProductTrackingSheet
-        catalog={productTracking?.catalog ?? null}
-        restaurantRows={
-          selectedProduct
-            ? analytics.byRestaurantProduct.filter(
-                (row) => row.product === selectedProduct,
-              )
-            : []
-        }
-        onOpenChange={(open) => {
-          if (!open) setSelectedProduct(null);
-        }}
-        onSelectAccountProduct={(accountName, product) => {
-          setSelectedAccountProduct({ accountName, product });
         }}
       />
 
