@@ -47,6 +47,8 @@ import {
   detectSlowingProductAlerts,
 } from "@/lib/product-trends";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
+import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
+import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import {
   accountTypeLabel,
   formatDate,
@@ -164,9 +166,14 @@ export function Dashboard() {
     [state.orders, state.analysisAsOf],
   );
 
+  const { ids: outOfStockIds } = useOutOfStockProducts();
   const productAlerts = useMemo(
-    () => detectSlowingProductAlerts(productTrends.productSummaries),
-    [productTrends.productSummaries],
+    () =>
+      excludeOutOfStock(
+        detectSlowingProductAlerts(productTrends.productSummaries),
+        outOfStockIds,
+      ),
+    [productTrends.productSummaries, outOfStockIds],
   );
 
   const criticalProductAlertsCount = useMemo(

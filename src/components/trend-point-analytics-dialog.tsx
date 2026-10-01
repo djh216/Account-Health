@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { format, parseISO, startOfMonth, startOfWeek } from "date-fns";
+import { format, isAfter, parseISO, startOfMonth, startOfWeek } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +58,7 @@ export type TrendPointAnalyticsDialogProps = {
   allPoints: ProductTrendPoint[];
   orders: Order[];
   granularity: ProductTrendGranularity;
+  asOf?: string;
   selectedProducts?: string[];
   focusedProduct?: string | null;
   onSelectFocusedProduct?: (productName: string | null) => void;
@@ -87,6 +88,7 @@ export function TrendPointAnalyticsDialog({
   allPoints,
   orders,
   granularity,
+  asOf,
   selectedProducts = [],
   focusedProduct = null,
   onSelectFocusedProduct,
@@ -205,6 +207,7 @@ export function TrendPointAnalyticsDialog({
     if (!orderDateStr) return false;
     const date = parseISO(orderDateStr.slice(0, 10));
     if (isNaN(date.getTime())) return false;
+    if (asOf && isAfter(date, parseISO(asOf.slice(0, 10)))) return false;
 
     if (granularity === "weekly") {
       const weekStart = startOfWeek(date, { weekStartsOn: 1 });
@@ -221,13 +224,13 @@ export function TrendPointAnalyticsDialog({
   const periodOrders = useMemo(() => {
     if (!point) return [];
     return orders.filter((o) => isOrderInKey(o.date, point.key));
-  }, [orders, point, granularity]);
+  }, [orders, point, granularity, asOf]);
 
   // Orders for prior period (for pacing comparison)
   const priorPeriodOrders = useMemo(() => {
     if (!prevPoint) return [];
     return orders.filter((o) => isOrderInKey(o.date, prevPoint.key));
-  }, [orders, prevPoint, granularity]);
+  }, [orders, prevPoint, granularity, asOf]);
 
   // If focused on an individual product, isolate its orders
   const focusedPeriodOrders = useMemo(() => {

@@ -12,6 +12,7 @@ import {
 } from "date-fns";
 import type { Order } from "./types";
 import { normalizeName } from "./format";
+import { calendarPaceWindow, rollingPaceWindow } from "./pace-windows";
 import type { ProductTrajectory } from "./product-trends";
 
 export type TrendGranularity = "monthly" | "weekly";
@@ -38,6 +39,11 @@ export type AccountBottleSummary = {
   firstOrderDate: string;
   lastOrderDate: string;
   avgBottlesPerMonth: number;
+  paceLastMonth: number;
+  pacePriorMonth: number;
+  monthlyPaceDeltaPct: number | null;
+  monthlyPaceDeltaBtls: number;
+  monthlyTrajectory: ProductTrajectory;
   paceLast3Months: number;
   pacePrior3Months: number;
   revenueLast3Months: number;
@@ -46,6 +52,43 @@ export type AccountBottleSummary = {
   quarterlyPaceDeltaBtls: number;
   quarterlyTrajectory: ProductTrajectory;
 };
+
+function paceDeltaPct(recent: number, prior: number): number | null {
+  if (prior > 0) {
+    return Math.round(((recent - prior) / prior) * 100);
+  }
+  if (recent > 0) return 100;
+  return null;
+}
+
+function classifyPaceTrajectory({
+  firstOrderDate,
+  lastOrderDate,
+  asOfDate,
+  windowDays,
+  paceDeltaPct: deltaPct,
+}: {
+  firstOrderDate: string;
+  lastOrderDate: string;
+  asOfDate: Date;
+  windowDays: number;
+  paceDeltaPct: number | null;
+}): ProductTrajectory {
+  const firstDate = firstOrderDate ? parseISO(firstOrderDate) : null;
+  const lastDate = lastOrderDate ? parseISO(lastOrderDate) : null;
+  const isNew = firstDate
+    ? differenceInCalendarDays(asOfDate, firstDate) <= windowDays
+    : false;
+  const isDormant = lastDate
+    ? differenceInCalendarDays(asOfDate, lastDate) > windowDays
+    : true;
+
+  if (isNew) return "new";
+  if (isDormant) return "dormant";
+  if (deltaPct !== null && deltaPct >= 15) return "accelerating";
+  if (deltaPct !== null && deltaPct <= -15) return "decelerating";
+  return "steady";
+}
 
 export const TREND_PALETTE = [
   "#9f1239", // rose-800 (wine burgundy)
@@ -87,7 +130,8 @@ export function buildBottleTrendData({
 } {
   const asOfDate = asOf ? parseISO(asOf) : new Date();
 
-  // Determine timeframe cutoff
+  // Snap to the start of the first week or month so a plotted bucket is complete.
+  // The current period still ends at asOf.
   let cutoffDate: Date | null = null;
   if (timeframe === "90d") {
     cutoffDate = subDays(asOfDate, 90);
@@ -95,6 +139,12 @@ export function buildBottleTrendData({
     cutoffDate = subMonths(asOfDate, 6);
   } else if (timeframe === "12m") {
     cutoffDate = subMonths(asOfDate, 12);
+  }
+  if (cutoffDate) {
+    cutoffDate =
+      granularity === "weekly"
+        ? startOfWeek(cutoffDate, { weekStartsOn: 1 })
+        : startOfMonth(cutoffDate);
   }
 
   const selectedSet = new Set(selectedAccounts.map((a) => normalizeName(a)));
@@ -178,10 +228,10 @@ export function buildBottleTrendData({
     }
   }
 
-  // Windows for trajectory: last 3 months (90 days) vs prior 3 months (90 to 180 days ago)
-  const THREE_MONTH_DAYS = 90;
-  const recent3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS);
-  const prior3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS * 2);
+  // One-month pace stays on calendar months, including the current month when it is incomplete.
+  // The longer pace is the last 90 days versus the prior 90 days.
+  const monthWindow = calendarPaceWindow(asOfDate, 1);
+  const quarterWindow = rollingPaceWindow(asOfDate, 90);
 
   // Valid orders up to asOf for account macro pace
   const accountMacroOrders = orders.filter((order) => {
@@ -206,6 +256,8 @@ export function buildBottleTrendData({
       orderCount: number;
       firstOrderDate: string;
       lastOrderDate: string;
+      paceLastMonth: number;
+      pacePriorMonth: number;
       paceLast3Months: number;
       pacePrior3Months: number;
       revenueLast3Months: number;
@@ -229,6 +281,8 @@ export function buildBottleTrendData({
         orderCount: 0,
         firstOrderDate: order.date,
         lastOrderDate: order.date,
+        paceLastMonth: 0,
+        pacePriorMonth: 0,
         paceLast3Months: 0,
         pacePrior3Months: 0,
         revenueLast3Months: 0,
@@ -246,7 +300,7 @@ export function buildBottleTrendData({
     if (order.date > item.lastOrderDate) item.lastOrderDate = order.date;
   }
 
-  // Calculate 3-month pace and prior 3-month pace across full history up to asOf
+  // Last 90 days versus the prior 90 days, across history up to asOf
   for (const order of accountMacroOrders) {
     const acc = order.accountName;
     const item = accountMap.get(acc);
@@ -256,10 +310,16 @@ export function buildBottleTrendData({
     const bottles = order.cases > 0 ? order.cases : 1;
     const revenue = order.revenue || 0;
 
-    if (orderDate >= recent3MonthsStart && orderDate <= asOfDate) {
+    if (orderDate >= monthWindow.currentStart && orderDate <= monthWindow.currentEnd) {
+      item.paceLastMonth += bottles;
+    } else if (orderDate >= monthWindow.priorStart && orderDate < monthWindow.currentStart) {
+      item.pacePriorMonth += bottles;
+    }
+
+    if (orderDate >= quarterWindow.currentStart && orderDate <= quarterWindow.currentEnd) {
       item.paceLast3Months += bottles;
       item.revenueLast3Months += revenue;
-    } else if (orderDate >= prior3MonthsStart && orderDate < recent3MonthsStart) {
+    } else if (orderDate >= quarterWindow.priorStart && orderDate < quarterWindow.currentStart) {
       item.pacePrior3Months += bottles;
       item.revenuePrior3Months += revenue;
     }
@@ -272,44 +332,32 @@ export function buildBottleTrendData({
         differenceInMonths(parseISO(item.lastOrderDate), parseISO(item.firstOrderDate)) + 1,
       );
 
+      const monthlyPaceDeltaBtls = item.paceLastMonth - item.pacePriorMonth;
+      const monthlyPaceDeltaPct = paceDeltaPct(item.paceLastMonth, item.pacePriorMonth);
       const quarterlyPaceDeltaBtls = item.paceLast3Months - item.pacePrior3Months;
-      let quarterlyPaceDeltaPct: number | null = null;
-      if (item.pacePrior3Months > 0) {
-        quarterlyPaceDeltaPct = Math.round(
-          ((item.paceLast3Months - item.pacePrior3Months) / item.pacePrior3Months) * 100,
-        );
-      } else if (item.paceLast3Months > 0 && item.pacePrior3Months === 0) {
-        quarterlyPaceDeltaPct = 100;
-      }
-
-      const firstDateObj = item.firstOrderDate ? parseISO(item.firstOrderDate) : null;
-      const lastDateObj = item.lastOrderDate ? parseISO(item.lastOrderDate) : null;
-      const isNewQuarterly = firstDateObj
-        ? differenceInCalendarDays(asOfDate, firstDateObj) <= 90
-        : false;
-      const isDormantQuarterly = lastDateObj
-        ? differenceInCalendarDays(asOfDate, lastDateObj) > 90
-        : true;
-
-      let quarterlyTrajectory: ProductTrajectory = "steady";
-      if (isNewQuarterly) {
-        quarterlyTrajectory = "new";
-      } else if (isDormantQuarterly) {
-        quarterlyTrajectory = "dormant";
-      } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct >= 15) {
-        quarterlyTrajectory = "accelerating";
-      } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct <= -15) {
-        quarterlyTrajectory = "decelerating";
-      } else {
-        quarterlyTrajectory = "steady";
-      }
+      const quarterlyPaceDeltaPct = paceDeltaPct(item.paceLast3Months, item.pacePrior3Months);
 
       return {
         ...item,
         avgBottlesPerMonth: Math.round(item.totalBottles / months),
+        monthlyPaceDeltaBtls,
+        monthlyPaceDeltaPct,
+        monthlyTrajectory: classifyPaceTrajectory({
+          firstOrderDate: item.firstOrderDate,
+          lastOrderDate: item.lastOrderDate,
+          asOfDate,
+          windowDays: 30,
+          paceDeltaPct: monthlyPaceDeltaPct,
+        }),
         quarterlyPaceDeltaBtls,
         quarterlyPaceDeltaPct,
-        quarterlyTrajectory,
+        quarterlyTrajectory: classifyPaceTrajectory({
+          firstOrderDate: item.firstOrderDate,
+          lastOrderDate: item.lastOrderDate,
+          asOfDate,
+          windowDays: 90,
+          paceDeltaPct: quarterlyPaceDeltaPct,
+        }),
       };
     })
     .sort((a, b) => b.totalBottles - a.totalBottles);

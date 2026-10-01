@@ -36,6 +36,8 @@ import {
 } from "@/lib/frequency-alerts";
 import type { ProductSlowingAlert } from "@/lib/product-trends";
 import { ExportReportButton } from "@/components/export-report-button";
+import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
+import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import { cn } from "@/lib/utils";
 
 type AlertCategory = "all" | "accounts" | "products";
@@ -43,7 +45,7 @@ type FilterTab = "all" | "critical" | "warning" | "acknowledged";
 
 export function NotificationSidebar({
   alerts,
-  productAlerts = [],
+  productAlerts: incomingProductAlerts = [],
   defaultCategory = "all",
   open,
   onOpenChange,
@@ -66,6 +68,11 @@ export function NotificationSidebar({
     getAcknowledgedAlertIds(),
   );
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { ids: outOfStockIds } = useOutOfStockProducts();
+  const productAlerts = useMemo(
+    () => excludeOutOfStock(incomingProductAlerts, outOfStockIds),
+    [incomingProductAlerts, outOfStockIds],
+  );
 
   // Toggle acknowledge/snooze for an alert
   function handleToggleAcknowledge(id: string) {

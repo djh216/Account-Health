@@ -62,42 +62,138 @@ import type { Order } from "@/lib/types";
 import type { ProductTrajectory } from "@/lib/product-trends";
 import { cn } from "@/lib/utils";
 
-function AccountTrajectoryPill({ trajectory }: { trajectory: ProductTrajectory }) {
+function AccountTrajectoryPill({
+  trajectory,
+  windowLabel,
+}: {
+  trajectory: ProductTrajectory;
+  windowLabel: "1M" | "90d";
+}) {
+  const ageLabel = windowLabel === "1M" ? "30d" : "90d";
   switch (trajectory) {
     case "accelerating":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
           <ArrowUpRight className="size-3" />
-          Accelerating (3M)
+          Accelerating ({windowLabel})
         </span>
       );
     case "steady":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          Steady (3M)
+          Steady ({windowLabel})
         </span>
       );
     case "decelerating":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
           <ArrowDownRight className="size-3" />
-          Decelerating (3M)
+          Decelerating ({windowLabel})
         </span>
       );
     case "new":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-400">
           <Sparkles className="size-3" />
-          New (&lt;90d)
+          New (&lt;{ageLabel})
         </span>
       );
     case "dormant":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-          Dormant (&gt;90d)
+          Dormant (&gt;{ageLabel})
         </span>
       );
   }
+}
+
+function paceDeltaPercent(recent: number, prior: number): number | null {
+  if (prior > 0) return Math.round(((recent - prior) / prior) * 100);
+  if (recent > 0) return 100;
+  return null;
+}
+
+function PaceSummaryCard({
+  label,
+  deltaPct,
+  detail,
+}: {
+  label: string;
+  deltaPct: number | null;
+  detail: string;
+}) {
+  const direction =
+    deltaPct !== null && deltaPct > 0
+      ? "expanding"
+      : deltaPct !== null && deltaPct < 0
+        ? "slowing"
+        : "steady";
+
+  return (
+    <Card className="border-border">
+      <CardHeader>
+        <CardDescription className="flex items-center gap-1.5">
+          {deltaPct !== null && deltaPct < 0 ? (
+            <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
+          ) : (
+            <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
+          )}
+          <span>{label}</span>
+        </CardDescription>
+        <CardTitle className="font-heading text-2xl flex items-baseline gap-2">
+          <span
+            className={cn(
+              "tabular-nums",
+              deltaPct !== null && deltaPct > 0
+                ? "text-emerald-600 dark:text-emerald-400"
+                : deltaPct !== null && deltaPct < 0
+                  ? "text-rose-600 dark:text-rose-400"
+                  : "text-foreground",
+            )}
+          >
+            {deltaPct !== null ? `${deltaPct > 0 ? "+" : ""}${deltaPct}%` : "—"}
+          </span>
+          <span className="text-xs font-normal text-muted-foreground">{direction}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-xs text-muted-foreground tabular-nums">{detail}</CardContent>
+    </Card>
+  );
+}
+
+function PaceComparisonCell({
+  deltaPct,
+  recent,
+  prior,
+  title,
+}: {
+  deltaPct: number | null;
+  recent: number;
+  prior: number;
+  title: string;
+}) {
+  return (
+    <TableCell className="text-right tabular-nums">
+      <div className="flex flex-col items-end">
+        <span
+          className={cn(
+            "font-semibold text-xs tabular-nums",
+            deltaPct !== null && deltaPct > 0
+              ? "text-emerald-600 dark:text-emerald-400"
+              : deltaPct !== null && deltaPct < 0
+                ? "text-rose-600 dark:text-rose-400"
+                : "text-muted-foreground",
+          )}
+          title={title}
+        >
+          {deltaPct !== null ? `${deltaPct > 0 ? "+" : ""}${deltaPct}%` : "—"}
+        </span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {formatNumber(recent)} vs {formatNumber(prior)} btls
+        </span>
+      </div>
+    </TableCell>
+  );
 }
 
 type BottleSalesTrendChartProps = {
@@ -229,7 +325,20 @@ export function BottleSalesTrendChart({
     setSelectedAccounts([]);
   }
 
-  // Aggregate 3-Month Macro Pace across selected accounts
+  const aggregatePaceLastMonth = useMemo(() => {
+    return accountSummaries.reduce((sum, a) => sum + a.paceLastMonth, 0);
+  }, [accountSummaries]);
+
+  const aggregatePacePriorMonth = useMemo(() => {
+    return accountSummaries.reduce((sum, a) => sum + a.pacePriorMonth, 0);
+  }, [accountSummaries]);
+
+  const aggregateMonthPaceDeltaPct = useMemo(
+    () => paceDeltaPercent(aggregatePaceLastMonth, aggregatePacePriorMonth),
+    [aggregatePaceLastMonth, aggregatePacePriorMonth],
+  );
+
+  // Aggregate 3-month pace across selected accounts
   const aggregatePaceLast3Months = useMemo(() => {
     return accountSummaries.reduce((sum, a) => sum + a.paceLast3Months, 0);
   }, [accountSummaries]);
@@ -238,20 +347,15 @@ export function BottleSalesTrendChart({
     return accountSummaries.reduce((sum, a) => sum + a.pacePrior3Months, 0);
   }, [accountSummaries]);
 
-  const aggregatePaceDeltaPct = useMemo(() => {
-    if (aggregatePacePrior3Months > 0) {
-      return Math.round(
-        ((aggregatePaceLast3Months - aggregatePacePrior3Months) / aggregatePacePrior3Months) * 100,
-      );
-    }
-    if (aggregatePaceLast3Months > 0 && aggregatePacePrior3Months === 0) return 100;
-    return null;
-  }, [aggregatePaceLast3Months, aggregatePacePrior3Months]);
+  const aggregatePaceDeltaPct = useMemo(
+    () => paceDeltaPercent(aggregatePaceLast3Months, aggregatePacePrior3Months),
+    [aggregatePaceLast3Months, aggregatePacePrior3Months],
+  );
 
   return (
     <div className="space-y-6">
       {/* KPI Overview Cards */}
-      <section className="grid gap-3.5 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+      <section className="grid gap-3.5 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
         <Card className="border-border">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-1.5">
@@ -287,44 +391,17 @@ export function BottleSalesTrendChart({
           </CardContent>
         </Card>
 
-        <Card className="border-border">
-          <CardHeader>
-            <CardDescription className="flex items-center gap-1.5">
-              {aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct < 0 ? (
-                <ArrowDownRight className="size-4 text-rose-600 dark:text-rose-400" />
-              ) : (
-                <ArrowUpRight className="size-4 text-emerald-600 dark:text-emerald-400" />
-              )}
-              <span>3-Mo Pace vs Prior</span>
-            </CardDescription>
-            <CardTitle className="font-heading text-2xl flex items-baseline gap-2">
-              <span
-                className={cn(
-                  "tabular-nums",
-                  aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct > 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct < 0
-                    ? "text-rose-600 dark:text-rose-400"
-                    : "text-foreground",
-                )}
-              >
-                {aggregatePaceDeltaPct !== null
-                  ? `${aggregatePaceDeltaPct > 0 ? "+" : ""}${aggregatePaceDeltaPct}%`
-                  : "—"}
-              </span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct > 0
-                  ? "expanding"
-                  : aggregatePaceDeltaPct !== null && aggregatePaceDeltaPct < 0
-                  ? "slowing"
-                  : "steady"}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground tabular-nums">
-            {formatNumber(aggregatePaceLast3Months)} btls (last 3M) vs {formatNumber(aggregatePacePrior3Months)} (prior 3M)
-          </CardContent>
-        </Card>
+        <PaceSummaryCard
+          label="1-Mo Pace vs Prior"
+          deltaPct={aggregateMonthPaceDeltaPct}
+          detail={`${formatNumber(aggregatePaceLastMonth)} btls this month vs ${formatNumber(aggregatePacePriorMonth)} last month`}
+        />
+
+        <PaceSummaryCard
+          label="Last 90-Day Pace vs Prior"
+          deltaPct={aggregatePaceDeltaPct}
+          detail={`${formatNumber(aggregatePaceLast3Months)} btls in the last 90 days vs ${formatNumber(aggregatePacePrior3Months)} in the prior 90 days`}
+        />
 
         <Card className="border-border">
           <CardHeader>
@@ -998,7 +1075,7 @@ export function BottleSalesTrendChart({
               Selected Accounts Bottle Breakdown
             </CardTitle>
             <CardDescription>
-              Volume and purchasing history across the active timeframe for all selected accounts.
+              Volume and purchasing history for selected accounts. One-month pace is this month versus last month, including the current month even when it is not finished. The 90-day pace is the last 90 days versus the 90 days before that.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -1011,9 +1088,11 @@ export function BottleSalesTrendChart({
                     <TableHead className="text-right">Total Bottles</TableHead>
                     <TableHead className="text-right">Avg Bottles / Order</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Monthly Velocity</TableHead>
-                    <TableHead className="text-right">3-Mo Pace vs Prior</TableHead>
-                    <TableHead className="text-right">Trajectory (3M)</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Monthly Velocity</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">1-Mo Pace vs Prior</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Trajectory (1M)</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Last 90-Day Pace vs Prior</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Trajectory (90d)</TableHead>
                     <TableHead className="text-right">Orders</TableHead>
                     <TableHead className="text-right">Last Order Date</TableHead>
                   </TableRow>
@@ -1051,30 +1130,29 @@ export function BottleSalesTrendChart({
                         <TableCell className="text-right font-medium tabular-nums text-foreground">
                           {formatNumber(summary.avgBottlesPerMonth)} btls/mo
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <div className="flex flex-col items-end">
-                            <span
-                              className={cn(
-                                "font-semibold text-xs tabular-nums",
-                                summary.quarterlyPaceDeltaPct !== null && summary.quarterlyPaceDeltaPct > 0
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : summary.quarterlyPaceDeltaPct !== null && summary.quarterlyPaceDeltaPct < 0
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-muted-foreground",
-                              )}
-                              title={`Pace: ${formatNumber(summary.paceLast3Months)} btls (last 3M) vs ${formatNumber(summary.pacePrior3Months)} btls (prior 3M)`}
-                            >
-                              {summary.quarterlyPaceDeltaPct !== null
-                                ? `${summary.quarterlyPaceDeltaPct > 0 ? "+" : ""}${summary.quarterlyPaceDeltaPct}%`
-                                : "—"}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground tabular-nums">
-                              {formatNumber(summary.paceLast3Months)} vs {formatNumber(summary.pacePrior3Months)} btls
-                            </span>
-                          </div>
-                        </TableCell>
+                        <PaceComparisonCell
+                          deltaPct={summary.monthlyPaceDeltaPct}
+                          recent={summary.paceLastMonth}
+                          prior={summary.pacePriorMonth}
+                          title={`1-month pace: ${formatNumber(summary.paceLastMonth)} btls this month (including days still remaining) vs ${formatNumber(summary.pacePriorMonth)} btls last month`}
+                        />
                         <TableCell className="text-right whitespace-nowrap">
-                          <AccountTrajectoryPill trajectory={summary.quarterlyTrajectory} />
+                          <AccountTrajectoryPill
+                            trajectory={summary.monthlyTrajectory}
+                            windowLabel="1M"
+                          />
+                        </TableCell>
+                        <PaceComparisonCell
+                          deltaPct={summary.quarterlyPaceDeltaPct}
+                          recent={summary.paceLast3Months}
+                          prior={summary.pacePrior3Months}
+                          title={`Last 90 days: ${formatNumber(summary.paceLast3Months)} btls vs ${formatNumber(summary.pacePrior3Months)} btls in the prior 90 days`}
+                        />
+                        <TableCell className="text-right whitespace-nowrap">
+                          <AccountTrajectoryPill
+                            trajectory={summary.quarterlyTrajectory}
+                            windowLabel="90d"
+                          />
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {summary.orderCount}
@@ -1100,6 +1178,7 @@ export function BottleSalesTrendChart({
         allPoints={convertedPoints}
         orders={orders}
         granularity={granularity}
+        asOf={asOf}
         onSelectPoint={(pt) => setSelectedPoint(pt)}
       />
     </div>

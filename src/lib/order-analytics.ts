@@ -448,6 +448,105 @@ export function listNewAccountsWithRecentOrders(
   );
 }
 
+type AccountOrderActivity = {
+  summary: NewAccountSummary;
+  hasRecent: boolean;
+  hasPriorWindow: boolean;
+  hasOlder: boolean;
+};
+
+function accountOrderActivity(
+  orders: Order[],
+  asOf: string,
+  windowDays = NEW_ACCOUNT_WINDOW_DAYS,
+): AccountOrderActivity[] {
+  const asOfDate = parseISO(asOf.slice(0, 10));
+  const windowStart = subDays(asOfDate, windowDays);
+  const priorStart = subDays(windowStart, windowDays);
+  const byAccount = new Map<string, { name: string; orders: Order[] }>();
+
+  for (const order of orders) {
+    const key = normalizeName(order.accountName);
+    const existing = byAccount.get(key);
+    if (existing) existing.orders.push(order);
+    else byAccount.set(key, { name: order.accountName, orders: [order] });
+  }
+
+  const rows: AccountOrderActivity[] = [];
+  for (const { name, orders: accountOrders } of byAccount.values()) {
+    let hasRecent = false;
+    let hasPriorWindow = false;
+    let hasOlder = false;
+    for (const order of accountOrders) {
+      const date = parseISO(order.date.slice(0, 10));
+      if (date > asOfDate) continue;
+      if (date >= windowStart) hasRecent = true;
+      else if (date >= priorStart) hasPriorWindow = true;
+      else hasOlder = true;
+    }
+
+    const orderDates = [...new Set(accountOrders.map((order) => order.date.slice(0, 10)))].sort();
+    const recentOrders = accountOrders.filter((order) => {
+      const date = parseISO(order.date.slice(0, 10));
+      return date >= windowStart && date <= asOfDate;
+    });
+
+    rows.push({
+      hasRecent,
+      hasPriorWindow,
+      hasOlder,
+      summary: {
+        accountName: name,
+        accountId: accountOrders[0]?.accountId ?? "",
+        firstOrderDate: orderDates[0] ?? accountOrders[0]!.date,
+        lastOrderDate: orderDates.at(-1) ?? accountOrders[0]!.date,
+        orderEventCount: orderDates.length,
+        recentVolume: recentOrders.reduce((sum, order) => sum + lineVolume(order), 0),
+        totalVolume: accountOrders.reduce((sum, order) => sum + lineVolume(order), 0),
+      },
+    });
+  }
+
+  return rows;
+}
+
+function sortAccountSummaries(rows: NewAccountSummary[]): NewAccountSummary[] {
+  return rows.sort(
+    (a, b) =>
+      b.lastOrderDate.localeCompare(a.lastOrderDate) ||
+      a.accountName.localeCompare(b.accountName),
+  );
+}
+
+/** Ordered in the last window and also had at least one order before it. */
+export function listRetainedAccounts(
+  orders: Order[],
+  asOf: string,
+  windowDays = NEW_ACCOUNT_WINDOW_DAYS,
+): NewAccountSummary[] {
+  return sortAccountSummaries(
+    accountOrderActivity(orders, asOf, windowDays)
+      .filter((account) => account.hasRecent && (account.hasPriorWindow || account.hasOlder))
+      .map((account) => account.summary),
+  );
+}
+
+/**
+ * Ordered in the last window, skipped the prior window, and had ordered before that.
+ * New accounts are left in the new-account count.
+ */
+export function listReturningCustomers(
+  orders: Order[],
+  asOf: string,
+  windowDays = NEW_ACCOUNT_WINDOW_DAYS,
+): NewAccountSummary[] {
+  return sortAccountSummaries(
+    accountOrderActivity(orders, asOf, windowDays)
+      .filter((account) => account.hasRecent && !account.hasPriorWindow && account.hasOlder)
+      .map((account) => account.summary),
+  );
+}
+
 function historicalPeriodDaysBeforeRecent(
   orders: Order[],
   asOfDate: Date,

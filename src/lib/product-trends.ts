@@ -12,6 +12,7 @@ import {
 } from "date-fns";
 import type { Order } from "./types";
 import { normalizeName } from "./format";
+import { rollingPaceWindow } from "./pace-windows";
 
 export type ProductTrendGranularity = "monthly" | "weekly";
 export type ProductTrendTimeframe = "all" | "12m" | "6m" | "90d";
@@ -143,7 +144,8 @@ export function buildProductTrendData({
 
   const asOfDate = asOf ? parseISO(asOf.slice(0, 10)) : new Date();
 
-  // Determine timeframe cutoff
+  // Determine timeframe cutoff. Snap to the start of the first week or month so a
+  // bucket on the chart is a complete period. The current period still ends at asOf.
   let cutoffDate: Date | null = null;
   if (timeframe === "90d") {
     cutoffDate = subDays(asOfDate, 90);
@@ -152,16 +154,20 @@ export function buildProductTrendData({
   } else if (timeframe === "12m") {
     cutoffDate = subMonths(asOfDate, 12);
   }
+  if (cutoffDate) {
+    cutoffDate =
+      granularity === "weekly"
+        ? startOfWeek(cutoffDate, { weekStartsOn: 1 })
+        : startOfMonth(cutoffDate);
+  }
 
   // Windows for trajectory:
   // Short-term: recent 28 days vs prior 28 days
   const recentStart = subDays(asOfDate, PERIOD_DAYS);
   const priorStart = subDays(asOfDate, PERIOD_DAYS * 2);
 
-  // 3-Month Macro Pace: last 90 days vs prior 90 days (180d to 90d ago)
-  const THREE_MONTH_DAYS = 90;
-  const recent3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS);
-  const prior3MonthsStart = subDays(asOfDate, THREE_MONTH_DAYS * 2);
+  // Last 90 days vs the 90 days immediately before that.
+  const quarterWindow = rollingPaceWindow(asOfDate, 90);
 
   // Group all valid orders by product
   const productOrderMap = new Map<string, Order[]>();
@@ -219,19 +225,24 @@ export function buildProductTrendData({
           priorVolume += btls;
         }
 
-        // 3-Month (90-day) window
-        if (orderDate >= recent3MonthsStart && orderDate <= asOfDate) {
+        if (orderDate >= quarterWindow.currentStart && orderDate <= quarterWindow.currentEnd) {
           paceLast3Months += btls;
           revenueLast3Months += rev;
-        } else if (orderDate >= prior3MonthsStart && orderDate < recent3MonthsStart) {
+        } else if (orderDate >= quarterWindow.priorStart && orderDate < quarterWindow.currentStart) {
           pacePrior3Months += btls;
           revenuePrior3Months += rev;
         }
       }
 
       const accName = order.accountName || "Unknown Account";
-      const isRecent3M = !isNaN(orderDate.getTime()) && orderDate >= recent3MonthsStart && orderDate <= asOfDate;
-      const isPrior3M = !isNaN(orderDate.getTime()) && orderDate >= prior3MonthsStart && orderDate < recent3MonthsStart;
+      const isRecent3M =
+        !isNaN(orderDate.getTime()) &&
+        orderDate >= quarterWindow.currentStart &&
+        orderDate <= quarterWindow.currentEnd;
+      const isPrior3M =
+        !isNaN(orderDate.getTime()) &&
+        orderDate >= quarterWindow.priorStart &&
+        orderDate < quarterWindow.currentStart;
 
       const accExisting = accountMap.get(accName);
       if (accExisting) {

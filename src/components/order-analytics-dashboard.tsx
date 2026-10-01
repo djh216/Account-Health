@@ -51,6 +51,8 @@ import {
   detectSlowingProductAlerts,
 } from "@/lib/product-trends";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
+import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
+import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import {
   formatDate,
   formatDays,
@@ -81,6 +83,8 @@ import {
   getProductTracking,
   getRestaurantTracking,
   listNewAccountsWithRecentOrders,
+  listRetainedAccounts,
+  listReturningCustomers,
   NEW_ACCOUNT_WINDOW_DAYS,
   sortAccountTrackingRows,
   sortRestaurantFrequencyRows,
@@ -285,6 +289,24 @@ export function OrderAnalyticsDashboard() {
     [state.orders, state.analysisAsOf, analytics.asOf],
   );
 
+  const retainedAccounts = useMemo(
+    () =>
+      listRetainedAccounts(
+        state.orders,
+        state.analysisAsOf ?? analytics.asOf,
+      ),
+    [state.orders, state.analysisAsOf, analytics.asOf],
+  );
+
+  const returningCustomers = useMemo(
+    () =>
+      listReturningCustomers(
+        state.orders,
+        state.analysisAsOf ?? analytics.asOf,
+      ),
+    [state.orders, state.analysisAsOf, analytics.asOf],
+  );
+
   const enrichedAccounts = useMemo(
     () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
     [snapshot.accounts, state.orders],
@@ -310,9 +332,14 @@ export function OrderAnalyticsDashboard() {
     [state.orders, state.analysisAsOf, analytics.asOf],
   );
 
+  const { ids: outOfStockIds } = useOutOfStockProducts();
   const productAlerts = useMemo(
-    () => detectSlowingProductAlerts(productTrends.productSummaries),
-    [productTrends.productSummaries],
+    () =>
+      excludeOutOfStock(
+        detectSlowingProductAlerts(productTrends.productSummaries),
+        outOfStockIds,
+      ),
+    [productTrends.productSummaries, outOfStockIds],
   );
 
   const criticalProductAlertsCount = useMemo(
@@ -352,6 +379,22 @@ export function OrderAnalyticsDashboard() {
         .map((account) => healthByAccountName.get(normalizeName(account.accountName)))
         .filter((item): item is AccountHealth => item !== undefined),
     [newAccounts, healthByAccountName],
+  );
+
+  const retainedAccountHealthRows = useMemo(
+    () =>
+      retainedAccounts
+        .map((account) => healthByAccountName.get(normalizeName(account.accountName)))
+        .filter((item): item is AccountHealth => item !== undefined),
+    [retainedAccounts, healthByAccountName],
+  );
+
+  const returningCustomerHealthRows = useMemo(
+    () =>
+      returningCustomers
+        .map((account) => healthByAccountName.get(normalizeName(account.accountName)))
+        .filter((item): item is AccountHealth => item !== undefined),
+    [returningCustomers, healthByAccountName],
   );
 
   const sortedAccounts = useMemo(
@@ -584,21 +627,7 @@ export function OrderAnalyticsDashboard() {
               </div>
             ) : null}
 
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-              <Kpi
-                label="Order events"
-                value={formatNumber(analytics.totals.orderEvents)}
-                hint="Unique restaurant + date combinations"
-              />
-              <Kpi
-                label="Order lines"
-                value={formatNumber(analytics.totals.orderLines)}
-                hint={
-                  analytics.dateRange.start && analytics.dateRange.end
-                    ? `${formatDate(analytics.dateRange.start)} – ${formatDate(analytics.dateRange.end)}`
-                    : undefined
-                }
-              />
+            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Kpi
                 label="Total volume"
                 value={`${formatNumber(analytics.totals.totalVolume)} btls`}
@@ -619,6 +648,32 @@ export function OrderAnalyticsDashboard() {
                     description: `First order in the last ${NEW_ACCOUNT_WINDOW_DAYS} days with no order history before that window.`,
                     accounts: newAccountHealthRows,
                     emptyMessage: `No new accounts with orders in the last ${NEW_ACCOUNT_WINDOW_DAYS} days.`,
+                  })
+                }
+              />
+              <Kpi
+                label="Retained customers"
+                value={String(retainedAccounts.length)}
+                hint={`Ordered in the last ${NEW_ACCOUNT_WINDOW_DAYS} days and before that · Click to view`}
+                onClick={() =>
+                  setAccountListDialog({
+                    title: "Retained customers",
+                    description: `Accounts that ordered in the last ${NEW_ACCOUNT_WINDOW_DAYS} days and also ordered before that window.`,
+                    accounts: retainedAccountHealthRows,
+                    emptyMessage: `No retained customers with orders in the last ${NEW_ACCOUNT_WINDOW_DAYS} days.`,
+                  })
+                }
+              />
+              <Kpi
+                label="Returning customers"
+                value={String(returningCustomers.length)}
+                hint={`Ordered in the last ${NEW_ACCOUNT_WINDOW_DAYS} days, not the prior ${NEW_ACCOUNT_WINDOW_DAYS} · Click to view`}
+                onClick={() =>
+                  setAccountListDialog({
+                    title: "Returning customers",
+                    description: `Accounts that ordered in the last ${NEW_ACCOUNT_WINDOW_DAYS} days, did not order in the prior ${NEW_ACCOUNT_WINDOW_DAYS} days, and had ordered before that.`,
+                    accounts: returningCustomerHealthRows,
+                    emptyMessage: `No returning customers who skipped the prior ${NEW_ACCOUNT_WINDOW_DAYS} days.`,
                   })
                 }
               />

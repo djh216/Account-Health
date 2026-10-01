@@ -3,6 +3,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
+import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
+import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import {
   downloadFocusHealthPdf,
   downloadFrequencyAlertsPdf,
@@ -28,6 +30,7 @@ export type ReportPageType = "health" | "orders" | "products";
 export function useReportExport() {
   const pathname = usePathname();
   const { state, snapshot, repFilter } = useFilteredPortfolio();
+  const { ids: outOfStockIds } = useOutOfStockProducts();
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
@@ -105,7 +108,10 @@ export function useReportExport() {
       granularity: "monthly",
       asOf,
     });
-    const slowingAlerts = detectSlowingProductAlerts(trendData.productSummaries);
+    const slowingAlerts = excludeOutOfStock(
+      detectSlowingProductAlerts(trendData.productSummaries),
+      outOfStockIds,
+    );
     return {
       repFilter,
       asOf,
@@ -115,7 +121,7 @@ export function useReportExport() {
       totalBottles: trendData.totalBottles,
       totalRevenue: trendData.totalRevenue,
     };
-  }, [state.orders, repFilter, asOf, generatedAt]);
+  }, [state.orders, repFilter, asOf, generatedAt, outOfStockIds]);
 
   const canExport = snapshot.accounts.length > 0 || state.orders.length > 0;
 

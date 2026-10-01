@@ -7,7 +7,9 @@ import {
   FileSpreadsheet,
   FileText,
   Grape,
+  PackageX,
   Printer,
+  RotateCcw,
   TrendingDown,
   Wine,
 } from "lucide-react";
@@ -35,6 +37,8 @@ import {
   downloadProductSlowdownPdf,
   type ProductSlowdownPdfInput,
 } from "@/lib/report-export";
+import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
+import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import type { ProductSlowingAlert } from "@/lib/product-trends";
 
 export function ProductSlowdownReportDialog({
@@ -60,28 +64,52 @@ export function ProductSlowdownReportDialog({
   const setOpen = isControlled ? (controlledOnOpenChange ?? (() => {})) : setInternalOpen;
 
   const [severityFilter, setSeverityFilter] = useState<"all" | "critical" | "warning" | "watch">("all");
+  const { ids: outOfStockIds, mark: markOutOfStock, restore: restoreOutOfStock } =
+    useOutOfStockProducts();
 
   const reportDate = asOf || todayIso();
 
-  const filteredAlerts = useMemo(() => {
-    if (severityFilter === "all") return alerts;
-    return alerts.filter((a) => a.severity === severityFilter);
-  }, [alerts, severityFilter]);
+  const activeAlerts = useMemo(
+    () => excludeOutOfStock(alerts, outOfStockIds),
+    [alerts, outOfStockIds],
+  );
 
-  const criticalCount = alerts.filter((a) => a.severity === "critical").length;
-  const warningCount = alerts.filter((a) => a.severity === "warning").length;
-  const watchCount = alerts.filter((a) => a.severity === "watch").length;
-  const totalVolumeDrop = alerts.reduce((sum, a) => sum + a.volumeDropBtls, 0);
+  const outOfStockAlerts = useMemo(
+    () => alerts.filter((alert) => outOfStockIds.has(alert.id)),
+    [alerts, outOfStockIds],
+  );
+
+  const filteredAlerts = useMemo(() => {
+    if (severityFilter === "all") return activeAlerts;
+    return activeAlerts.filter((a) => a.severity === severityFilter);
+  }, [activeAlerts, severityFilter]);
+
+  const criticalCount = activeAlerts.filter((a) => a.severity === "critical").length;
+  const warningCount = activeAlerts.filter((a) => a.severity === "warning").length;
+  const watchCount = activeAlerts.filter((a) => a.severity === "watch").length;
+  const totalVolumeDrop = activeAlerts.reduce((sum, a) => sum + a.volumeDropBtls, 0);
 
   const pdfInput: ProductSlowdownPdfInput = useMemo(
     () => ({
       repFilter,
       asOf: reportDate,
       generatedAt: todayIso(),
-      alerts,
+      alerts: activeAlerts,
     }),
-    [repFilter, reportDate, alerts],
+    [repFilter, reportDate, activeAlerts],
   );
+
+  function handleMarkOutOfStock(alert: ProductSlowingAlert) {
+    markOutOfStock({ id: alert.id, productName: alert.productName });
+    onMessage?.(
+      `Marked ${alert.productName} out of stock and removed it from the slowdown report.`,
+    );
+  }
+
+  function handleRestore(alert: ProductSlowingAlert) {
+    restoreOutOfStock(alert.id);
+    onMessage?.(`Restored ${alert.productName} to the slowdown report.`);
+  }
 
   function handleDownloadPdf() {
     try {
@@ -276,7 +304,7 @@ export function ProductSlowdownReportDialog({
                   <span className="text-xs text-muted-foreground">btls</span>
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Total volume gap across {alerts.length} slowing SKUs
+                  Total volume gap across {activeAlerts.length} slowing SKUs
                 </p>
               </CardContent>
             </Card>
@@ -291,7 +319,7 @@ export function ProductSlowdownReportDialog({
                 size="xs"
                 onClick={() => setSeverityFilter("all")}
               >
-                All Slowing SKUs ({alerts.length})
+                All Slowing SKUs ({activeAlerts.length})
               </Button>
               <Button
                 type="button"
@@ -330,9 +358,36 @@ export function ProductSlowdownReportDialog({
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Showing {filteredAlerts.length} of {alerts.length} flagged products
+              Showing {filteredAlerts.length} of {activeAlerts.length} flagged products
             </p>
           </div>
+
+          {outOfStockAlerts.length > 0 ? (
+            <div className="no-print rounded-lg border border-dashed bg-muted/30 px-3 py-2.5 text-xs">
+              <p className="font-medium text-foreground">
+                Out of stock — removed from this report ({outOfStockAlerts.length})
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {outOfStockAlerts.map((alert) => (
+                  <li key={alert.id} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 break-words text-muted-foreground">
+                      {alert.productName}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="shrink-0"
+                      onClick={() => handleRestore(alert)}
+                    >
+                      <RotateCcw className="size-3" />
+                      Restore
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           {/* Slowdown Alerts Table */}
           <div className="w-full overflow-x-auto rounded-xl border bg-card shadow-xs">
@@ -352,7 +407,9 @@ export function ProductSlowdownReportDialog({
                 {filteredAlerts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="h-32 text-center text-muted-foreground whitespace-normal">
-                      No slowing wine products detected in this category.
+                      {outOfStockAlerts.length > 0
+                        ? "No slowing wine products left in this view. Out-of-stock SKUs are listed above."
+                        : "No slowing wine products detected in this category."}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -385,6 +442,16 @@ export function ProductSlowdownReportDialog({
                               {alert.accountCount} active account placement{alert.accountCount === 1 ? "" : "s"}
                               {alert.lastOrderDate ? ` · Last: ${formatDate(alert.lastOrderDate)}` : ""}
                             </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              className="no-print mt-2"
+                              onClick={() => handleMarkOutOfStock(alert)}
+                            >
+                              <PackageX className="size-3" />
+                              Out of stock
+                            </Button>
                           </div>
                         </div>
                       </TableCell>

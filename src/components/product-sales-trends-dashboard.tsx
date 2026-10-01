@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
+import { parseISO, startOfMonth } from "date-fns";
 import {
   ArrowDownRight,
   ArrowUpDown,
@@ -30,6 +31,7 @@ import {
   Legend,
 } from "recharts";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
+import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { SiteNav } from "@/components/site-nav";
 import { RepFilterSelect } from "@/components/rep-filter-select";
 import { ClearDataButton } from "@/components/clear-data-button";
@@ -85,6 +87,7 @@ import { formatDate, formatMoney, formatNumber, formatPct } from "@/lib/format";
 import { generateSampleWinePortfolio } from "@/lib/sample-data";
 import { setPortfolio } from "@/lib/portfolio-store";
 import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
+import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
 import {
   buildProductTrendData,
@@ -98,6 +101,17 @@ import {
   detectSlowingProductAlerts,
 } from "@/lib/product-trends";
 import { cn } from "@/lib/utils";
+
+/** Read a series value by its real key. Recharts string dataKeys split on "." */
+function seriesValue(point: ProductTrendPoint, key: string): number {
+  const value = point[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** Recharts treats "." as a nested path, which breaks names like "1.5L". */
+function chartFieldKey(sourceKey: string): string {
+  return sourceKey.includes(".") ? `series__${sourceKey.replace(/\./g, "_")}` : sourceKey;
+}
 
 type SortField =
   | "productName"
@@ -176,6 +190,7 @@ export function ProductSalesTrendsDashboard() {
   const [trajectoryScope, setTrajectoryScope] = useState<"28d" | "3m">("28d");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDetailProduct, setSelectedDetailProduct] = useState<ProductSummary | null>(null);
+  const [placementProduct, setPlacementProduct] = useState<ProductSummary | null>(null);
   const [selectedTrendPoint, setSelectedTrendPoint] = useState<ProductTrendPoint | null>(null);
   const [pointModalOpen, setPointModalOpen] = useState(false);
   const [focusedProduct, setFocusedProduct] = useState<string | null>(null);
@@ -244,10 +259,16 @@ export function ProductSalesTrendsDashboard() {
     [state.orders, selectedProducts, granularity, timeframe, state.analysisAsOf],
   );
 
-  // Alerts for slowing wine products over the last 28 days
-  const productAlerts = useMemo(
+  // Alerts for slowing wine products over the last 28 days.
+  // Out-of-stock marks stay on the full list so the report can restore them.
+  const detectedProductAlerts = useMemo(
     () => detectSlowingProductAlerts(trends.productSummaries),
     [trends.productSummaries],
+  );
+  const { ids: outOfStockIds } = useOutOfStockProducts();
+  const productAlerts = useMemo(
+    () => excludeOutOfStock(detectedProductAlerts, outOfStockIds),
+    [detectedProductAlerts, outOfStockIds],
   );
 
   const criticalProductAlertsCount = useMemo(
@@ -268,6 +289,14 @@ export function ProductSalesTrendsDashboard() {
   }, [selectedProducts]);
 
   const [showTrendlines, setShowTrendlines] = useState(true);
+  const [includeCurrentMonth, setIncludeCurrentMonth] = useState(true);
+
+  const chartSeries = useMemo(() => {
+    if (includeCurrentMonth) return trends.data;
+    const asOfDate = parseISO((state.analysisAsOf ?? new Date().toISOString()).slice(0, 10));
+    const monthStart = startOfMonth(asOfDate).getTime();
+    return trends.data.filter((point) => point.timestamp < monthStart);
+  }, [includeCurrentMonth, trends.data, state.analysisAsOf]);
 
   // Compute linear trendline definitions for products / metric
   const productTrendlineDefs = useMemo<TrendlineDefinition[]>(() => {
@@ -290,8 +319,23 @@ export function ProductSalesTrendsDashboard() {
   }, [selectedProducts, metric]);
 
   const { data: chartDataWithTrendlines, statsMap: productTrendStatsMap } = useMemo(() => {
-    return augmentDataWithTrendlines(trends.data, productTrendlineDefs);
-  }, [trends.data, productTrendlineDefs]);
+    const augmented = augmentDataWithTrendlines(chartSeries, productTrendlineDefs);
+    if (selectedProducts.length === 0) return augmented;
+
+    const data = augmented.data.map((point) => {
+      const next: ProductTrendPoint = { ...point };
+      for (const pName of selectedProducts) {
+        const seriesKey = metric === "revenue" ? `${pName}__rev` : pName;
+        const fieldKey = chartFieldKey(seriesKey);
+        if (fieldKey !== seriesKey) {
+          next[fieldKey] = seriesValue(point, seriesKey);
+        }
+      }
+      return next;
+    });
+
+    return { data, statsMap: augmented.statsMap };
+  }, [chartSeries, productTrendlineDefs, selectedProducts, metric]);
 
   // Aggregate stats when 0 products selected
   const aggregateProductTrendStats = useMemo(() => {
@@ -396,8 +440,8 @@ export function ProductSalesTrendsDashboard() {
       "28d Velocity Δ (%)",
       "Pace Last 3 Months (Btls)",
       "Pace Prior 3 Months (Btls)",
-      "3-Mo Pace Δ (%)",
-      "3-Mo Macro Trajectory",
+      "90-Day Pace Δ (%)",
+      "90-Day Trajectory",
       "First Order Date",
       "Last Order Date",
     ];
@@ -617,7 +661,7 @@ export function ProductSalesTrendsDashboard() {
         ) : (
           <>
             {/* Top KPI Cards */}
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="grid gap-3 md:grid-cols-2">
               <Card className="border-border">
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
@@ -735,6 +779,9 @@ export function ProductSalesTrendsDashboard() {
                         ? "the last 12 months"
                         : "all recorded order history"}{" "}
                       in {metric === "revenue" ? "revenue ($)" : metric === "accounts" ? "active purchasing accounts" : "bottles sold"}.
+                      {includeCurrentMonth
+                        ? " The current month is included."
+                        : " The current month is hidden."}{" "}
                       Select any wine in the catalog below to plot its sales trajectory curve on the visualizer.
                     </CardDescription>
                   </div>
@@ -825,6 +872,25 @@ export function ProductSalesTrendsDashboard() {
                       </SelectContent>
                     </Select>
 
+                    <Button
+                      size="xs"
+                      variant={includeCurrentMonth ? "default" : "outline"}
+                      onClick={() => setIncludeCurrentMonth((prev) => !prev)}
+                      className={cn(
+                        "h-8 text-xs gap-1.5 transition-colors font-medium",
+                        includeCurrentMonth
+                          ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      title={
+                        includeCurrentMonth
+                          ? "Hide the current month from the chart"
+                          : "Show the current month on the chart"
+                      }
+                    >
+                      Current Month {includeCurrentMonth ? "ON" : "OFF"}
+                    </Button>
+
                     {/* Trendlines Toggle */}
                     <Button
                       size="xs"
@@ -893,7 +959,7 @@ export function ProductSalesTrendsDashboard() {
 
               <CardContent className="space-y-4">
                 {/* Chart Canvas */}
-                {trends.data.length === 0 ? (
+                {chartSeries.length === 0 ? (
                   <div className="flex h-80 flex-col items-center justify-center rounded-xl border border-dashed text-center p-6">
                     <Wine className="size-10 text-muted-foreground/60 mb-2" />
                     <p className="font-heading font-semibold text-foreground text-lg">
@@ -910,7 +976,8 @@ export function ProductSalesTrendsDashboard() {
                         <Sparkles className="size-3.5 shrink-0" />
                         <span>Interactive Analytics: Click any point or dot on the chart to inspect full period data & accounts</span>
                       </div>
-                      {selectedTrendPoint && (
+                      {selectedTrendPoint &&
+                        chartSeries.some((point) => point.key === selectedTrendPoint.key) && (
                         <Button
                           size="xs"
                           variant="outline"
@@ -1070,15 +1137,16 @@ export function ProductSalesTrendsDashboard() {
                                 ? chartDataWithTrendlines[index]
                                 : chartDataWithTrendlines.find((d) => d.label === state?.activeLabel);
                             if (point) {
-                              const chartPayload = (state as unknown as { activePayload?: Array<{ dataKey?: string }> })?.activePayload;
-                              const activeDataKey = chartPayload?.[0]?.dataKey;
-                              let matchedProduct: string | null = null;
-                              if (typeof activeDataKey === "string") {
-                                const cleanKey = activeDataKey.replace(/__rev$/, "");
-                                if (selectedProducts.includes(cleanKey)) {
-                                  matchedProduct = cleanKey;
-                                }
-                              }
+                              const chartPayload = (state as unknown as {
+                                activePayload?: Array<{ name?: string }>;
+                              })?.activePayload;
+                              const activeName =
+                                typeof chartPayload?.[0]?.name === "string"
+                                  ? chartPayload[0].name.replace(/ \(Trend\)$/, "")
+                                  : "";
+                              const matchedProduct = selectedProducts.includes(activeName)
+                                ? activeName
+                                : null;
                               handleOpenPointModal(point, matchedProduct);
                             }
                           }}
@@ -1180,11 +1248,13 @@ export function ProductSalesTrendsDashboard() {
                               );
                             }}
                           />
-                          <Legend
-                            verticalAlign="bottom"
-                            height={36}
-                            wrapperStyle={{ paddingTop: "12px", fontSize: "12px" }}
-                          />
+                          {selectedProducts.length === 0 && (
+                            <Legend
+                              verticalAlign="bottom"
+                              height={36}
+                              wrapperStyle={{ paddingTop: "12px", fontSize: "12px" }}
+                            />
+                          )}
 
                           {/* If no individual products selected, show overall aggregate line */}
                           {selectedProducts.length === 0 ? (
@@ -1258,12 +1328,12 @@ export function ProductSalesTrendsDashboard() {
                             <>
                               {selectedProducts.map((pName) => {
                                 const color = productColorMap.get(pName) || "#881337";
-                                const dataKey = metric === "revenue" ? `${pName}__rev` : pName;
+                                const seriesKey = metric === "revenue" ? `${pName}__rev` : pName;
                                 return (
                                   <Line
                                     key={pName}
                                     type="monotone"
-                                    dataKey={dataKey}
+                                    dataKey={chartFieldKey(seriesKey)}
                                     name={pName}
                                     stroke={color}
                                     strokeWidth={2.5}
@@ -1321,7 +1391,7 @@ export function ProductSalesTrendsDashboard() {
 
                 {/* Plotted Trajectory Curves Toolbar */}
                 {selectedProducts.length > 0 && (
-                  <div className="pt-3 border-t flex flex-wrap items-center gap-1.5">
+                  <div className="pt-3 border-t flex max-h-32 flex-wrap items-center gap-1.5 overflow-y-auto">
                     <span className="text-xs font-semibold text-muted-foreground mr-1 flex items-center gap-1">
                       <BarChart2 className="size-3.5 text-primary" />
                       Plotted Curves ({selectedProducts.length}):
@@ -1442,12 +1512,12 @@ export function ProductSalesTrendsDashboard() {
                               : "text-muted-foreground hover:text-foreground",
                           )}
                         >
-                          3-Month Macro Pace (Last 3M vs Prior)
+                          Last 90-Day Pace vs Prior
                         </button>
                       </div>
                     </div>
                     <span className="text-[11px] text-muted-foreground">
-                      Filtering by {trajectoryScope === "3m" ? "3-Month Macro Pace (last 90d vs prior 90d)" : "28-Day Rolling Velocity"}
+                      Filtering by {trajectoryScope === "3m" ? "Last 90 days vs the prior 90 days" : "28-Day Rolling Velocity"}
                     </span>
                   </div>
 
@@ -1457,7 +1527,7 @@ export function ProductSalesTrendsDashboard() {
                         { id: "all", label: `All Wines (${trends.totalActiveProducts})` },
                         {
                           id: "accelerating",
-                          label: `🚀 Accelerating (${trajectoryScope === "3m" ? "3M" : "28d"}: ${
+                          label: `🚀 Accelerating (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
                             trends.productSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "accelerating"
@@ -1467,7 +1537,7 @@ export function ProductSalesTrendsDashboard() {
                         },
                         {
                           id: "steady",
-                          label: `Steady (${trajectoryScope === "3m" ? "3M" : "28d"}: ${
+                          label: `Steady (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
                             trends.productSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "steady"
@@ -1477,7 +1547,7 @@ export function ProductSalesTrendsDashboard() {
                         },
                         {
                           id: "decelerating",
-                          label: `📉 Decelerating (${trajectoryScope === "3m" ? "3M" : "28d"}: ${
+                          label: `📉 Decelerating (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
                             trends.productSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "decelerating"
@@ -1529,15 +1599,15 @@ export function ProductSalesTrendsDashboard() {
               </div>
 
               {/* Integrated Catalog Table */}
-                <div className="w-full border-t border-border overflow-x-auto bg-card">
-                  <Table className="w-full text-xs">
+                <div className="w-full border-t border-border bg-card">
+                  <Table className="w-full table-fixed text-xs">
                     <TableHeader>
                       <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
-                        <TableHead className="py-2.5 px-3 w-16 text-center font-semibold text-foreground">
+                        <TableHead className="py-2.5 px-3 w-12 text-center font-semibold text-foreground">
                           Chart
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="py-2.5 px-3 cursor-pointer whitespace-normal hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("productName")}
                         >
                           <div className="flex items-center gap-1 font-semibold text-foreground">
@@ -1546,7 +1616,7 @@ export function ProductSalesTrendsDashboard() {
                           </div>
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[9%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("totalBottles")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
@@ -1555,7 +1625,7 @@ export function ProductSalesTrendsDashboard() {
                           </div>
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[10%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("avgBottlesPerOrder")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
@@ -1564,7 +1634,7 @@ export function ProductSalesTrendsDashboard() {
                           </div>
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[10%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("avgBottlesPerMonth")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
@@ -1573,7 +1643,7 @@ export function ProductSalesTrendsDashboard() {
                           </div>
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[8%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("accountCount")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
@@ -1582,7 +1652,7 @@ export function ProductSalesTrendsDashboard() {
                           </div>
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[13%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("velocityDeltaPct")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
@@ -1591,16 +1661,16 @@ export function ProductSalesTrendsDashboard() {
                           </div>
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[16%] py-2.5 px-3 text-right whitespace-normal cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("quarterlyPaceDeltaPct")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
-                            <span>3-Mo Pace vs Prior</span>
+                            <span>Last 90-Day Pace vs Prior</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[9%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("lastOrderDate")}
                         >
                           <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
@@ -1608,7 +1678,7 @@ export function ProductSalesTrendsDashboard() {
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
-                        <TableHead className="py-2.5 px-2 w-16 text-right">
+                        <TableHead className="w-16 py-2.5 px-2 text-right">
                           <span className="font-semibold text-foreground">Details</span>
                         </TableHead>
                       </TableRow>
@@ -1656,17 +1726,17 @@ export function ProductSalesTrendsDashboard() {
                                   <Check className={cn("size-3.5 stroke-[3]", isSelectedInChart ? "opacity-100" : "opacity-0")} />
                                 </button>
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 font-medium text-foreground">
-                                <div className="flex items-center gap-2">
+                              <TableCell className="py-2.5 px-3 align-top font-medium whitespace-normal text-foreground">
+                                <div className="flex min-w-0 items-start gap-2">
                                   {isSelectedInChart && (
                                     <span
-                                      className="size-2 rounded-full shrink-0 ring-2 ring-primary/20"
+                                      className="mt-1 size-2 shrink-0 rounded-full ring-2 ring-primary/20"
                                       style={{ backgroundColor: chartColor || "#881337" }}
                                     />
                                   )}
                                   <span
                                     className={cn(
-                                      "transition-colors",
+                                      "min-w-0 break-words transition-colors",
                                       isSelectedInChart ? "font-bold text-foreground" : "font-medium group-hover:text-primary"
                                     )}
                                   >
@@ -1691,8 +1761,21 @@ export function ProductSalesTrendsDashboard() {
                               <TableCell className="py-2.5 px-3 text-right font-medium tabular-nums text-foreground whitespace-nowrap">
                                 {formatNumber(summary.avgBottlesPerMonth)} btls/mo
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">
-                                {summary.accountCount} acc{summary.accountCount === 1 ? "" : "s"}
+                              <TableCell
+                                className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  className="font-medium text-primary underline-offset-2 hover:underline"
+                                  title={`View accounts that purchased ${summary.productName}, sorted by volume`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPlacementProduct(summary);
+                                  }}
+                                >
+                                  {summary.accountCount} acc{summary.accountCount === 1 ? "" : "s"}
+                                </button>
                               </TableCell>
                               <TableCell className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
                                 <div className="flex items-center justify-end gap-1.5">
@@ -1718,7 +1801,7 @@ export function ProductSalesTrendsDashboard() {
                               <TableCell className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
                                 <div className="flex flex-col items-end gap-0.5">
                                   <div className="flex items-center justify-end gap-1.5">
-                                    <TrajectoryPill trajectory={summary.quarterlyTrajectory} windowLabel="3M" />
+                                    <TrajectoryPill trajectory={summary.quarterlyTrajectory} windowLabel="90d" />
                                     {summary.quarterlyPaceDeltaPct !== null ? (
                                       <span
                                         className={cn(
@@ -1729,7 +1812,7 @@ export function ProductSalesTrendsDashboard() {
                                             ? "text-rose-600 dark:text-rose-400"
                                             : "text-muted-foreground",
                                         )}
-                                        title={`3-month pace: ${formatNumber(summary.paceLast3Months)} btls (last 90d) vs ${formatNumber(summary.pacePrior3Months)} btls (prior 90d)`}
+                                        title={`Last 90 days: ${formatNumber(summary.paceLast3Months)} btls vs ${formatNumber(summary.pacePrior3Months)} btls in the prior 90 days`}
                                       >
                                         {summary.quarterlyPaceDeltaPct > 0 ? "+" : ""}
                                         {summary.quarterlyPaceDeltaPct}%
@@ -1772,6 +1855,70 @@ export function ProductSalesTrendsDashboard() {
         )}
       </main>
 
+      <Dialog
+        open={Boolean(placementProduct)}
+        onOpenChange={(open) => {
+          if (!open) setPlacementProduct(null);
+        }}
+      >
+        <DialogContent className="flex max-h-[85vh] w-[min(42rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+          {placementProduct ? (
+            <>
+              <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
+                <DialogTitle className="font-heading text-lg">
+                  {placementProduct.productName}
+                </DialogTitle>
+                <DialogDescription>
+                  {placementProduct.accountCount} account
+                  {placementProduct.accountCount === 1 ? "" : "s"} purchased this wine, sorted by
+                  bottle volume.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <Table className="text-sm">
+                  <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur">
+                    <TableRow>
+                      <TableHead className="w-12 px-4">#</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead className="text-right">Volume</TableHead>
+                      <TableHead className="text-right">Share</TableHead>
+                      <TableHead className="text-right">Last order</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[...placementProduct.topAccounts]
+                      .sort((a, b) => b.bottles - a.bottles || a.accountName.localeCompare(b.accountName))
+                      .map((account, index) => (
+                        <TableRow key={account.accountName}>
+                          <TableCell className="px-4 tabular-nums text-muted-foreground">
+                            {index + 1}
+                          </TableCell>
+                          <TableCell className="font-medium">{account.accountName}</TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums">
+                            {formatNumber(account.bottles)} btls
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {formatPct(account.shareOfProductPct)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {formatDate(account.lastOrderDate)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+                {placementProduct.topAccounts.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-sm text-muted-foreground">
+                    No accounts have purchased this wine yet.
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Individual Product Deep-Dive Dialog */}
       <Dialog
         open={Boolean(selectedDetailProduct)}
         onOpenChange={(open) => {
@@ -1818,8 +1965,8 @@ export function ProductSalesTrendsDashboard() {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 sm:border-l sm:pl-3">
-                      <span className="text-xs text-muted-foreground font-medium">3-Mo Pace:</span>
-                      <TrajectoryPill trajectory={selectedDetailProduct.quarterlyTrajectory} windowLabel="3M" />
+                      <span className="text-xs text-muted-foreground font-medium">90-Day Pace:</span>
+                      <TrajectoryPill trajectory={selectedDetailProduct.quarterlyTrajectory} windowLabel="90d" />
                       {selectedDetailProduct.quarterlyPaceDeltaPct !== null && (
                         <span
                           className={cn(
@@ -1832,7 +1979,7 @@ export function ProductSalesTrendsDashboard() {
                           )}
                         >
                           {selectedDetailProduct.quarterlyPaceDeltaPct > 0 ? "+" : ""}
-                          {selectedDetailProduct.quarterlyPaceDeltaPct}% vs prior 3M
+                          {selectedDetailProduct.quarterlyPaceDeltaPct}% vs prior 90 days
                         </span>
                       )}
                     </div>
@@ -1872,7 +2019,7 @@ export function ProductSalesTrendsDashboard() {
                     </p>
                   </div>
                   <div className="rounded-lg border p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/50">
-                    <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">3-Mo Pace (Last 90d)</p>
+                    <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">Last 90 Days</p>
                     <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {formatNumber(selectedDetailProduct.paceLast3Months)}{" "}
                       <span className="text-xs font-normal text-muted-foreground">btls</span>
@@ -1882,7 +2029,7 @@ export function ProductSalesTrendsDashboard() {
                     </p>
                   </div>
                   <div className="rounded-lg border p-3.5 bg-muted/20">
-                    <p className="text-xs text-muted-foreground font-medium">Prior 3-Mo (90-180d)</p>
+                    <p className="text-xs text-muted-foreground font-medium">Prior 90 Days</p>
                     <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {formatNumber(selectedDetailProduct.pacePrior3Months)}{" "}
                       <span className="text-xs font-normal text-muted-foreground">btls</span>
@@ -1912,7 +2059,7 @@ export function ProductSalesTrendsDashboard() {
                           <TableHead className="py-2.5 px-3 font-semibold text-foreground">Account Name</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Bottles Purchased</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Share of SKU Volume</TableHead>
-                          <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">3-Mo Pace vs Prior</TableHead>
+                          <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Last 90-Day Pace vs Prior</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Total Orders</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">First Order</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Last Order</TableHead>
@@ -2018,9 +2165,10 @@ export function ProductSalesTrendsDashboard() {
         open={pointModalOpen}
         onOpenChange={setPointModalOpen}
         point={selectedTrendPoint}
-        allPoints={trends.data}
+        allPoints={chartSeries}
         orders={state.orders}
         granularity={granularity}
+        asOf={state.analysisAsOf}
         selectedProducts={selectedProducts}
         focusedProduct={focusedProduct}
         onSelectFocusedProduct={setFocusedProduct}
@@ -2032,7 +2180,7 @@ export function ProductSalesTrendsDashboard() {
       <ProductSlowdownReportDialog
         open={slowdownReportOpen}
         onOpenChange={setSlowdownReportOpen}
-        alerts={productAlerts}
+        alerts={detectedProductAlerts}
         repFilter={repFilter}
         asOf={state.analysisAsOf ?? snapshot.asOf}
         onMessage={flash}
