@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { parseISO, startOfMonth, startOfWeek } from "date-fns";
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -201,6 +202,8 @@ type BottleSalesTrendChartProps = {
   asOf?: string;
   initialSelectedAccounts?: string[];
   onSelectAccount?: (accountName: string) => void;
+  /** When true, chart data updates in a transition so the rep filter stays responsive. */
+  deferHeavyCompute?: boolean;
 };
 
 export function BottleSalesTrendChart({
@@ -208,33 +211,46 @@ export function BottleSalesTrendChart({
   asOf,
   initialSelectedAccounts,
   onSelectAccount,
+  deferHeavyCompute = false,
 }: BottleSalesTrendChartProps) {
   const searchInputId = useId();
+  const chartOrders = useDeferredValue(orders);
+  const trendOrders = deferHeavyCompute || orders.length > 800 ? chartOrders : orders;
+  const chartDataStale =
+    (deferHeavyCompute || orders.length > 800) && trendOrders !== orders;
 
   // Distinct account names ordered by volume
   const allAccountsSorted = useMemo(() => {
     const volMap = new Map<string, number>();
-    for (const o of orders) {
+    for (const o of trendOrders) {
       const b = o.cases > 0 ? o.cases : 1;
       volMap.set(o.accountName, (volMap.get(o.accountName) || 0) + b);
     }
     return Array.from(volMap.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name);
-  }, [orders]);
+  }, [trendOrders]);
 
-  // Selected accounts (default to Top 5 if not provided)
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(() => {
-    if (initialSelectedAccounts && initialSelectedAccounts.length > 0) {
-      return initialSelectedAccounts;
-    }
-    return allAccountsSorted.slice(0, 5);
-  });
+  const appliedDefaultSelectionRef = useRef(
+    Boolean(initialSelectedAccounts && initialSelectedAccounts.length > 0),
+  );
+
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(
+    () => initialSelectedAccounts ?? [],
+  );
+
+  useEffect(() => {
+    if (appliedDefaultSelectionRef.current) return;
+    if (allAccountsSorted.length === 0) return;
+    setSelectedAccounts([...allAccountsSorted]);
+    appliedDefaultSelectionRef.current = true;
+  }, [allAccountsSorted]);
 
   const [granularity, setGranularity] = useState<TrendGranularity>("monthly");
   const [timeframe, setTimeframe] = useState<TrendTimeframe>("all");
+  const [includeCurrentMonth, setIncludeCurrentMonth] = useState(true);
   const [showAggregateLine, setShowAggregateLine] = useState(true);
-  const [showIndividualLines, setShowIndividualLines] = useState(true);
+  const [showIndividualLines, setShowIndividualLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Color mapping per selected account
@@ -257,13 +273,23 @@ export function BottleSalesTrendChart({
     avgMonthlyBottles,
   } = useMemo(() => {
     return buildBottleTrendData({
-      orders,
+      orders: trendOrders,
       selectedAccounts,
       granularity,
       timeframe,
       asOf,
     });
-  }, [orders, selectedAccounts, granularity, timeframe, asOf]);
+  }, [trendOrders, selectedAccounts, granularity, timeframe, asOf]);
+
+  const chartSeries = useMemo(() => {
+    if (includeCurrentMonth) return data;
+    const asOfDate = parseISO((asOf ?? new Date().toISOString()).slice(0, 10));
+    const periodStart =
+      granularity === "weekly"
+        ? startOfWeek(asOfDate, { weekStartsOn: 1 }).getTime()
+        : startOfMonth(asOfDate).getTime();
+    return data.filter((point) => point.timestamp < periodStart);
+  }, [includeCurrentMonth, data, asOf, granularity]);
 
   const [showTrendlines, setShowTrendlines] = useState(true);
 
@@ -282,8 +308,8 @@ export function BottleSalesTrendChart({
   }, [showAggregateLine, showIndividualLines, selectedAccounts]);
 
   const { data: chartDataWithTrendlines, statsMap: trendStatsMap } = useMemo(() => {
-    return augmentDataWithTrendlines(data, trendlineDefs);
-  }, [data, trendlineDefs]);
+    return augmentDataWithTrendlines(chartSeries, trendlineDefs);
+  }, [chartSeries, trendlineDefs]);
 
   const aggregateTrendStats = trendStatsMap.get("totalBottles");
 
@@ -451,6 +477,13 @@ export function BottleSalesTrendChart({
               <CardDescription>
                 Historical bottle purchasing trajectory for selected accounts, showing aggregate
                 volume and per-account distribution patterns.
+                {includeCurrentMonth
+                  ? granularity === "monthly"
+                    ? " The current month is included."
+                    : " The current week is included."
+                  : granularity === "monthly"
+                    ? " The current month is hidden."
+                    : " The current week is hidden."}
               </CardDescription>
             </div>
 
@@ -510,6 +543,30 @@ export function BottleSalesTrendChart({
                 ))}
               </div>
 
+              <Button
+                size="xs"
+                variant={includeCurrentMonth ? "default" : "outline"}
+                onClick={() => setIncludeCurrentMonth((prev) => !prev)}
+                className={cn(
+                  "h-8 text-xs gap-1.5 transition-colors font-medium",
+                  includeCurrentMonth
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                title={
+                  includeCurrentMonth
+                    ? granularity === "monthly"
+                      ? "Hide the current month from the chart"
+                      : "Hide the current week from the chart"
+                    : granularity === "monthly"
+                      ? "Show the current month on the chart"
+                      : "Show the current week on the chart"
+                }
+              >
+                {granularity === "monthly" ? "Current Month" : "Current Week"}{" "}
+                {includeCurrentMonth ? "ON" : "OFF"}
+              </Button>
+
               {/* Line Visibility Toggles */}
               <div className="flex items-center gap-2 text-xs">
                 <Button
@@ -547,8 +604,13 @@ export function BottleSalesTrendChart({
           </div>
         </CardHeader>
 
-        <CardContent className="pt-6">
-          {data.length === 0 || selectedAccounts.length === 0 ? (
+        <CardContent className={cn("pt-6", chartDataStale && "opacity-60")}>
+          {chartDataStale ? (
+            <p className="mb-3 text-xs font-medium text-muted-foreground">
+              Updating chart for the selected rep…
+            </p>
+          ) : null}
+          {chartSeries.length === 0 || selectedAccounts.length === 0 ? (
             <div className="flex h-80 flex-col items-center justify-center rounded-xl border border-dashed text-center p-6">
               <Wine className="size-10 text-muted-foreground/60 mb-2" />
               <p className="font-heading font-semibold text-foreground text-lg">

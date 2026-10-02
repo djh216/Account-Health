@@ -1,4 +1,4 @@
-import { normalizeName } from "./format";
+import { buildOrderIndex, ordersForAccountHealth, type OrderIndex } from "./order-index";
 import type { AccountHealth, Order, TerritoryValueTier } from "./types";
 
 const TIER_1_CUMULATIVE_SHARE = 0.7;
@@ -8,21 +8,12 @@ function lineVolume(order: Order): number {
   return order.cases > 0 ? order.cases : 1;
 }
 
-function ordersForAccount(account: AccountHealth, orders: Order[]): Order[] {
-  const normalized = normalizeName(account.account.name);
-  return orders.filter(
-    (order) =>
-      order.accountId === account.account.id ||
-      normalizeName(order.accountName) === normalized,
-  );
-}
-
 /** All-time volume, falling back to revenue or recent activity when volume is missing. */
 export function territoryValueForAccount(
   account: AccountHealth,
-  orders: Order[],
+  orderIndex: OrderIndex,
 ): number {
-  const accountOrders = ordersForAccount(account, orders);
+  const accountOrders = ordersForAccountHealth(orderIndex, account);
   const volume = accountOrders.reduce((sum, order) => sum + lineVolume(order), 0);
   if (volume > 0) return volume;
 
@@ -74,14 +65,18 @@ function assignTier(cumulativeShare: number, value: number): TerritoryValueTier 
 
 export function enrichAccountsWithTerritoryValue(
   accounts: AccountHealth[],
-  orders: Order[],
+  ordersOrIndex: Order[] | OrderIndex,
 ): AccountHealth[] {
   if (accounts.length === 0) return [];
+
+  const orderIndex = Array.isArray(ordersOrIndex)
+    ? buildOrderIndex(ordersOrIndex)
+    : ordersOrIndex;
 
   const ranked = accounts
     .map((account) => ({
       account,
-      value: territoryValueForAccount(account, orders),
+      value: territoryValueForAccount(account, orderIndex),
     }))
     .sort(
       (a, b) =>

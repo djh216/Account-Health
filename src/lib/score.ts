@@ -9,6 +9,8 @@ import {
 } from "./order-frequency";
 import { orderCadenceStatus, riskFromOrderCadence, daysPastTypicalFrequency, RISK_AT_RISK_MIN_DAYS, RISK_HEALTHY_GRACE_DAYS } from "./order-cadence";
 import { ANALYTICS_PERIOD_DAYS } from "./order-analytics";
+import { buildOrderIndex, ordersForAccount, type OrderIndex } from "./order-index";
+import { buildVisitIndex, visitsForAccount, type VisitIndex } from "./visit-index";
 import { orderEventCountFromOrders, uniqueOrderWeekAnchorDates } from "./order-weeks";
 import type {
   Account,
@@ -34,17 +36,6 @@ function toDate(iso: string): Date {
 
 function typicalInterval(dates: string[], asOf: string): number | null {
   return typicalFrequencyDaysFromOrderDates(dates, asOf);
-}
-
-function accountOrdersFor(account: Account, orders: Order[]): Order[] {
-  const normalized = normalizeName(account.name);
-  return orders
-    .filter(
-      (order) =>
-        order.accountId === account.id ||
-        normalizeName(order.accountName) === normalized,
-    )
-    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function recencyScore(
@@ -567,18 +558,16 @@ export function focusAccountsByHorizon(
 
 export function scoreAccount(
   account: Account,
-  orders: Order[],
-  visits: Visit[],
+  orderIndex: OrderIndex,
+  visitIndex: VisitIndex,
   asOf: string,
 ): AccountHealth {
   const asOfDate = toDate(asOf);
   const windowStart = subDays(asOfDate, 90);
   const priorStart = subDays(asOfDate, 180);
 
-  const accountOrders = accountOrdersFor(account, orders);
-  const accountVisits = visits
-    .filter((visit) => visit.accountId === account.id)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const accountOrders = ordersForAccount(orderIndex, account);
+  const accountVisits = visitsForAccount(visitIndex, account.id);
 
   const lastOrder = accountOrders.at(-1) ?? null;
   const lastVisit = accountVisits.at(-1) ?? null;
@@ -804,10 +793,16 @@ export function buildSnapshot(
   orders: Order[],
   visits: Visit[],
   asOfOverride?: string,
+  orderIndex?: OrderIndex,
+  visitIndex?: VisitIndex,
 ): PortfolioSnapshot {
   const asOf = asOfOverride ?? todayIso();
+  const resolvedOrderIndex = orderIndex ?? buildOrderIndex(orders);
+  const resolvedVisitIndex = visitIndex ?? buildVisitIndex(visits);
   const scored = accounts
-    .map((account) => scoreAccount(account, orders, visits, asOf))
+    .map((account) =>
+      scoreAccount(account, resolvedOrderIndex, resolvedVisitIndex, asOf),
+    )
     .sort((a, b) => a.score - b.score || (a.daysSinceOrder ?? 999) - (b.daysSinceOrder ?? 999));
 
   const snapshotCount = scored.filter((item) => item.mode === "snapshot").length;

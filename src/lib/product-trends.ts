@@ -631,3 +631,27 @@ export function detectSlowingProductAlerts(
 
   return alerts;
 }
+
+export type ProductTrendDataResult = ReturnType<typeof buildProductTrendData>;
+
+const aggregateProductTrendCache = new Map<string, ProductTrendDataResult>();
+
+/** Cached monthly/all-time aggregate trends (empty product selection). */
+export function buildAggregateProductTrendDataCached(
+  portfolioKey: string,
+  orders: Order[],
+  asOf?: string,
+): ProductTrendDataResult {
+  const cacheKey = `${portfolioKey}:${asOf ?? ""}`;
+  const cached = aggregateProductTrendCache.get(cacheKey);
+  if (cached) return cached;
+  const result = buildProductTrendData({
+    orders,
+    selectedProducts: [],
+    granularity: "monthly",
+    timeframe: "all",
+    asOf,
+  });
+  aggregateProductTrendCache.set(cacheKey, result);
+  return result;
+}

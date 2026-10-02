@@ -42,13 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  buildProductTrendData,
-  detectSlowingProductAlerts,
-} from "@/lib/product-trends";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
-import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
-import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import {
   accountTypeLabel,
   formatDate,
@@ -60,9 +54,7 @@ import {
   reportKindLabel,
 } from "@/lib/format";
 import {
-  buildOrderAnalytics,
   getRestaurantTracking,
-  listNewAccountsWithRecentOrders,
   NEW_ACCOUNT_WINDOW_DAYS,
 } from "@/lib/order-analytics";
 import { RISK_AT_RISK_MIN_DAYS } from "@/lib/order-cadence";
@@ -78,14 +70,12 @@ import {
 } from "@/lib/score";
 import {
   accountsByTerritoryTier,
-  enrichAccountsWithTerritoryValue,
   territoryTierDescription,
   territoryTierTitle,
 } from "@/lib/territory-value";
 import { FOCUS_SECTIONS } from "@/lib/focus-sections";
 import { setPortfolio } from "@/lib/portfolio-store";
 import { generateSampleWinePortfolio } from "@/lib/sample-data";
-import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
 import type { AccountHealth, RiskLevel, TerritoryValueTier } from "@/lib/types";
 
 type AccountListDialogState = {
@@ -127,8 +117,22 @@ const TERRITORY_TIER_SECTIONS: Array<{
 ];
 
 export function Dashboard() {
-  const { state, fullState, snapshot, repFilter, setRepFilter, reps, importParseResult } =
-    useFilteredPortfolio();
+  const {
+    state,
+    fullState,
+    snapshot,
+    repFilter,
+    repFilterPending,
+    setRepFilter,
+    reps,
+    importParseResult,
+    orderAnalytics,
+    enrichedAccounts,
+    productTrends,
+    frequencyAlerts,
+    productAlerts,
+    newAccounts,
+  } = useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -140,41 +144,6 @@ export function Dashboard() {
     null,
   );
   const [toast, setToast] = useState<string | null>(null);
-
-  const enrichedAccounts = useMemo(
-    () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
-    [snapshot.accounts, state.orders],
-  );
-
-  const frequencyAlerts = useMemo(
-    () =>
-      detectOrderFrequencyDrops(
-        enrichedAccounts,
-        state.orders,
-        state.analysisAsOf,
-      ),
-    [enrichedAccounts, state.orders, state.analysisAsOf],
-  );
-
-  const productTrends = useMemo(
-    () =>
-      buildProductTrendData({
-        orders: state.orders,
-        selectedProducts: [],
-        asOf: state.analysisAsOf,
-      }),
-    [state.orders, state.analysisAsOf],
-  );
-
-  const { ids: outOfStockIds } = useOutOfStockProducts();
-  const productAlerts = useMemo(
-    () =>
-      excludeOutOfStock(
-        detectSlowingProductAlerts(productTrends.productSummaries),
-        outOfStockIds,
-      ),
-    [productTrends.productSummaries, outOfStockIds],
-  );
 
   const criticalProductAlertsCount = useMemo(
     () => productAlerts.filter((a) => a.severity === "critical").length,
@@ -268,15 +237,6 @@ export function Dashboard() {
     [enrichedAccounts],
   );
 
-  const newAccounts = useMemo(
-    () =>
-      listNewAccountsWithRecentOrders(
-        state.orders,
-        state.analysisAsOf ?? snapshot.asOf,
-      ),
-    [state.orders, state.analysisAsOf, snapshot.asOf],
-  );
-
   const healthByAccountName = useMemo(
     () =>
       new Map(
@@ -324,11 +284,6 @@ export function Dashboard() {
 
   const selected =
     enrichedAccounts.find((item) => item.account.id === selectedId) ?? null;
-
-  const orderAnalytics = useMemo(
-    () => buildOrderAnalytics(state.orders, state.analysisAsOf),
-    [state.orders, state.analysisAsOf],
-  );
 
   const selectedOrderTracking = selected
     ? getRestaurantTracking(orderAnalytics, selected.account.name)
@@ -393,6 +348,7 @@ export function Dashboard() {
             <RepFilterSelect
               reps={reps}
               value={repFilter}
+              pending={repFilterPending}
               onValueChange={setRepFilter}
             />
           </div>

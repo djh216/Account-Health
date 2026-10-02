@@ -108,6 +108,39 @@ export const TREND_PALETTE = [
 /**
  * Calculates aggregate bottle trends over time for selected accounts.
  */
+export type BottleTrendDataResult = {
+  data: AccountTrendPoint[];
+  accountSummaries: AccountBottleSummary[];
+  totalBottles: number;
+  totalRevenue: number;
+  peakPeriod: { label: string; bottles: number } | null;
+  avgMonthlyBottles: number;
+};
+
+const bottleTrendCache = new Map<string, BottleTrendDataResult>();
+const BOTTLE_TREND_CACHE_LIMIT = 48;
+
+function bottleTrendOrdersKey(orders: Order[]): string {
+  if (orders.length === 0) return "0";
+  const mid = orders[Math.floor(orders.length / 2)]!;
+  const last = orders[orders.length - 1]!;
+  return `${orders.length}:${orders[0]!.date}:${mid.date}:${last.date}:${last.accountName}`;
+}
+
+function bottleTrendCacheKey(
+  orders: Order[],
+  selectedAccounts: string[],
+  granularity: TrendGranularity,
+  timeframe: TrendTimeframe,
+  asOf: string | undefined,
+): string {
+  const accountKey =
+    selectedAccounts.length === 0
+      ? "__all__"
+      : selectedAccounts.slice().sort().join("\0");
+  return `${bottleTrendOrdersKey(orders)}:${granularity}:${timeframe}:${asOf ?? ""}:${accountKey}`;
+}
+
 export function buildBottleTrendData({
   orders,
   selectedAccounts,
@@ -120,14 +153,17 @@ export function buildBottleTrendData({
   granularity?: TrendGranularity;
   timeframe?: TrendTimeframe;
   asOf?: string;
-}): {
-  data: AccountTrendPoint[];
-  accountSummaries: AccountBottleSummary[];
-  totalBottles: number;
-  totalRevenue: number;
-  peakPeriod: { label: string; bottles: number } | null;
-  avgMonthlyBottles: number;
-} {
+}): BottleTrendDataResult {
+  const cacheKey = bottleTrendCacheKey(
+    orders,
+    selectedAccounts,
+    granularity,
+    timeframe,
+    asOf,
+  );
+  const cached = bottleTrendCache.get(cacheKey);
+  if (cached) return cached;
+
   const asOfDate = asOf ? parseISO(asOf) : new Date();
 
   // Snap to the start of the first week or month so a plotted bucket is complete.
@@ -381,7 +417,7 @@ export function buildBottleTrendData({
 
   const avgMonthlyBottles = Math.round(totalBottles / monthCount);
 
-  return {
+  const result: BottleTrendDataResult = {
     data: sortedPoints,
     accountSummaries,
     totalBottles,
@@ -389,4 +425,11 @@ export function buildBottleTrendData({
     peakPeriod,
     avgMonthlyBottles,
   };
+
+  if (bottleTrendCache.size >= BOTTLE_TREND_CACHE_LIMIT) {
+    const firstKey = bottleTrendCache.keys().next().value;
+    if (firstKey) bottleTrendCache.delete(firstKey);
+  }
+  bottleTrendCache.set(cacheKey, result);
+  return result;
 }

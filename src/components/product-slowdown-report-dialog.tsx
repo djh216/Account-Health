@@ -133,28 +133,32 @@ export function ProductSlowdownReportDialog({
     window.print();
   }
 
+  const showTrigger = Boolean(trigger) || !isControlled;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {trigger ? (
-        <DialogTrigger
-          render={
-            isValidElement(trigger) ? (
-              trigger
-            ) : (
-              <button type="button">{trigger}</button>
-            )
-          }
-        />
-      ) : (
-        <DialogTrigger
-          render={
-            <Button variant="outline" className="gap-2">
-              <FileText className="size-4" />
-              <span>Slowdown Report</span>
-            </Button>
-          }
-        />
-      )}
+      {showTrigger ? (
+        trigger ? (
+          <DialogTrigger
+            render={
+              isValidElement(trigger) ? (
+                trigger
+              ) : (
+                <button type="button">{trigger}</button>
+              )
+            }
+          />
+        ) : (
+          <DialogTrigger
+            render={
+              <Button variant="outline" className="gap-2">
+                <FileText className="size-4" />
+                <span>Slowdown Report</span>
+              </Button>
+            }
+          />
+        )
+      ) : null}
 
       <DialogContent className="max-h-[92vh] w-[95vw] max-w-6xl overflow-y-auto overflow-x-hidden p-0 sm:max-w-6xl">
         {/* Top Action & Export Bar */}

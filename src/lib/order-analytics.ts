@@ -789,9 +789,11 @@ export function buildAccountOrderTracking(
 ): AccountOrderTracking | null {
   const asOf = asOfOverride ?? new Date().toISOString().slice(0, 10);
   const asOfDate = parseISO(asOf);
-  const accountOrders = analyticsOrders(orders)
-    .filter((order) => order.accountName === accountName)
-    .sort((a, b) => b.date.localeCompare(a.date));
+  let accountOrders = analyticsOrders(orders);
+  if (accountOrders.some((order) => order.accountName !== accountName)) {
+    accountOrders = accountOrders.filter((order) => order.accountName === accountName);
+  }
+  accountOrders.sort((a, b) => b.date.localeCompare(a.date));
 
   if (accountOrders.length === 0) return null;
 
@@ -1088,6 +1090,7 @@ export function buildOrderAnalytics(
     .sort((a, b) => b.volume - a.volume || b.lineCount - a.lineCount);
 
   const mixMap = new Map<string, RestaurantProductMix>();
+  const ordersByAccountProduct = new Map<string, Order[]>();
   for (const order of sorted) {
     const product = productLabel(order);
     const key = `${order.accountName}::${product}`;
@@ -1107,18 +1110,24 @@ export function buildOrderAnalytics(
     if (order.date < existing.firstOrdered) existing.firstOrdered = order.date;
     if (order.date > existing.lastOrdered) existing.lastOrdered = order.date;
     mixMap.set(key, existing);
+
+    const productBucket = ordersByAccountProduct.get(key) ?? [];
+    productBucket.push(order);
+    ordersByAccountProduct.set(key, productBucket);
   }
 
+  const volumeByRestaurant = new Map(
+    byFrequency.map((row) => [row.accountName, row.totalVolume] as const),
+  );
+
   for (const row of mixMap.values()) {
-    const restaurantVolume =
-      byFrequency.find((item) => item.accountName === row.accountName)?.totalVolume ?? 0;
+    const restaurantVolume = volumeByRestaurant.get(row.accountName) ?? 0;
     row.shareOfRestaurantVolumePct =
       restaurantVolume > 0 ? (row.volume / restaurantVolume) * 100 : 0;
-    const productOrders = sorted.filter(
-      (order) =>
-        order.accountName === row.accountName && productLabel(order) === row.product,
+    const productOrders = ordersByAccountProduct.get(
+      `${row.accountName}::${row.product}`,
     );
-    row.orderEventCount = uniqueOrderWeekAnchorDates(productOrders).length;
+    row.orderEventCount = uniqueOrderWeekAnchorDates(productOrders ?? []).length;
   }
 
   const byRestaurantProduct = [...mixMap.values()].sort(
@@ -1134,15 +1143,25 @@ export function buildOrderAnalytics(
     sorted.map((order) => `${order.accountName}::${orderWeekKey(order.date)}`),
   ).size;
 
+  const productsByRestaurant = new Map<string, RestaurantProductMix[]>();
+  for (const row of byRestaurantProduct) {
+    const list = productsByRestaurant.get(row.accountName) ?? [];
+    list.push(row);
+    productsByRestaurant.set(row.accountName, list);
+  }
+
   const byAccount = sortAccountTracking(
     byFrequency
       .map((row) =>
-        buildAccountOrderTracking(sorted, row.accountName, asOf, {
-          frequency: row,
-          products: byRestaurantProduct.filter(
-            (item) => item.accountName === row.accountName,
-          ),
-        }),
+        buildAccountOrderTracking(
+          ordersByRestaurant.get(row.accountName) ?? [],
+          row.accountName,
+          asOf,
+          {
+            frequency: row,
+            products: productsByRestaurant.get(row.accountName) ?? [],
+          },
+        ),
       )
       .filter((row): row is AccountOrderTracking => row !== null),
   );

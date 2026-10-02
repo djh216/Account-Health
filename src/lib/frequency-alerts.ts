@@ -54,19 +54,24 @@ export function detectOrderFrequencyDrops(
   accounts: AccountHealth[],
   orders: Order[],
   asOfOverride?: string,
+  ordersByNormalizedName?: Map<string, Order[]>,
 ): AccountFrequencyAlert[] {
   const asOf = asOfOverride ?? new Date().toISOString().slice(0, 10);
   const asOfDate = parseISO(asOf);
   const recentStart90 = subDays(asOfDate, 90);
 
-  // Group orders by normalized account name
-  const ordersByAccount = new Map<string, Order[]>();
-  for (const order of orders) {
-    const key = normalizeName(order.accountName);
-    const list = ordersByAccount.get(key) ?? [];
-    list.push(order);
-    ordersByAccount.set(key, list);
-  }
+  const ordersByAccount =
+    ordersByNormalizedName ??
+    (() => {
+      const map = new Map<string, Order[]>();
+      for (const order of orders) {
+        const key = normalizeName(order.accountName);
+        const list = map.get(key) ?? [];
+        list.push(order);
+        map.set(key, list);
+      }
+      return map;
+    })();
 
   const alerts: AccountFrequencyAlert[] = [];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { mergeAccounts, mergeOrders, mergeVisits, rowsToRecords } from "@/lib/parse";
 import {
   getPortfolioSnapshot,
@@ -9,7 +9,6 @@ import {
   setPortfolio,
   subscribePortfolio,
 } from "@/lib/portfolio-store";
-import { buildSnapshot } from "@/lib/score";
 import type { ParseResult } from "@/lib/types";
 
 export function usePortfolio() {
@@ -17,11 +16,6 @@ export function usePortfolio() {
     subscribePortfolio,
     getPortfolioSnapshot,
     getServerPortfolioSnapshot,
-  );
-
-  const snapshot = useMemo(
-    () => buildSnapshot(state.accounts, state.orders, state.visits, state.analysisAsOf),
-    [state],
   );
 
   const importParseResult = useCallback((result: ParseResult) => {
@@ -53,7 +47,6 @@ export function usePortfolio() {
 
   return {
     state,
-    snapshot,
     importParseResult,
     reset: resetPortfolio,
   };

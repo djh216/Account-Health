@@ -35,13 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  buildProductTrendData,
-  detectSlowingProductAlerts,
-} from "@/lib/product-trends";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
-import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
-import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import {
   formatDate,
   formatDays,
@@ -53,26 +47,17 @@ import {
   frequencyDeltaTone,
   normalizeName,
 } from "@/lib/format";
-import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
-import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
-import {
-  buildProjectionsAndChurn,
-} from "@/lib/order-projections";
 import { VolumeProjectionChurnPanel } from "@/components/volume-projection-churn-panel";
 import { BottleSalesTrendChart } from "@/components/bottle-sales-trend-chart";
 import type { AccountHealth } from "@/lib/types";
+import { hasSpecifiedProduct } from "@/lib/order-analytics";
 import {
   orderCadenceTone,
   orderCadenceToneClass,
   orderCadenceToneHintClass,
 } from "@/lib/order-cadence";
 import {
-  buildOrderAnalytics,
   getRestaurantTracking,
-  lastOrderGapsByAccount,
-  listNewAccountsWithRecentOrders,
-  listRetainedAccounts,
-  listReturningCustomers,
   NEW_ACCOUNT_WINDOW_DAYS,
   sortAccountTrackingRows,
   sortRestaurantFrequencyRows,
@@ -238,8 +223,26 @@ type AccountListDialogState = {
 };
 
 export function OrderAnalyticsDashboard() {
-  const { state, fullState, snapshot, repFilter, setRepFilter, reps, importParseResult } =
-    useFilteredPortfolio();
+  const {
+    state,
+    fullState,
+    snapshot,
+    repFilter,
+    repFilterPending,
+    setRepFilter,
+    reps,
+    importParseResult,
+    orderAnalytics: analytics,
+    enrichedAccounts,
+    productTrends,
+    frequencyAlerts,
+    productAlerts,
+    projectionsSummary,
+    newAccounts,
+    retainedAccounts,
+    returningCustomers,
+    lastOrderGaps,
+  } = useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] =
@@ -259,78 +262,6 @@ export function OrderAnalyticsDashboard() {
     direction: SortDirection;
   }>({ column: "orderFrequency", direction: "asc" });
 
-  const analytics = useMemo(
-    () => buildOrderAnalytics(state.orders, state.analysisAsOf),
-    [state.orders, state.analysisAsOf],
-  );
-
-  const newAccounts = useMemo(
-    () =>
-      listNewAccountsWithRecentOrders(
-        state.orders,
-        state.analysisAsOf ?? analytics.asOf,
-      ),
-    [state.orders, state.analysisAsOf, analytics.asOf],
-  );
-
-  const retainedAccounts = useMemo(
-    () =>
-      listRetainedAccounts(
-        state.orders,
-        state.analysisAsOf ?? analytics.asOf,
-      ),
-    [state.orders, state.analysisAsOf, analytics.asOf],
-  );
-
-  const lastOrderGaps = useMemo(
-    () => lastOrderGapsByAccount(state.orders),
-    [state.orders],
-  );
-
-  const returningCustomers = useMemo(
-    () =>
-      listReturningCustomers(
-        state.orders,
-        state.analysisAsOf ?? analytics.asOf,
-      ),
-    [state.orders, state.analysisAsOf, analytics.asOf],
-  );
-
-  const enrichedAccounts = useMemo(
-    () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
-    [snapshot.accounts, state.orders],
-  );
-
-  const frequencyAlerts = useMemo(
-    () =>
-      detectOrderFrequencyDrops(
-        enrichedAccounts,
-        state.orders,
-        state.analysisAsOf ?? analytics.asOf,
-      ),
-    [enrichedAccounts, state.orders, state.analysisAsOf, analytics.asOf],
-  );
-
-  const productTrends = useMemo(
-    () =>
-      buildProductTrendData({
-        orders: state.orders,
-        selectedProducts: [],
-        asOf: state.analysisAsOf ?? analytics.asOf,
-      }),
-    [state.orders, state.analysisAsOf, analytics.asOf],
-  );
-
-  const { ids: outOfStockIds } = useOutOfStockProducts();
-  const productAlerts = useMemo(
-    () =>
-      excludeOutOfStock(
-        detectSlowingProductAlerts(productTrends.productSummaries),
-        outOfStockIds,
-      ),
-    [productTrends.productSummaries, outOfStockIds],
-  );
-
   const criticalProductAlertsCount = useMemo(
     () => productAlerts.filter((a) => a.severity === "critical").length,
     [productAlerts],
@@ -343,16 +274,6 @@ export function OrderAnalyticsDashboard() {
 
   const totalAlertsCount = frequencyAlerts.length + productAlerts.length;
   const totalCriticalAlertsCount = criticalAlertsCount + criticalProductAlertsCount;
-
-  const projectionsSummary = useMemo(
-    () =>
-      buildProjectionsAndChurn(
-        analytics,
-        enrichedAccounts,
-        state.analysisAsOf ?? analytics.asOf,
-      ),
-    [analytics, enrichedAccounts, state.analysisAsOf],
-  );
 
   const healthByAccountName = useMemo(
     () =>
@@ -384,6 +305,11 @@ export function OrderAnalyticsDashboard() {
         .map((account) => healthByAccountName.get(normalizeName(account.accountName)))
         .filter((item): item is AccountHealth => item !== undefined),
     [returningCustomers, healthByAccountName],
+  );
+
+  const bottleTrendOrders = useMemo(
+    () => state.orders.filter(hasSpecifiedProduct),
+    [state.orders],
   );
 
   const sortedAccounts = useMemo(
@@ -509,6 +435,7 @@ export function OrderAnalyticsDashboard() {
             <RepFilterSelect
               reps={reps}
               value={repFilter}
+              pending={repFilterPending}
               onValueChange={setRepFilter}
             />
           </div>
@@ -915,7 +842,8 @@ export function OrderAnalyticsDashboard() {
 
               <TabsContent value="trends" className="space-y-4">
                 <BottleSalesTrendChart
-                  orders={analytics.orders}
+                  orders={bottleTrendOrders}
+                  deferHeavyCompute={bottleTrendOrders.length > 800}
                   asOf={state.analysisAsOf ?? snapshot.asOf}
                   onSelectAccount={(accountName) => {
                     const row = analytics.byAccount.find(

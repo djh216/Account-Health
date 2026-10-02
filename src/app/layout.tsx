@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
+import { AppProviders } from "@/components/app-providers";
 import { PortfolioBootstrap } from "@/components/portfolio-bootstrap";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,7 +37,7 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <PortfolioBootstrap />
-        <TooltipProvider>{children}</TooltipProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

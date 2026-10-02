@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useDeferredValue, useId, useMemo, useRef, useState } from "react";
 import { parseISO, startOfMonth } from "date-fns";
 import {
   ArrowDownRight,
@@ -10,6 +10,7 @@ import {
   Bell,
   Check,
   Download,
+  FileText,
   Printer,
   Search,
   Sparkles,
@@ -40,7 +41,6 @@ import { PrintReportButton } from "@/components/print-report-button";
 import { UploadDialog } from "@/components/upload-dialog";
 import { TrendPointAnalyticsDialog } from "@/components/trend-point-analytics-dialog";
 import { ProductSlowdownReportDialog } from "@/components/product-slowdown-report-dialog";
-import { downloadProductSlowdownPdf } from "@/lib/report-export";
 import {
   NotificationSidebar,
   NotificationSidebarTrigger,
@@ -86,9 +86,7 @@ import {
 import { formatDate, formatMoney, formatNumber, formatPct } from "@/lib/format";
 import { generateSampleWinePortfolio } from "@/lib/sample-data";
 import { setPortfolio } from "@/lib/portfolio-store";
-import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
 import { excludeOutOfStock } from "@/lib/out-of-stock-products";
-import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
 import {
   buildProductTrendData,
   PRODUCT_PALETTE,
@@ -175,8 +173,19 @@ function TrajectoryPill({
 }
 
 export function ProductSalesTrendsDashboard() {
-  const { state, fullState, snapshot, repFilter, setRepFilter, reps, importParseResult } =
-    useFilteredPortfolio();
+  const {
+    state,
+    fullState,
+    snapshot,
+    repFilter,
+    repFilterPending,
+    setRepFilter,
+    reps,
+    importParseResult,
+    enrichedAccounts,
+    frequencyAlerts,
+    productTrends: cachedProductTrends,
+  } = useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -226,44 +235,56 @@ export function ProductSalesTrendsDashboard() {
     flash("Sample wine distribution book loaded.");
   }
 
-  const enrichedAccounts = useMemo(
-    () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
-    [snapshot.accounts, state.orders],
-  );
-
-  // Alerts for notification drawer
-  const frequencyAlerts = useMemo(
-    () =>
-      detectOrderFrequencyDrops(
-        enrichedAccounts,
-        state.orders,
-        state.analysisAsOf,
-      ),
-    [enrichedAccounts, state.orders, state.analysisAsOf],
-  );
   const criticalAlertsCount = useMemo(
     () => frequencyAlerts.filter((a) => a.severity === "critical").length,
     [frequencyAlerts],
   );
 
+  const useCachedProductTrends =
+    selectedProducts.length === 0 &&
+    granularity === "monthly" &&
+    timeframe === "all";
+
+  const trendsRef = useRef(cachedProductTrends);
+
   // Compute trend metrics (28-day trajectory window)
   const trends = useMemo(
-    () =>
-      buildProductTrendData({
+    () => {
+      if (useCachedProductTrends) {
+        trendsRef.current = cachedProductTrends;
+        return cachedProductTrends;
+      }
+      if (repFilterPending) {
+        return trendsRef.current;
+      }
+      const next = buildProductTrendData({
         orders: state.orders,
         selectedProducts,
         granularity,
         timeframe,
         asOf: state.analysisAsOf,
-      }),
-    [state.orders, selectedProducts, granularity, timeframe, state.analysisAsOf],
+      });
+      trendsRef.current = next;
+      return next;
+    },
+    [
+      useCachedProductTrends,
+      cachedProductTrends,
+      repFilterPending,
+      state.orders,
+      selectedProducts,
+      granularity,
+      timeframe,
+      state.analysisAsOf,
+    ],
   );
 
   // Alerts for slowing wine products over the last 28 days.
   // Out-of-stock marks stay on the full list so the report can restore them.
+  const alertSummaries = useDeferredValue(trends.productSummaries);
   const detectedProductAlerts = useMemo(
-    () => detectSlowingProductAlerts(trends.productSummaries),
-    [trends.productSummaries],
+    () => detectSlowingProductAlerts(alertSummaries),
+    [alertSummaries],
   );
   const { ids: outOfStockIds } = useOutOfStockProducts();
   const productAlerts = useMemo(
@@ -291,12 +312,16 @@ export function ProductSalesTrendsDashboard() {
   const [showTrendlines, setShowTrendlines] = useState(true);
   const [includeCurrentMonth, setIncludeCurrentMonth] = useState(true);
 
-  const chartSeries = useMemo(() => {
+  const chartSeriesBase = useMemo(() => {
     if (includeCurrentMonth) return trends.data;
     const asOfDate = parseISO((state.analysisAsOf ?? new Date().toISOString()).slice(0, 10));
     const monthStart = startOfMonth(asOfDate).getTime();
     return trends.data.filter((point) => point.timestamp < monthStart);
   }, [includeCurrentMonth, trends.data, state.analysisAsOf]);
+
+  const chartSeriesDeferred = useDeferredValue(chartSeriesBase);
+  const chartSeries = chartSeriesDeferred;
+  const chartSeriesPending = chartSeriesDeferred !== chartSeriesBase;
 
   // Compute linear trendline definitions for products / metric
   const productTrendlineDefs = useMemo<TrendlineDefinition[]>(() => {
@@ -478,19 +503,8 @@ export function ProductSalesTrendsDashboard() {
     flash("Product sales trends CSV downloaded.");
   }
 
-  function handlePrintSlowdownBriefing() {
-    try {
-      downloadProductSlowdownPdf({
-        repFilter,
-        asOf: state.analysisAsOf ?? snapshot.asOf ?? new Date().toISOString(),
-        generatedAt: new Date().toISOString(),
-        alerts: productAlerts,
-      });
-      flash(`✓ Printable 28-Day Slowdown Briefing PDF created (${productAlerts.length} SKUs).`);
-      setSlowdownReportOpen(true);
-    } catch {
-      flash("Could not generate printable PDF for slowdown briefing.");
-    }
+  function handleOpenSlowdownReport() {
+    setSlowdownReportOpen(true);
   }
 
   return (
@@ -540,6 +554,7 @@ export function ProductSalesTrendsDashboard() {
             <RepFilterSelect
               reps={reps}
               value={repFilter}
+              pending={repFilterPending}
               onValueChange={setRepFilter}
             />
           </div>
@@ -612,11 +627,11 @@ export function ProductSalesTrendsDashboard() {
                     ? "bg-white/95 border-rose-300 text-rose-900 hover:bg-white hover:border-rose-400 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-100"
                     : "bg-white/95 border-amber-300 text-amber-900 hover:bg-white hover:border-amber-400 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-100",
                 )}
-                onClick={handlePrintSlowdownBriefing}
-                title="Create and download a printable PDF report for the 28-day product slowdown briefing"
+                onClick={handleOpenSlowdownReport}
+                title="Open the monthly product slowdown report (print or export from the report)"
               >
-                <Printer className="size-3.5" />
-                <span>Print Briefing (PDF)</span>
+                <FileText className="size-3.5" />
+                <span>Monthly Slowdown Report</span>
               </Button>
 
               <Button
@@ -757,10 +772,20 @@ export function ProductSalesTrendsDashboard() {
             </section>
 
             {/* Unified Multi-Product Sales Trend Visualizer & Wine Catalog */}
-            <Card className="border-border overflow-hidden shadow-xs">
+            <Card
+              className={cn(
+                "border-border overflow-hidden shadow-xs",
+                (repFilterPending || chartSeriesPending) && "opacity-70",
+              )}
+            >
               <CardHeader className="pb-4 border-b bg-card">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
+                    {repFilterPending || chartSeriesPending ? (
+                      <p className="mb-2 text-xs font-medium text-muted-foreground">
+                        Updating aggregates for the selected rep…
+                      </p>
+                    ) : null}
                     <CardTitle className="font-heading text-xl flex flex-wrap items-center gap-2">
                       <span>Multi-Product Sales Trend Visualizer & Wine Catalog</span>
                       <span className="text-xs font-normal text-muted-foreground bg-muted/80 border px-2.5 py-0.5 rounded-full">
