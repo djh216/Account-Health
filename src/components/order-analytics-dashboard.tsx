@@ -845,6 +845,7 @@ export function OrderAnalyticsDashboard() {
                   orders={bottleTrendOrders}
                   deferHeavyCompute={bottleTrendOrders.length > 800}
                   asOf={state.analysisAsOf ?? snapshot.asOf}
+                  accountHealthByName={healthByAccountName}
                   onSelectAccount={(accountName) => {
                     const row = analytics.byAccount.find(
                       (a) => normalizeName(a.accountName) === normalizeName(accountName),

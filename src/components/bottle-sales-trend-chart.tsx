@@ -60,7 +60,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney, formatNumber } from "@/lib/format";
+import { formatDate, formatNumber, normalizeName } from "@/lib/format";
 import {
   buildBottleTrendData,
   bottleTrendOrdersScopeKey,
@@ -68,7 +68,7 @@ import {
   type TrendGranularity,
   type TrendTimeframe,
 } from "@/lib/bottle-trends";
-import type { Order } from "@/lib/types";
+import type { AccountHealth, Order } from "@/lib/types";
 import type { ProductTrajectory } from "@/lib/product-trends";
 import { cn } from "@/lib/utils";
 
@@ -213,6 +213,8 @@ type BottleSalesTrendChartProps = {
   onSelectAccount?: (accountName: string) => void;
   /** When true, chart data updates in a transition so the rep filter stays responsive. */
   deferHeavyCompute?: boolean;
+  /** Territory rank and health score keyed by normalized account name. */
+  accountHealthByName?: Map<string, AccountHealth>;
 };
 
 export function BottleSalesTrendChart({
@@ -221,6 +223,7 @@ export function BottleSalesTrendChart({
   initialSelectedAccounts,
   onSelectAccount,
   deferHeavyCompute = false,
+  accountHealthByName,
 }: BottleSalesTrendChartProps) {
   const searchInputId = useId();
   const chartOrders = useDeferredValue(orders);
@@ -1199,6 +1202,9 @@ export function BottleSalesTrendChart({
                 <TableBody>
                   {accountSummaries.map((summary) => {
                     const color = accountColorMap.get(summary.accountName);
+                    const health = accountHealthByName?.get(
+                      normalizeName(summary.accountName),
+                    );
                     const avgPerOrder = Math.round(
                       summary.totalBottles / Math.max(1, summary.orderCount),
                     );
@@ -1214,8 +1220,20 @@ export function BottleSalesTrendChart({
                             style={{ backgroundColor: color || "#881337" }}
                           />
                         </TableCell>
-                        <TableCell className="font-medium text-foreground">
-                          {summary.accountName}
+                        <TableCell className="text-foreground">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <span className="font-medium">{summary.accountName}</span>
+                            {health?.territoryRank != null ? (
+                              <span className="text-xs tabular-nums text-muted-foreground">
+                                #{health.territoryRank}
+                              </span>
+                            ) : null}
+                            {health != null ? (
+                              <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+                                · {health.score} health
+                              </span>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums text-foreground">
                           {formatNumber(summary.totalBottles)} btls
