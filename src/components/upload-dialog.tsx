@@ -28,7 +28,6 @@ const ALL_FIELDS: Array<{ key: keyof ColumnMapping; label: string }> = [
   { key: "county", label: "County" },
   { key: "region", label: "Region" },
   { key: "salesRep", label: "Lead team member / sales rep" },
-  { key: "revenue", label: "Order value / revenue" },
   { key: "cases", label: "Volume (bottles)" },
   { key: "skuCount", label: "SKU count" },
   { key: "product", label: "Product" },
@@ -49,7 +48,6 @@ function fieldsForKind(kind: ReportKind): Array<{ key: keyof ColumnMapping; labe
         "county",
         "region",
         "salesRep",
-        "revenue",
       ].includes(field.key),
     );
   }
@@ -59,7 +57,6 @@ function fieldsForKind(kind: ReportKind): Array<{ key: keyof ColumnMapping; labe
         "account",
         "date",
         "lastOrderDate",
-        "revenue",
         "cases",
         "skuCount",
         "product",

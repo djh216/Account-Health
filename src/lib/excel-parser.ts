@@ -100,7 +100,6 @@ export function extractSheetTable(
   if (mapping.lastVisitDate) score += 25;
   if (mapping.salesRep) score += 15;
   if (mapping.date) score += 10;
-  if (mapping.revenue) score += 10;
 
   return {
     sheetName,

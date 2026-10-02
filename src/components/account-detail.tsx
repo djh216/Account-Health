@@ -171,7 +171,7 @@ export function AccountDetail({
                     </>
                   ) : (
                     <>
-                      <Stat label="90-day sales" value={formatMoney(account.revenue90)} />
+                      <Stat label="90-day sales" value={formatMoney(account.volume90)} />
                       {account.territoryValue !== undefined ? (
                         <Stat
                           label="Territory value"
@@ -190,7 +190,7 @@ export function AccountDetail({
                       />
                       <Stat
                         label="vs prior 90"
-                        value={formatPct(account.revenueDeltaPct)}
+                        value={formatPct(account.volumeDeltaPct)}
                       />
                     </>
                   )}

@@ -918,7 +918,6 @@ export function OrderAnalyticsDashboard() {
                         <TableRow>
                           <TableHead>Month</TableHead>
                           <TableHead className="text-right">Volume</TableHead>
-                          <TableHead className="text-right">Revenue</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -927,9 +926,6 @@ export function OrderAnalyticsDashboard() {
                             <TableCell>{row.label}</TableCell>
                             <TableCell className="text-right tabular-nums">
                               {formatNumber(row.volume)}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {row.revenue > 0 ? formatMoney(row.revenue) : "—"}
                             </TableCell>
                           </TableRow>
                         ))}

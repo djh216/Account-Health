@@ -121,7 +121,6 @@ function chartFieldKey(sourceKey: string): string {
 type SortField =
   | "productName"
   | "totalBottles"
-  | "totalRevenue"
   | "avgBottlesPerOrder"
   | "avgBottlesPerMonth"
   | "accountCount"
@@ -335,15 +334,11 @@ export function ProductSalesTrendsDashboard() {
     const defs: TrendlineDefinition[] = [];
     if (selectedProducts.length === 0) {
       const activeKey =
-        metric === "revenue"
-          ? "totalRevenue"
-          : metric === "accounts"
-          ? "activeAccountsCount"
-          : "totalBottles";
+        metric === "accounts" ? "activeAccountsCount" : "totalBottles";
       defs.push({ sourceKey: activeKey, trendKey: `${activeKey}_trend` });
     } else {
       for (const pName of selectedProducts) {
-        const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+        const sourceKey = pName;
         defs.push({ sourceKey, trendKey: getSafeTrendKey(sourceKey) });
       }
     }
@@ -360,7 +355,7 @@ export function ProductSalesTrendsDashboard() {
     const data = augmented.data.map((point) => {
       const next: ProductTrendPoint = { ...point };
       for (const pName of selectedProducts) {
-        const seriesKey = metric === "revenue" ? `${pName}__rev` : pName;
+        const seriesKey = pName;
         const fieldKey = chartFieldKey(seriesKey);
         if (fieldKey !== seriesKey) {
           next[fieldKey] = seriesValue(point, seriesKey);
@@ -380,11 +375,7 @@ export function ProductSalesTrendsDashboard() {
   const aggregateProductTrendStats = useMemo(() => {
     if (selectedProducts.length === 0) {
       const activeKey =
-        metric === "revenue"
-          ? "totalRevenue"
-          : metric === "accounts"
-          ? "activeAccountsCount"
-          : "totalBottles";
+        metric === "accounts" ? "activeAccountsCount" : "totalBottles";
       return productTrendStatsMap.get(activeKey);
     }
     return null;
@@ -394,14 +385,6 @@ export function ProductSalesTrendsDashboard() {
   function handleSelectTopVolume(count = 5) {
     const top = trends.productSummaries.slice(0, count).map((s) => s.productName);
     setSelectedProducts(top);
-  }
-
-  function handleSelectTopRevenue(count = 5) {
-    const topRev = [...trends.productSummaries]
-      .sort((a, b) => b.totalRevenue - a.totalRevenue)
-      .slice(0, count)
-      .map((s) => s.productName);
-    setSelectedProducts(topRev);
   }
 
   function handleSelectGrowing(count = 5) {
@@ -471,7 +454,6 @@ export function ProductSalesTrendsDashboard() {
     const headers = [
       "Product Name",
       "Total Bottles Sold",
-      "Total Revenue ($)",
       "Avg Bottles / Order",
       "Monthly Velocity (Btls/Mo)",
       "Buying Accounts Count",
@@ -488,7 +470,6 @@ export function ProductSalesTrendsDashboard() {
     const rows = trends.productSummaries.map((s) => [
       `"${s.productName.replace(/"/g, '""')}"`,
       s.totalBottles,
-      s.totalRevenue.toFixed(2),
       s.avgBottlesPerOrder,
       s.avgBottlesPerMonth,
       s.accountCount,
@@ -704,7 +685,7 @@ export function ProductSalesTrendsDashboard() {
                 </CardHeader>
                 <CardContent className="text-xs text-muted-foreground">
                   Across {formatNumber(trends.totalBottles)} total bottles sold (
-                  {formatMoney(trends.totalRevenue)})
+                  {formatNumber(trends.totalBottles)} btls)
                 </CardContent>
               </Card>
 
@@ -724,7 +705,7 @@ export function ProductSalesTrendsDashboard() {
                       <span className="font-medium text-foreground">
                         {formatNumber(trends.topPerformer.totalBottles)} btls
                       </span>{" "}
-                      ({formatMoney(trends.topPerformer.totalRevenue)}) · {trends.topPerformer.accountCount} accounts
+                      ({formatNumber(trends.topPerformer.totalBottles)} btls) · {trends.topPerformer.accountCount} accounts
                     </>
                   ) : (
                     "No product volume"
@@ -817,7 +798,7 @@ export function ProductSalesTrendsDashboard() {
                         : timeframe === "12m"
                         ? "the last 12 months"
                         : "all recorded order history"}{" "}
-                      in {metric === "revenue" ? "revenue ($)" : metric === "accounts" ? "active purchasing accounts" : "bottles sold"}.
+                      in {metric === "accounts" ? "active purchasing accounts" : "bottles sold"}.
                       {includeCurrentMonth
                         ? " The current month is included."
                         : " The current month is hidden."}{" "}
@@ -840,18 +821,6 @@ export function ProductSalesTrendsDashboard() {
                         )}
                       >
                         Bottles
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => runChartFilterUpdate(() => setMetric("revenue"))}
-                        className={cn(
-                          "rounded-md px-2.5 py-1 font-medium transition-colors",
-                          metric === "revenue"
-                            ? "bg-background text-foreground shadow-xs font-semibold"
-                            : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        Revenue ($)
                       </button>
                       <button
                         type="button"
@@ -974,14 +943,6 @@ export function ProductSalesTrendsDashboard() {
                   <Button
                     size="xs"
                     variant="outline"
-                    onClick={() => handleSelectTopRevenue(5)}
-                    className="h-7 text-xs"
-                  >
-                    Top 5 Revenue
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
                     onClick={() => handleSelectGrowing(5)}
                     className="h-7 text-xs"
                   >
@@ -1048,9 +1009,7 @@ export function ProductSalesTrendsDashboard() {
                             <div className="flex items-center gap-1.5 font-semibold text-rose-900 dark:text-rose-100">
                               <TrendingUp className="size-4 text-rose-600 dark:text-rose-400" />
                               <span>
-                                {metric === "revenue"
-                                  ? "Aggregate Revenue Trendline:"
-                                  : metric === "accounts"
+                                {metric === "accounts"
                                   ? "Active Accounts Trendline:"
                                   : "Aggregate Bottle Trendline:"}
                               </span>
@@ -1060,7 +1019,7 @@ export function ProductSalesTrendsDashboard() {
                               <span className="font-bold text-foreground tabular-nums">
                                 {formatTrendSlope(
                                   aggregateProductTrendStats.slope,
-                                  metric === "revenue" ? "$" : metric === "accounts" ? "accs" : "btls",
+                                  metric === "accounts" ? "accs" : "btls",
                                   granularity
                                 )}
                               </span>
@@ -1128,7 +1087,7 @@ export function ProductSalesTrendsDashboard() {
                           </div>
                           <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
                             {selectedProducts.map((pName) => {
-                              const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+                              const sourceKey = pName;
                               const stats = productTrendStatsMap.get(sourceKey);
                               const color = productColorMap.get(pName) || "#881337";
                               if (!stats) return null;
@@ -1147,7 +1106,7 @@ export function ProductSalesTrendsDashboard() {
                                   <span className="font-bold tabular-nums text-foreground">
                                     {formatTrendSlope(
                                       stats.slope,
-                                      metric === "revenue" ? "$" : "btls",
+                                      "btls",
                                       granularity
                                     )}
                                   </span>
@@ -1221,11 +1180,10 @@ export function ProductSalesTrendsDashboard() {
                             tick={{ fill: "currentColor", fontSize: 11 }}
                             className="text-muted-foreground"
                             tickFormatter={(val: number) => {
-                              if (metric === "revenue") return formatMoney(val);
                               if (metric === "accounts") return `${val} accs`;
                               return `${val} btls`;
                             }}
-                            width={metric === "revenue" ? 75 : 65}
+                            width={65}
                           />
                           <Tooltip
                             content={({ active, payload, label }) => {
@@ -1238,13 +1196,11 @@ export function ProductSalesTrendsDashboard() {
                                   <div className="border-b pb-1">
                                     <p className="font-semibold text-foreground">{label}</p>
                                     <p className="text-muted-foreground">
-                                      Total: {formatNumber(point.totalBottles)} btls · {formatMoney(point.totalRevenue)} · {point.activeAccountsCount} accounts
+                                      Total: {formatNumber(point.totalBottles)} btls · {point.activeAccountsCount} accounts
                                     </p>
                                     {showTrendlines && selectedProducts.length === 0 && (
                                       <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium pt-0.5">
-                                        {metric === "revenue" && typeof point.totalRevenue_trend === "number"
-                                          ? `Linear Trend: ${formatMoney(point.totalRevenue_trend)}`
-                                          : metric === "accounts" && typeof point.activeAccountsCount_trend === "number"
+                                        {metric === "accounts" && typeof point.activeAccountsCount_trend === "number"
                                           ? `Linear Trend: ${Math.round(point.activeAccountsCount_trend)} accounts`
                                           : typeof point.totalBottles_trend === "number"
                                           ? `Linear Trend: ${formatNumber(Math.round(point.totalBottles_trend))} btls`
@@ -1257,8 +1213,7 @@ export function ProductSalesTrendsDashboard() {
                                       {selectedProducts.map((pName) => {
                                         const color = productColorMap.get(pName) || "#881337";
                                         const btlVal = (point[pName] as number) || 0;
-                                        const revVal = (point[`${pName}__rev`] as number) || 0;
-                                        const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+                                        const sourceKey = pName;
                                         const trendKey = getSafeTrendKey(sourceKey);
                                         const trendVal = point[trendKey] as number | undefined;
 
@@ -1275,13 +1230,11 @@ export function ProductSalesTrendsDashboard() {
                                             </div>
                                             <div className="flex items-center gap-1.5 shrink-0">
                                               <span className="tabular-nums font-semibold text-foreground">
-                                                {metric === "revenue"
-                                                  ? formatMoney(revVal)
-                                                  : `${formatNumber(btlVal)} btls`}
+                                                {`${formatNumber(btlVal)} btls`}
                                               </span>
                                               {showTrendlines && typeof trendVal === "number" && (
                                                 <span className="text-[10px] text-muted-foreground tabular-nums">
-                                                  ~{metric === "revenue" ? formatMoney(Math.round(trendVal)) : `${formatNumber(Math.round(trendVal))} btls`}
+                                                  ~{`${formatNumber(Math.round(trendVal))} btls`}
                                                 </span>
                                               )}
                                             </div>
@@ -1313,16 +1266,12 @@ export function ProductSalesTrendsDashboard() {
                               <Line
                                 type="monotone"
                                 dataKey={
-                                  metric === "revenue"
-                                    ? "totalRevenue"
-                                    : metric === "accounts"
+                                  metric === "accounts"
                                     ? "activeAccountsCount"
                                     : "totalBottles"
                                 }
                                 name={
-                                  metric === "revenue"
-                                    ? "Total Product Revenue ($)"
-                                    : metric === "accounts"
+                                  metric === "accounts"
                                     ? "Active Buying Accounts"
                                     : "Total Bottles Sold (btls)"
                                 }
@@ -1353,16 +1302,12 @@ export function ProductSalesTrendsDashboard() {
                                 <Line
                                   type="linear"
                                   dataKey={
-                                    metric === "revenue"
-                                      ? "totalRevenue_trend"
-                                      : metric === "accounts"
+                                    metric === "accounts"
                                       ? "activeAccountsCount_trend"
                                       : "totalBottles_trend"
                                   }
                                   name={
-                                    metric === "revenue"
-                                      ? "Revenue Trend (Linear Fit)"
-                                      : metric === "accounts"
+                                    metric === "accounts"
                                       ? "Active Accounts Trend (Linear Fit)"
                                       : "Total Bottles Trend (Linear Fit)"
                                   }
@@ -1379,7 +1324,7 @@ export function ProductSalesTrendsDashboard() {
                             <>
                               {selectedProducts.map((pName) => {
                                 const color = productColorMap.get(pName) || "#881337";
-                                const seriesKey = metric === "revenue" ? `${pName}__rev` : pName;
+                                const seriesKey = pName;
                                 return (
                                   <Line
                                     key={pName}
@@ -1414,7 +1359,7 @@ export function ProductSalesTrendsDashboard() {
                               {showTrendlines &&
                                 selectedProducts.map((pName) => {
                                   const color = productColorMap.get(pName) || "#881337";
-                                  const sourceKey = metric === "revenue" ? `${pName}__rev` : pName;
+                                  const sourceKey = pName;
                                   const trendKey = getSafeTrendKey(sourceKey);
                                   return (
                                     <Line
@@ -1497,7 +1442,7 @@ export function ProductSalesTrendsDashboard() {
                         </span>
                       </h3>
                       <CardDescription className="text-xs mt-0.5">
-                        Detailed order velocity, bottle counts, revenue, and placement metrics for each individual wine SKU.
+                        Detailed order velocity, bottle counts, and placement metrics for each individual wine SKU.
                       </CardDescription>
                     </div>
 
@@ -2075,18 +2020,12 @@ export function ProductSalesTrendsDashboard() {
                       {formatNumber(selectedDetailProduct.paceLast3Months)}{" "}
                       <span className="text-xs font-normal text-muted-foreground">btls</span>
                     </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {formatMoney(selectedDetailProduct.revenueLast3Months)}
-                    </p>
                   </div>
                   <div className="rounded-lg border p-3.5 bg-muted/20">
                     <p className="text-xs text-muted-foreground font-medium">Prior 90 Days</p>
                     <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {formatNumber(selectedDetailProduct.pacePrior3Months)}{" "}
                       <span className="text-xs font-normal text-muted-foreground">btls</span>
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {formatMoney(selectedDetailProduct.revenuePrior3Months)}
                     </p>
                   </div>
                 </div>

@@ -162,11 +162,9 @@ export function ProductDataPointAccountsDialog({
     type AccountStats = {
       accountName: string;
       currentBottles: number;
-      currentRevenue: number;
       currentOrders: number;
       lastOrderDateCurrent: string;
       priorBottles: number;
-      priorRevenue: number;
       priorOrders: number;
       lastOrderDatePrior: string;
     };
@@ -179,7 +177,6 @@ export function ProductDataPointAccountsDialog({
 
       const accName = order.accountName?.trim() || "Unknown Account";
       const btls = order.cases > 0 ? order.cases : 1;
-      const rev = order.revenue || 0;
       const orderDate = order.date.slice(0, 10);
 
       let stats = accountMap.get(accName);
@@ -187,11 +184,9 @@ export function ProductDataPointAccountsDialog({
         stats = {
           accountName: accName,
           currentBottles: 0,
-          currentRevenue: 0,
           currentOrders: 0,
           lastOrderDateCurrent: "",
           priorBottles: 0,
-          priorRevenue: 0,
           priorOrders: 0,
           lastOrderDatePrior: "",
         };
@@ -200,14 +195,12 @@ export function ProductDataPointAccountsDialog({
 
       if (bKey === currentKey) {
         stats.currentBottles += btls;
-        stats.currentRevenue += rev;
         stats.currentOrders += 1;
         if (!stats.lastOrderDateCurrent || orderDate > stats.lastOrderDateCurrent) {
           stats.lastOrderDateCurrent = orderDate;
         }
       } else if (bKey === priorKey) {
         stats.priorBottles += btls;
-        stats.priorRevenue += rev;
         stats.priorOrders += 1;
         if (!stats.lastOrderDatePrior || orderDate > stats.lastOrderDatePrior) {
           stats.lastOrderDatePrior = orderDate;
@@ -218,7 +211,6 @@ export function ProductDataPointAccountsDialog({
     // Compute detailed list
     const accountList = Array.from(accountMap.values()).map((acc) => {
       const deltaBottles = acc.currentBottles - acc.priorBottles;
-      const deltaRevenue = acc.currentRevenue - acc.priorRevenue;
 
       let pctChange: number | null = null;
       if (acc.priorBottles > 0) {
@@ -243,7 +235,6 @@ export function ProductDataPointAccountsDialog({
       return {
         ...acc,
         deltaBottles,
-        deltaRevenue,
         pctChange,
         statusTag,
       };
@@ -255,9 +246,6 @@ export function ProductDataPointAccountsDialog({
 
     const totalCurrentBottles = currentPurchasers.reduce((sum, a) => sum + a.currentBottles, 0);
     const totalPriorBottles = priorPurchasers.reduce((sum, a) => sum + a.priorBottles, 0);
-
-    const totalCurrentRevenue = currentPurchasers.reduce((sum, a) => sum + a.currentRevenue, 0);
-    const totalPriorRevenue = priorPurchasers.reduce((sum, a) => sum + a.priorRevenue, 0);
 
     const newPurchaserCount = accountList.filter((a) => a.statusTag === "new").length;
     const droppedCount = accountList.filter((a) => a.statusTag === "dropped").length;
@@ -273,10 +261,7 @@ export function ProductDataPointAccountsDialog({
       priorPurchasersCount: priorPurchasers.length,
       totalCurrentBottles,
       totalPriorBottles,
-      totalCurrentRevenue,
-      totalPriorRevenue,
       bottleDelta: totalCurrentBottles - totalPriorBottles,
-      revenueDelta: totalCurrentRevenue - totalPriorRevenue,
       newPurchaserCount,
       droppedCount,
       increasedCount,
@@ -387,24 +372,6 @@ export function ProductDataPointAccountsDialog({
 
             <div className="rounded-lg border bg-card p-3 shadow-2xs">
               <span className="block text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Period Revenue
-              </span>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-lg font-bold text-foreground">
-                  {formatMoney(periodAnalysis.totalCurrentRevenue)}
-                </span>
-                <span
-                  className={`text-xs font-semibold ${
-                    periodAnalysis.revenueDelta >= 0 ? "text-emerald-600" : "text-rose-600"
-                  }`}
-                >
-                  {periodAnalysis.revenueDelta >= 0 ? `+${formatMoney(periodAnalysis.revenueDelta)}` : formatMoney(periodAnalysis.revenueDelta)}
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border bg-card p-3 shadow-2xs">
-              <span className="block text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                 Account Dynamics
               </span>
               <div className="mt-1 flex items-center gap-1.5 flex-wrap text-xs">
@@ -491,7 +458,6 @@ export function ProductDataPointAccountsDialog({
                     <TableHead className="font-semibold text-xs text-center">
                       Change vs Prior
                     </TableHead>
-                    <TableHead className="font-semibold text-xs text-right">Revenue</TableHead>
                     <TableHead className="font-semibold text-xs text-right">Last Order Date</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -556,10 +522,6 @@ export function ProductDataPointAccountsDialog({
                               No Change
                             </Badge>
                           )}
-                        </TableCell>
-
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {formatMoney(acc.currentRevenue)}
                         </TableCell>
 
                         <TableCell className="text-right text-muted-foreground tabular-nums">

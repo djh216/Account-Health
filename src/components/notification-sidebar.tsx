@@ -123,7 +123,7 @@ export function NotificationSidebar({
         : alert.daysPastTypical === 0
         ? "Reorder timing: Due for reorder today on typical schedule"
         : `Cadence status: Within typical schedule (${Math.abs(alert.daysPastTypical)} days remaining until expected order)`,
-      alert.revenueAtRisk > 0 ? `Est. volume deficit: ${formatMoney(alert.revenueAtRisk)}` : null,
+      alert.volumeAtRisk > 0 ? `Est. volume deficit: ${formatMoney(alert.volumeAtRisk)}` : null,
       `Action: ${alert.actionRecommendation}`,
     ]
       .filter(Boolean)
@@ -208,15 +208,12 @@ export function NotificationSidebar({
     [alerts, productAlerts, acknowledgedIds],
   );
 
-  // Total revenue at risk across active alerts
-  const totalRevenueAtRisk = useMemo(
-    () => unacknowledgedAlerts.reduce((sum, a) => sum + a.revenueAtRisk, 0),
-    [unacknowledgedAlerts],
-  );
-
   const totalBottlesAtRisk = useMemo(
     () =>
-      unacknowledgedAlerts.reduce((sum, a) => sum + (a.bottlesAtRisk || 0), 0) +
+      unacknowledgedAlerts.reduce(
+        (sum, a) => sum + (a.bottlesAtRisk || a.volumeAtRisk || 0),
+        0,
+      ) +
       unacknowledgedProductAlerts.reduce((sum, p) => sum + p.volumeDropBtls, 0),
     [unacknowledgedAlerts, unacknowledgedProductAlerts],
   );
@@ -328,9 +325,7 @@ export function NotificationSidebar({
                 <span className="text-lg font-bold tabular-nums text-amber-700 dark:text-amber-400">
                   {formatNumber(totalBottlesAtRisk)}
                 </span>
-                <span className="text-[11px] text-muted-foreground tabular-nums">
-                  btls {totalRevenueAtRisk > 0 ? `(${formatMoney(totalRevenueAtRisk)})` : ""}
-                </span>
+                <span className="text-[11px] text-muted-foreground tabular-nums">btls</span>
               </div>
             </div>
           </div>
@@ -919,13 +914,15 @@ export function NotificationSidebar({
                           </span>
                         </div>
 
-                        {/* Revenue / Volume Deficit if available */}
-                        {alert.revenueAtRisk > 0 || alert.bottlesAtRisk > 0 ? (
+                        {/* Volume deficit if available */}
+                        {alert.volumeAtRisk > 0 || alert.bottlesAtRisk > 0 ? (
                           <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Recent 90d Revenue: {formatMoney(alert.revenueRecent90)}</span>
+                            <span>
+                              Recent 90d volume: {formatNumber(alert.volumeRecent90)} btls
+                            </span>
                             <span className="font-semibold text-amber-800 dark:text-amber-300">
-                              At Risk: {alert.bottlesAtRisk > 0 ? `${formatNumber(alert.bottlesAtRisk)} btls` : ""}
-                              {alert.revenueAtRisk > 0 ? ` (${formatMoney(alert.revenueAtRisk)})` : ""}
+                              At risk:{" "}
+                              {formatNumber(alert.bottlesAtRisk || alert.volumeAtRisk || 0)} btls
                             </span>
                           </div>
                         ) : null}

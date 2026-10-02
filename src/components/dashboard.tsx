@@ -60,12 +60,12 @@ import {
 import { RISK_AT_RISK_MIN_DAYS } from "@/lib/order-cadence";
 import {
   focusAccountsByHorizon,
-  listAccountsByRecentRevenue,
+  listAccountsByRecentVolume,
   listAllScoredAccounts,
   listNeedAttentionAccounts,
   listOverdueOrderAccounts,
   listOverdueVisitAccounts,
-  listRevenueAtRiskAccounts,
+  listVolumeAtRiskAccounts,
   OVERDUE_VISIT_DAYS,
 } from "@/lib/score";
 import {
@@ -269,12 +269,12 @@ export function Dashboard() {
     () => listOverdueVisitAccounts(enrichedAccounts),
     [enrichedAccounts],
   );
-  const revenueAtRiskAccounts = useMemo(
-    () => listRevenueAtRiskAccounts(enrichedAccounts),
+  const volumeAtRiskAccounts = useMemo(
+    () => listVolumeAtRiskAccounts(enrichedAccounts),
     [enrichedAccounts],
   );
-  const recentRevenueAccounts = useMemo(
-    () => listAccountsByRecentRevenue(enrichedAccounts),
+  const recentVolumeAccounts = useMemo(
+    () => listAccountsByRecentVolume(enrichedAccounts),
     [enrichedAccounts],
   );
 
@@ -488,28 +488,28 @@ export function Dashboard() {
               ) : (
                 <>
                   <Kpi
-                    label="Revenue on a weak house"
-                    value={formatMoney(snapshot.totals.revenueAtRisk)}
+                    label="Volume on a weak house"
+                    value={formatNumber(snapshot.totals.volumeAtRisk)}
                     hint="Critical and at-risk account volume · Click to view"
                     onClick={() =>
                       openAccountList({
-                        title: "Revenue on a weak house",
+                        title: "Volume on a weak house",
                         description:
                           "Critical and at-risk accounts ranked by the higher of current or prior 90-day volume.",
-                        accounts: revenueAtRiskAccounts,
+                        accounts: volumeAtRiskAccounts,
                         showHistory: true,
                       })
                     }
                   />
                   <Kpi
                     label="Last 90 days"
-                    value={formatMoney(snapshot.totals.revenue90)}
+                    value={formatNumber(snapshot.totals.volume90)}
                     hint={`${snapshot.totals.healthy} healthy · ${snapshot.totals.critical + snapshot.totals.atRisk} need attention · Click to view`}
                     onClick={() =>
                       openAccountList({
                         title: "Last 90 days",
-                        description: "Accounts ranked by revenue in the last 90 days.",
-                        accounts: recentRevenueAccounts,
+                        description: "Accounts ranked by bottle volume in the last 90 days.",
+                        accounts: recentVolumeAccounts,
                         showHistory: true,
                       })
                     }
@@ -788,7 +788,7 @@ function RiskAccountsBox({
                 ) : null}
                 {showHistory ? (
                   <span className={trendClass(item)}>
-                    Trend {formatPct(item.revenueDeltaPct)}
+                    Trend {formatPct(item.volumeDeltaPct)}
                   </span>
                 ) : null}
               </div>
@@ -947,9 +947,9 @@ function FocusHorizonCard({
 }
 
 function trendClass(item: AccountHealth): string {
-  if (item.revenueDeltaPct === null) return "text-muted-foreground";
-  if (item.revenueDeltaPct <= -20) return "text-rose-800";
-  if (item.revenueDeltaPct >= 10) return "text-emerald-800";
+  if (item.volumeDeltaPct === null) return "text-muted-foreground";
+  if (item.volumeDeltaPct <= -20) return "text-rose-800";
+  if (item.volumeDeltaPct >= 10) return "text-emerald-800";
   return "";
 }
 

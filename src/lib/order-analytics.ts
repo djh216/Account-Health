@@ -17,7 +17,6 @@ import type { Order, RiskLevel } from "./types";
 export type ProductVolumeRow = {
   product: string;
   volume: number;
-  revenue: number;
   orderCount: number;
   sharePct: number;
 };
@@ -25,7 +24,6 @@ export type ProductVolumeRow = {
 export type RestaurantVolumeRow = {
   accountName: string;
   volume: number;
-  revenue: number;
   orderCount: number;
   lastOrderDate: string;
 };
@@ -34,7 +32,6 @@ export type MonthlyVolumeRow = {
   month: string;
   label: string;
   volume: number;
-  revenue: number;
   orderCount: number;
 };
 
@@ -129,7 +126,6 @@ export type AccountMonthlyVolume = {
   month: string;
   label: string;
   volume: number;
-  revenue: number;
   orderEventCount: number;
   lineCount: number;
   products: string[];
@@ -315,7 +311,6 @@ export type OrderAnalyticsSnapshot = {
   totals: {
     orderLines: number;
     totalVolume: number;
-    totalRevenue: number;
     restaurantCount: number;
     productCount: number;
     orderEvents: number;
@@ -622,13 +617,11 @@ function buildMonthlyVolumeForAccount(accountOrders: Order[]): AccountMonthlyVol
       month,
       label,
       volume: 0,
-      revenue: 0,
       orderEventCount: 0,
       lineCount: 0,
       products: [],
     };
     existing.volume += volume;
-    existing.revenue += order.revenue;
     existing.lineCount += 1;
     if (!existing.products.includes(product)) existing.products.push(product);
     monthMap.set(month, existing);
@@ -932,7 +925,6 @@ export function buildOrderAnalytics(
   };
 
   const totalVolume = sorted.reduce((sum, order) => sum + lineVolume(order), 0);
-  const totalRevenue = sorted.reduce((sum, order) => sum + order.revenue, 0);
 
   const productMap = new Map<string, ProductVolumeRow>();
   for (const order of sorted) {
@@ -941,12 +933,10 @@ export function buildOrderAnalytics(
     const existing = productMap.get(product) ?? {
       product,
       volume: 0,
-      revenue: 0,
       orderCount: 0,
       sharePct: 0,
     };
     existing.volume += volume;
-    existing.revenue += order.revenue;
     existing.orderCount += 1;
     productMap.set(product, existing);
   }
@@ -956,7 +946,7 @@ export function buildOrderAnalytics(
       ...row,
       sharePct: totalVolume > 0 ? (row.volume / totalVolume) * 100 : 0,
     }))
-    .sort((a, b) => b.volume - a.volume || b.revenue - a.revenue);
+    .sort((a, b) => b.volume - a.volume || b.orderCount - a.orderCount);
 
   const restaurantMap = new Map<string, RestaurantVolumeRow>();
   for (const order of sorted) {
@@ -965,12 +955,10 @@ export function buildOrderAnalytics(
     const existing = restaurantMap.get(accountName) ?? {
       accountName,
       volume: 0,
-      revenue: 0,
       orderCount: 0,
       lastOrderDate: order.date,
     };
     existing.volume += volume;
-    existing.revenue += order.revenue;
     existing.orderCount += 1;
     if (order.date > existing.lastOrderDate) {
       existing.lastOrderDate = order.date;
@@ -979,7 +967,7 @@ export function buildOrderAnalytics(
   }
 
   const byRestaurant = [...restaurantMap.values()].sort(
-    (a, b) => b.volume - a.volume || b.revenue - a.revenue,
+    (a, b) => b.volume - a.volume || b.orderCount - a.orderCount,
   );
 
   const monthMap = new Map<string, MonthlyVolumeRow>();
@@ -991,11 +979,9 @@ export function buildOrderAnalytics(
       month,
       label,
       volume: 0,
-      revenue: 0,
       orderCount: 0,
     };
     existing.volume += volume;
-    existing.revenue += order.revenue;
     existing.orderCount += 1;
     monthMap.set(month, existing);
   }
@@ -1172,7 +1158,6 @@ export function buildOrderAnalytics(
     totals: {
       orderLines: sorted.length,
       totalVolume,
-      totalRevenue,
       restaurantCount: restaurants.size,
       productCount: products.size,
       orderEvents,

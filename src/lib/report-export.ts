@@ -26,7 +26,6 @@ export type OrderAnalyticsPdfInput = {
   topRestaurants?: RestaurantVolumeRow[];
   totalOrders: number;
   totalBottles: number;
-  totalRevenue: number;
 };
 
 export type ProductTrendsPdfInput = {
@@ -36,7 +35,6 @@ export type ProductTrendsPdfInput = {
   products: ProductSummary[];
   slowingAlerts?: ProductSlowingAlert[];
   totalBottles: number;
-  totalRevenue: number;
 };
 
 export { downloadFocusHealthPdf } from "./generate-focus-health-pdf";

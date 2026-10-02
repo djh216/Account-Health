@@ -290,7 +290,6 @@ export function BottleSalesTrendChart({
     data,
     accountSummaries,
     totalBottles,
-    totalRevenue,
     peakPeriod,
     avgMonthlyBottles,
   } = useMemo(() => {
@@ -431,7 +430,7 @@ export function BottleSalesTrendChart({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {formatMoney(totalRevenue)} total across{" "}
+            Across{" "}
             <span className="font-medium text-foreground">
               {selectedAccounts.length} selected account{selectedAccounts.length === 1 ? "" : "s"}
             </span>
@@ -831,12 +830,6 @@ export function BottleSalesTrendChart({
                                   )}
                                 </div>
                               </div>
-                              <div className="flex items-center justify-between text-muted-foreground">
-                                <span>Revenue:</span>
-                                <span className="tabular-nums font-medium text-foreground">
-                                  {formatMoney(point.totalRevenue)}
-                                </span>
-                              </div>
                             </div>
 
                             {showIndividualLines && selectedAccounts.length > 0 && (
@@ -1194,7 +1187,6 @@ export function BottleSalesTrendChart({
                     <TableHead>Account</TableHead>
                     <TableHead className="text-right">Total Bottles</TableHead>
                     <TableHead className="text-right">Avg Bottles / Order</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right whitespace-nowrap">Monthly Velocity</TableHead>
                     <TableHead className="text-right whitespace-nowrap">30-Day Pace vs Prior</TableHead>
                     <TableHead className="text-right whitespace-nowrap">Trajectory (30d)</TableHead>
@@ -1230,9 +1222,6 @@ export function BottleSalesTrendChart({
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {formatNumber(avgPerOrder)} btls/order
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {formatMoney(summary.totalRevenue)}
                         </TableCell>
                         <TableCell className="text-right font-medium tabular-nums text-foreground">
                           {formatNumber(summary.avgBottlesPerMonth)} btls/mo

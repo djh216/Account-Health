@@ -266,15 +266,7 @@ export function VolumeProjectionChurnPanel({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            Est. Revenue:{" "}
-            <span className="font-medium text-foreground">
-              {formatMoney(
-                horizon === 30
-                  ? summary.totalProjectedRevenue30
-                  : summary.totalProjectedRevenue90,
-              )}
-            </span>{" "}
-            based on historical frequency
+            Based on historical order frequency and recent volume momentum
           </CardContent>
         </Card>
 
@@ -322,10 +314,7 @@ export function VolumeProjectionChurnPanel({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            Est. Monthly Revenue at Risk:{" "}
-            <span className="font-medium text-foreground">
-              {formatMoney(summary.totalMonthlyRevenueAtRisk)}
-            </span>
+            Estimated bottle volume lost per month if at-risk accounts churn
           </CardContent>
         </Card>
       </section>
@@ -744,11 +733,6 @@ export function VolumeProjectionChurnPanel({
                           ? account.projectedVolume60
                           : account.projectedVolume90;
 
-                    const projectedRev =
-                      horizon === 30
-                        ? account.projectedRevenue30
-                        : account.projectedRevenue90;
-
                     const projectedOrders =
                       horizon === 30
                         ? account.projectedOrderCount30
@@ -822,7 +806,7 @@ export function VolumeProjectionChurnPanel({
                             {formatNumber(projectedVol)} btls
                           </div>
                           <div className="text-[11px] text-muted-foreground tabular-nums">
-                            ~{projectedOrders} ord · {formatMoney(projectedRev)}
+                            ~{projectedOrders} orders
                           </div>
                         </TableCell>
 
@@ -869,9 +853,6 @@ export function VolumeProjectionChurnPanel({
                             <div>
                               <span className="font-semibold text-rose-700 dark:text-rose-400">
                                 {formatNumber(account.monthlyVolumeAtRisk)} btls/mo
-                              </span>
-                              <span className="block text-[11px] text-muted-foreground">
-                                {formatMoney(account.monthlyRevenueAtRisk)}/mo
                               </span>
                             </div>
                           ) : (

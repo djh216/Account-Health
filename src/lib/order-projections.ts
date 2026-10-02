@@ -20,7 +20,6 @@ export type AccountProjectionAndChurn = {
   typicalIntervalDays: number;
   historicalOrdersPerMonth: number;
   avgVolumePerOrder: number;
-  avgRevenuePerOrder: number;
   daysSinceLastOrder: number;
   lastOrderDate: string;
   totalHistoricalVolume: number;
@@ -33,8 +32,6 @@ export type AccountProjectionAndChurn = {
   projectedVolume30: number;
   projectedVolume60: number;
   projectedVolume90: number;
-  projectedRevenue30: number;
-  projectedRevenue90: number;
   baselineVolume90: number; // what volume would be purely if historical frequency holds
   riskAdjustedVolume90: number; // discounted for churn risk
   projectedOrderCount30: number;
@@ -57,7 +54,6 @@ export type AccountProjectionAndChurn = {
   productAttritionScore: number;
   churnSignals: string[];
   monthlyVolumeAtRisk: number; // volume per month lost if account churns
-  monthlyRevenueAtRisk: number;
   retentionRecommendation: string;
 };
 
@@ -65,12 +61,9 @@ export type PortfolioProjectionSummary = {
   totalProjectedVolume30: number;
   totalProjectedVolume60: number;
   totalProjectedVolume90: number;
-  totalProjectedRevenue30: number;
-  totalProjectedRevenue90: number;
   totalBaselineVolume90: number;
   totalRiskAdjustedVolume90: number;
   totalMonthlyVolumeAtRisk: number;
-  totalMonthlyRevenueAtRisk: number;
   highChurnCount: number;
   moderateChurnCount: number;
   lowChurnCount: number;
@@ -115,9 +108,6 @@ export function projectSingleAccount(
   const orderEvents = Math.max(1, tracking.frequency.orderEventCount);
   const totalVolume = tracking.frequency.totalVolume;
   const avgVolumePerOrder = Math.max(1, Math.round(totalVolume / orderEvents));
-
-  const totalRevenue = tracking.orders.reduce((sum, o) => sum + (o.revenue || 0), 0);
-  const avgRevenuePerOrder = Math.round(totalRevenue / orderEvents);
 
   // Expected next order date
   let expectedNextOrderDate: string | null = null;
@@ -243,19 +233,12 @@ export function projectSingleAccount(
     churnSignals.push("Purchasing on cadence with stable product mix");
   }
 
-  // Monthly volume and revenue at risk
+  // Monthly volume at risk
   const monthlyVolumeAtRisk =
     churnTier === "high"
       ? Math.round(historicalOrdersPerMonth * avgVolumePerOrder)
       : churnTier === "moderate"
         ? Math.round(historicalOrdersPerMonth * avgVolumePerOrder * 0.5)
-        : 0;
-
-  const monthlyRevenueAtRisk =
-    churnTier === "high"
-      ? Math.round(historicalOrdersPerMonth * avgRevenuePerOrder)
-      : churnTier === "moderate"
-        ? Math.round(historicalOrdersPerMonth * avgRevenuePerOrder * 0.5)
         : 0;
 
   // --- Trend Trajectory & Momentum Factor (volume pace; churn tier is separate) ---
@@ -298,9 +281,6 @@ export function projectSingleAccount(
     Math.max(0.4, baseOrders60 * momentumMultiplier) * avgVolumePerOrder,
   );
   const projectedVolume90 = Math.round(projectedOrderCount90 * avgVolumePerOrder);
-
-  const projectedRevenue30 = Math.round(projectedOrderCount30 * avgRevenuePerOrder);
-  const projectedRevenue90 = Math.round(projectedOrderCount90 * avgRevenuePerOrder);
 
   const baselineVolume90 = Math.round(baseOrders90 * avgVolumePerOrder);
   const riskAdjustedVolume90 = Math.round(
@@ -351,7 +331,6 @@ export function projectSingleAccount(
     typicalIntervalDays: typicalDays,
     historicalOrdersPerMonth,
     avgVolumePerOrder,
-    avgRevenuePerOrder,
     daysSinceLastOrder: daysSince,
     lastOrderDate,
     totalHistoricalVolume: totalVolume,
@@ -362,8 +341,6 @@ export function projectSingleAccount(
     projectedVolume30,
     projectedVolume60,
     projectedVolume90,
-    projectedRevenue30,
-    projectedRevenue90,
     baselineVolume90,
     riskAdjustedVolume90,
     projectedOrderCount30,
@@ -384,7 +361,6 @@ export function projectSingleAccount(
     productAttritionScore,
     churnSignals,
     monthlyVolumeAtRisk,
-    monthlyRevenueAtRisk,
     retentionRecommendation,
   };
 }
@@ -416,8 +392,6 @@ export function buildProjectionsAndChurn(
   const totalProjectedVolume30 = accountResults.reduce((s, a) => s + a.projectedVolume30, 0);
   const totalProjectedVolume60 = accountResults.reduce((s, a) => s + a.projectedVolume60, 0);
   const totalProjectedVolume90 = accountResults.reduce((s, a) => s + a.projectedVolume90, 0);
-  const totalProjectedRevenue30 = accountResults.reduce((s, a) => s + a.projectedRevenue30, 0);
-  const totalProjectedRevenue90 = accountResults.reduce((s, a) => s + a.projectedRevenue90, 0);
   const totalBaselineVolume90 = accountResults.reduce((s, a) => s + a.baselineVolume90, 0);
   const totalRiskAdjustedVolume90 = accountResults.reduce(
     (s, a) => s + a.riskAdjustedVolume90,
@@ -427,11 +401,6 @@ export function buildProjectionsAndChurn(
     (s, a) => s + a.monthlyVolumeAtRisk,
     0,
   );
-  const totalMonthlyRevenueAtRisk = accountResults.reduce(
-    (s, a) => s + a.monthlyRevenueAtRisk,
-    0,
-  );
-
   const highChurnCount = accountResults.filter((a) => a.churnTier === "high").length;
   const moderateChurnCount = accountResults.filter((a) => a.churnTier === "moderate").length;
   const lowChurnCount = accountResults.filter((a) => a.churnTier === "low").length;
@@ -440,12 +409,9 @@ export function buildProjectionsAndChurn(
     totalProjectedVolume30,
     totalProjectedVolume60,
     totalProjectedVolume90,
-    totalProjectedRevenue30,
-    totalProjectedRevenue90,
     totalBaselineVolume90,
     totalRiskAdjustedVolume90,
     totalMonthlyVolumeAtRisk,
-    totalMonthlyRevenueAtRisk,
     highChurnCount,
     moderateChurnCount,
     lowChurnCount,

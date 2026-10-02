@@ -181,7 +181,7 @@ export function PrintReportButton({
                     Download Drop-off Alerts PDF
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    Complete cadence audit & revenue-at-risk analysis
+                    Complete cadence audit & volume-at-risk analysis
                   </span>
                 </div>
               </DropdownMenuItem>

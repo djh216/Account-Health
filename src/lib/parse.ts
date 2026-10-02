@@ -224,27 +224,6 @@ export const DATE_ALIASES = [
   "date",
 ];
 
-export const REVENUE_ALIASES = [
-  "revenue",
-  "order value",
-  "order amount",
-  "total amount",
-  "total sales",
-  "net sales",
-  "gross sales",
-  "dollars",
-  "invoice total",
-  "last order amount",
-  "last order value",
-  "last order $",
-  "last order revenue",
-  "sales dollars",
-  "sales amount",
-  "amount",
-  "total",
-  "sales",
-];
-
 export const CASES_ALIASES = [
   "cases",
   "units",
@@ -368,7 +347,7 @@ function isRepLikeHeader(headerKey: string): boolean {
 function findHeader(
   headers: (string | undefined | null)[],
   aliases: string[],
-  options?: { isRevenue?: boolean; excludeColumns?: (string | undefined)[] },
+  options?: { excludeColumns?: (string | undefined)[] },
 ): string | undefined {
   const excludeSet = new Set(
     (options?.excludeColumns || []).filter(Boolean).map((c) => String(c)),
@@ -383,10 +362,7 @@ function findHeader(
     key: normalizeHeader(header),
   }));
 
-  // Prevent revenue aliases from accidentally hijacking Sales Rep columns
-  const filteredNormalized = options?.isRevenue
-    ? normalized.filter((item) => !isRepLikeHeader(item.key))
-    : normalized;
+  const filteredNormalized = normalized;
 
   // 1. Exact match (highest priority)
   for (const alias of aliases) {
@@ -467,8 +443,8 @@ export function findHeaderRowIndex(rawRows: string[][]): number {
       ) {
         score += 10;
       }
-      // Revenue / volume / product indicators (+10)
-      if (/(revenue|order value|order amount|cases|bottles|volume|product|item|sku)/.test(cell)) {
+      // Volume / product indicators (+10)
+      if (/(cases|bottles|volume|product|item|sku)/.test(cell)) {
         score += 10;
       }
       // Account metadata indicators (+5)
@@ -633,7 +609,6 @@ export function detectKind(
   const dateHits = countMappedValues(rows, mapping.date, (v) => Boolean(parseDate(v)));
   const lastOrderHits = countMappedValues(rows, mapping.lastOrderDate, (v) => Boolean(parseDate(v)));
   const lastVisitHits = countMappedValues(rows, mapping.lastVisitDate, (v) => Boolean(parseDate(v)));
-  const revenueHits = countMappedValues(rows, mapping.revenue, (v) => parseNumber(v) > 0);
   const volumeHits = countMappedValues(rows, mapping.cases, (v) => parseNumber(v) > 0);
   const productHits = countMappedValues(rows, mapping.product, (v) => v.trim().length > 0);
 
@@ -653,7 +628,7 @@ export function detectKind(
   // Visit log / visit history
   if (
     /(visit|call|activity|stop|meeting|interaction)/i.test(lower) ||
-    (mapping.lastVisitDate && !mapping.lastOrderDate && !mapping.product && !mapping.revenue) ||
+    (mapping.lastVisitDate && !mapping.lastOrderDate && !mapping.product) ||
     (mapping.outcome && !mapping.product && !mapping.cases)
   ) {
     return "visits";
@@ -662,14 +637,10 @@ export function detectKind(
   // Order history
   if (
     /(order|invoice|sales|shipment|purchase)/i.test(lower) ||
-    (mapping.date && (productHits > 0 || volumeHits > 0 || revenueHits > 0)) ||
+    (mapping.date && (productHits > 0 || volumeHits > 0)) ||
     (mapping.lastOrderDate && !mapping.lastVisitDate) ||
     (mapping.product && (productHits > 0 || volumeHits > 0))
   ) {
-    return "orders";
-  }
-
-  if (mapping.revenue && revenueHits >= Math.max(2, Math.min(rows.length, 25) * 0.2)) {
     return "orders";
   }
 
@@ -697,7 +668,6 @@ export function detectMapping(headers: string[]): ColumnMapping {
     lastOrderDate,
     lastVisitDate,
     date,
-    revenue: findHeader(headers, REVENUE_ALIASES, { isRevenue: true }),
     cases: findHeader(headers, CASES_ALIASES),
     skuCount: findHeader(headers, SKU_ALIASES),
     type: findHeader(headers, TYPE_ALIASES),
@@ -837,7 +807,6 @@ export function rowsToRecords(
           accountId: account.id,
           accountName: account.name,
           date: lastOrder,
-          revenue: parseNumber(row[mapping.revenue ?? ""]),
           cases: parseNumber(row[mapping.cases ?? ""]),
           product: row[mapping.product ?? ""]?.trim() || undefined,
         });
@@ -864,7 +833,7 @@ export function rowsToRecords(
       if (!date) return;
       const product = row[mapping.product ?? ""]?.trim() || undefined;
       const cases = parseNumber(row[mapping.cases ?? ""]);
-      const isSnapshotOrder = !product && cases === 0 && !mapping.revenue;
+      const isSnapshotOrder = !product && cases === 0;
       orders.push({
         id: isSnapshotOrder
           ? `${account.id}-last-order`
@@ -872,7 +841,6 @@ export function rowsToRecords(
         accountId: account.id,
         accountName: account.name,
         date,
-        revenue: parseNumber(row[mapping.revenue ?? ""]),
         cases,
         skuCount: mapping.skuCount ? parseNumber(row[mapping.skuCount]) : undefined,
         product,
@@ -925,7 +893,7 @@ export function mergeOrders(current: Order[], incoming: Order[]): Order[] {
   const seen = new Set(
     current.map(
       (order) =>
-        `${order.accountId}|${order.date}|${order.product ?? ""}|${order.revenue}|${order.cases}`,
+        `${order.accountId}|${order.date}|${order.product ?? ""}|${order.cases}`,
     ),
   );
   for (const order of incoming) {
@@ -933,7 +901,7 @@ export function mergeOrders(current: Order[], incoming: Order[]): Order[] {
       byId.set(order.id, order);
       continue;
     }
-    const key = `${order.accountId}|${order.date}|${order.product ?? ""}|${order.revenue}|${order.cases}`;
+    const key = `${order.accountId}|${order.date}|${order.product ?? ""}|${order.cases}`;
     if (seen.has(key)) continue;
     seen.add(key);
     byId.set(order.id, order);

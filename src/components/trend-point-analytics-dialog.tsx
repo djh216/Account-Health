@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/table";
 import {
   Wine,
-  DollarSign,
   ChevronLeft,
   ChevronRight,
   Store,
@@ -70,10 +69,8 @@ interface AccountPaceRecord {
   accountName: string;
   accountType?: string;
   currentBottles: number;
-  currentRevenue: number;
   currentOrders: Order[];
   priorBottles: number;
-  priorRevenue: number;
   priorOrderCount: number;
   bottleDelta: number;
   paceDeltaPct: number | null;
@@ -101,7 +98,7 @@ export function TrendPointAnalyticsDialog({
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pace" | "products" | "accounts" | "orders">("pace");
 
-  type ProductSortCol = "productName" | "bottles" | "revenue" | "avgPrice" | "volumeSharePct" | "accountCount";
+  type ProductSortCol = "productName" | "bottles" | "volumeSharePct" | "accountCount";
   const [productSort, setProductSort] = useState<{ column: ProductSortCol; direction: "asc" | "desc" }>({
     column: "bottles",
     direction: "desc",
@@ -113,21 +110,19 @@ export function TrendPointAnalyticsDialog({
     | "priorBottles"
     | "paceDeltaPct"
     | "status"
-    | "currentRevenue"
-    | "avgPrice"
     | "invoices";
   const [paceSort, setPaceSort] = useState<{ column: PaceSortCol; direction: "asc" | "desc" }>({
     column: "currentBottles",
     direction: "desc",
   });
 
-  type AccountSortCol = "accountName" | "currentBottles" | "currentRevenue" | "invoices";
+  type AccountSortCol = "accountName" | "currentBottles" | "invoices";
   const [accountSort, setAccountSort] = useState<{ column: AccountSortCol; direction: "asc" | "desc" }>({
     column: "currentBottles",
     direction: "desc",
   });
 
-  type OrderSortCol = "date" | "accountName" | "product" | "bottles" | "revenue" | "ref";
+  type OrderSortCol = "date" | "accountName" | "product" | "bottles" | "ref";
   const [orderSort, setOrderSort] = useState<{ column: OrderSortCol; direction: "asc" | "desc" }>({
     column: "date",
     direction: "desc",
@@ -165,7 +160,7 @@ export function TrendPointAnalyticsDialog({
       if (prev.column === col) {
         return { column: col, direction: prev.direction === "asc" ? "desc" : "asc" };
       }
-      return { column: col, direction: col === "bottles" || col === "revenue" ? "desc" : "asc" };
+      return { column: col, direction: col === "bottles" ? "desc" : "asc" };
     });
   }
 
@@ -255,7 +250,6 @@ export function TrendPointAnalyticsDialog({
       {
         productName: string;
         bottles: number;
-        revenue: number;
         orderCount: number;
         accounts: Set<string>;
       }
@@ -265,19 +259,16 @@ export function TrendPointAnalyticsDialog({
       const pName = order.product?.trim();
       if (!pName) continue;
       const bottles = order.cases > 0 ? order.cases : 1;
-      const revenue = order.revenue || 0;
 
       const existing = map.get(pName);
       if (existing) {
         existing.bottles += bottles;
-        existing.revenue += revenue;
         existing.orderCount += 1;
         existing.accounts.add(order.accountName);
       } else {
         map.set(pName, {
           productName: pName,
           bottles,
-          revenue,
           orderCount: 1,
           accounts: new Set([order.accountName]),
         });
@@ -285,14 +276,12 @@ export function TrendPointAnalyticsDialog({
     }
 
     const totalBottles = point.totalBottles || 1;
-    const totalRev = point.totalRevenue || 1;
 
     return Array.from(map.values())
       .map((item) => ({
         ...item,
         accountCount: item.accounts.size,
         volumeSharePct: (item.bottles / totalBottles) * 100,
-        revenueSharePct: (item.revenue / totalRev) * 100,
       }))
       .sort((a, b) => b.bottles - a.bottles);
   }, [periodOrders, point]);
@@ -303,7 +292,6 @@ export function TrendPointAnalyticsDialog({
       string,
       {
         bottles: number;
-        revenue: number;
         orders: Order[];
         accountType?: string;
       }
@@ -313,16 +301,13 @@ export function TrendPointAnalyticsDialog({
     for (const o of targetCurrentOrders) {
       const acc = o.accountName || "Unknown Account";
       const btls = o.cases > 0 ? o.cases : 1;
-      const rev = o.revenue || 0;
       const existing = currentMap.get(acc);
       if (existing) {
         existing.bottles += btls;
-        existing.revenue += rev;
         existing.orders.push(o);
       } else {
         currentMap.set(acc, {
           bottles: btls,
-          revenue: rev,
           orders: [o],
           accountType: (o as unknown as { accountType?: string }).accountType,
         });
@@ -333,7 +318,6 @@ export function TrendPointAnalyticsDialog({
       string,
       {
         bottles: number;
-        revenue: number;
         orderCount: number;
       }
     >();
@@ -342,16 +326,13 @@ export function TrendPointAnalyticsDialog({
     for (const o of targetPriorOrders) {
       const acc = o.accountName || "Unknown Account";
       const btls = o.cases > 0 ? o.cases : 1;
-      const rev = o.revenue || 0;
       const existing = priorMap.get(acc);
       if (existing) {
         existing.bottles += btls;
-        existing.revenue += rev;
         existing.orderCount += 1;
       } else {
         priorMap.set(acc, {
           bottles: btls,
-          revenue: rev,
           orderCount: 1,
         });
       }
@@ -410,10 +391,8 @@ export function TrendPointAnalyticsDialog({
       const prior = priorMap.get(acc);
 
       const currentBottles = current ? current.bottles : 0;
-      const currentRevenue = current ? current.revenue : 0;
       const currentOrders = current ? current.orders : [];
       const priorBottles = prior ? prior.bottles : 0;
-      const priorRevenue = prior ? prior.revenue : 0;
       const priorOrderCount = prior ? prior.orderCount : 0;
 
       const accNorm = normalizeName(acc);
@@ -456,10 +435,8 @@ export function TrendPointAnalyticsDialog({
         accountName: acc,
         accountType: current?.accountType,
         currentBottles,
-        currentRevenue,
         currentOrders,
         priorBottles,
-        priorRevenue,
         priorOrderCount,
         bottleDelta,
         paceDeltaPct,
@@ -526,13 +503,6 @@ export function TrendPointAnalyticsDialog({
           return dir * a.productName.localeCompare(b.productName);
         case "bottles":
           return dir * (a.bottles - b.bottles);
-        case "revenue":
-          return dir * (a.revenue - b.revenue);
-        case "avgPrice": {
-          const priceA = a.bottles > 0 ? a.revenue / a.bottles : 0;
-          const priceB = b.bottles > 0 ? b.revenue / b.bottles : 0;
-          return dir * (priceA - priceB);
-        }
         case "volumeSharePct":
           return dir * (a.volumeSharePct - b.volumeSharePct);
         case "accountCount":
@@ -561,13 +531,6 @@ export function TrendPointAnalyticsDialog({
         }
         case "status":
           return dir * a.status.localeCompare(b.status);
-        case "currentRevenue":
-          return dir * (a.currentRevenue - b.currentRevenue);
-        case "avgPrice": {
-          const priceA = a.currentBottles > 0 ? a.currentRevenue / a.currentBottles : 0;
-          const priceB = b.currentBottles > 0 ? b.currentRevenue / b.currentBottles : 0;
-          return dir * (priceA - priceB);
-        }
         case "invoices":
           return dir * (a.currentOrders.length - b.currentOrders.length);
         default:
@@ -586,8 +549,6 @@ export function TrendPointAnalyticsDialog({
           return dir * a.accountName.localeCompare(b.accountName);
         case "currentBottles":
           return dir * (a.currentBottles - b.currentBottles);
-        case "currentRevenue":
-          return dir * (a.currentRevenue - b.currentRevenue);
         case "invoices":
           return dir * (a.currentOrders.length - b.currentOrders.length);
         default:
@@ -613,8 +574,6 @@ export function TrendPointAnalyticsDialog({
           const bB = b.cases > 0 ? b.cases : 1;
           return dir * (bA - bB);
         }
-        case "revenue":
-          return dir * ((a.revenue || 0) - (b.revenue || 0));
         case "ref":
           return dir * (a.id || "").localeCompare(b.id || "");
         default:
@@ -630,7 +589,6 @@ export function TrendPointAnalyticsDialog({
       (sum, o) => sum + (o.cases > 0 ? o.cases : 1),
       0
     );
-    const currentRev = focusedPeriodOrders.reduce((sum, o) => sum + (o.revenue || 0), 0);
     const currentAccounts = new Set(focusedPeriodOrders.map((o) => o.accountName)).size;
     const currentOrdersCount = focusedPeriodOrders.length;
 
@@ -638,18 +596,13 @@ export function TrendPointAnalyticsDialog({
       (sum, o) => sum + (o.cases > 0 ? o.cases : 1),
       0
     );
-    const priorRev = focusedPriorOrders.reduce((sum, o) => sum + (o.revenue || 0), 0);
     const priorAccounts = new Set(focusedPriorOrders.map((o) => o.accountName)).size;
 
     const bottleDiff = currentBottles - priorBottles;
     const bottlePct =
       priorBottles > 0 ? Math.round(((currentBottles - priorBottles) / priorBottles) * 100) : null;
-    const revDiff = currentRev - priorRev;
-    const revPct =
-      priorRev > 0 ? Math.round(((currentRev - priorRev) / priorRev) * 100) : null;
     const accDiff = currentAccounts - priorAccounts;
 
-    const avgPrice = currentBottles > 0 ? currentRev / currentBottles : 0;
     const avgBottlesPerAccount =
       currentAccounts > 0 ? Math.round((currentBottles / currentAccounts) * 10) / 10 : 0;
     const priorAvgBottlesPerAccount =
@@ -660,18 +613,13 @@ export function TrendPointAnalyticsDialog({
     return {
       productName: activeFocus,
       currentBottles,
-      currentRev,
       currentAccounts,
       currentOrdersCount,
       priorBottles,
-      priorRev,
       priorAccounts,
       bottleDiff,
       bottlePct,
-      revDiff,
-      revPct,
       accDiff,
-      avgPrice,
       avgBottlesPerAccount,
       paceDiffPerAccount,
     };
@@ -686,19 +634,11 @@ export function TrendPointAnalyticsDialog({
         ? ((bottleDiff / prevPoint.totalBottles) * 100).toFixed(1)
         : null;
 
-    const revDiff = point.totalRevenue - prevPoint.totalRevenue;
-    const revPct =
-      prevPoint.totalRevenue > 0
-        ? ((revDiff / prevPoint.totalRevenue) * 100).toFixed(1)
-        : null;
-
     const accDiff = point.activeAccountsCount - prevPoint.activeAccountsCount;
 
     return {
       bottleDiff,
       bottlePct,
-      revDiff,
-      revPct,
       accDiff,
     };
   }, [point, prevPoint]);
@@ -719,9 +659,6 @@ export function TrendPointAnalyticsDialog({
   const displayBottles = activeProductSummary
     ? activeProductSummary.currentBottles
     : point.totalBottles;
-  const displayRevenue = activeProductSummary
-    ? activeProductSummary.currentRev
-    : point.totalRevenue;
   const displayAccounts = activeProductSummary
     ? activeProductSummary.currentAccounts
     : point.activeAccountsCount;
@@ -767,7 +704,7 @@ export function TrendPointAnalyticsDialog({
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                   {activeFocus
                     ? `Exclusive buyer breakdown and purchasing pace dynamics for ${activeFocus}. Showing accounts that ordered and pace shift vs prior ${granularity} period.`
-                    : `Complete breakdown of sales volume, revenue, active wine SKUs, and restaurant purchasing velocity across the portfolio.`}
+                    : `Complete breakdown of sales volume, active wine SKUs, and restaurant purchasing velocity across the portfolio.`}
                 </DialogDescription>
               </div>
             </div>
@@ -944,63 +881,7 @@ export function TrendPointAnalyticsDialog({
               </p>
             </Card>
 
-            {/* 2. Period Revenue & Price Realization */}
-            <Card className="p-2.5 sm:p-3 border-border bg-background/60 shadow-2xs min-w-0 overflow-hidden">
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-medium text-muted-foreground flex items-center gap-1 truncate">
-                  <DollarSign className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span className="truncate">Revenue</span>
-                </span>
-                {activeProductSummary ? (
-                  activeProductSummary.revPct !== null && (
-                    <span
-                      className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                        activeProductSummary.revPct >= 0
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                          : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
-                      }`}
-                    >
-                      {activeProductSummary.revPct >= 0 ? (
-                        <ArrowUpRight className="size-3 mr-0.5" />
-                      ) : (
-                        <ArrowDownRight className="size-3 mr-0.5" />
-                      )}
-                      {activeProductSummary.revPct > 0 ? "+" : ""}
-                      {activeProductSummary.revPct}%
-                    </span>
-                  )
-                ) : (
-                  portfolioDeltas?.revPct && (
-                    <span
-                      className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                        Number(portfolioDeltas.revPct) >= 0
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                          : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
-                      }`}
-                    >
-                      {Number(portfolioDeltas.revPct) >= 0 ? (
-                        <ArrowUpRight className="size-3 mr-0.5" />
-                      ) : (
-                        <ArrowDownRight className="size-3 mr-0.5" />
-                      )}
-                      {portfolioDeltas.revPct}%
-                    </span>
-                  )
-                )}
-              </div>
-              <p className="font-heading font-bold text-xl sm:text-2xl mt-1 text-foreground tabular-nums truncate">
-                {formatMoney(displayRevenue)}
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                Avg{" "}
-                {formatMoney(
-                  displayBottles > 0 ? displayRevenue / displayBottles : 0
-                )}{" "}
-                / bottle
-              </p>
-            </Card>
-
-            {/* 3. Buying Accounts Breadth */}
+            {/* 2. Buying Accounts Breadth */}
             <Card className="p-2.5 sm:p-3 border-border bg-background/60 shadow-2xs min-w-0 overflow-hidden">
               <div className="flex items-center justify-between gap-1">
                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-1 truncate">
@@ -1373,40 +1254,6 @@ export function TrendPointAnalyticsDialog({
                         </div>
                       </TableHead>
                       <TableHead
-                        className="text-right whitespace-nowrap px-2.5 cursor-pointer select-none hover:bg-muted/60 transition-colors"
-                        onClick={() => togglePaceSort("currentRevenue")}
-                      >
-                        <div className="flex items-center justify-end gap-1.5 font-semibold text-foreground">
-                          <span>Spend ($)</span>
-                          {paceSort.column === "currentRevenue" ? (
-                            paceSort.direction === "asc" ? (
-                              <ArrowUp className="size-3 text-primary shrink-0" />
-                            ) : (
-                              <ArrowDown className="size-3 text-primary shrink-0" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="size-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                      </TableHead>
-                      <TableHead
-                        className="text-right whitespace-nowrap px-2.5 cursor-pointer select-none hover:bg-muted/60 transition-colors"
-                        onClick={() => togglePaceSort("avgPrice")}
-                      >
-                        <div className="flex items-center justify-end gap-1.5 font-semibold text-foreground">
-                          <span>Avg/Btl</span>
-                          {paceSort.column === "avgPrice" ? (
-                            paceSort.direction === "asc" ? (
-                              <ArrowUp className="size-3 text-primary shrink-0" />
-                            ) : (
-                              <ArrowDown className="size-3 text-primary shrink-0" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="size-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                      </TableHead>
-                      <TableHead
                         className="text-center whitespace-nowrap w-20 px-2 cursor-pointer select-none hover:bg-muted/60 transition-colors"
                         onClick={() => togglePaceSort("invoices")}
                       >
@@ -1429,7 +1276,7 @@ export function TrendPointAnalyticsDialog({
                     {sortedPaceAccounts.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={9}
+                          colSpan={7}
                           className="h-44 text-center text-xs text-muted-foreground"
                         >
                           No accounts match the selected pace filters or search terms.
@@ -1438,11 +1285,6 @@ export function TrendPointAnalyticsDialog({
                     ) : (
                       sortedPaceAccounts.map((rec, index) => {
                         const isExpanded = expandedAccount === rec.accountName;
-                        const avgBtlPrice =
-                          rec.currentBottles > 0
-                            ? rec.currentRevenue / rec.currentBottles
-                            : 0;
-
                         return (
                           <Fragment key={rec.accountName}>
                             <TableRow
@@ -1596,12 +1438,6 @@ export function TrendPointAnalyticsDialog({
                                   </Badge>
                                 )}
                               </TableCell>
-                              <TableCell className="text-right font-medium text-foreground tabular-nums">
-                                {rec.currentRevenue > 0 ? formatMoney(rec.currentRevenue) : "—"}
-                              </TableCell>
-                              <TableCell className="text-right font-mono text-muted-foreground tabular-nums">
-                                {avgBtlPrice > 0 ? formatMoney(avgBtlPrice) : "—"}
-                              </TableCell>
                               <TableCell className="text-center">
                                 {rec.currentOrders.length > 0 ? (
                                   <Button
@@ -1630,7 +1466,7 @@ export function TrendPointAnalyticsDialog({
                             {/* EXPANDABLE INLINE ORDER TICKETS FOR THIS ACCOUNT */}
                             {isExpanded && rec.currentOrders.length > 0 && (
                               <TableRow className="bg-muted/30 hover:bg-muted/30">
-                                <TableCell colSpan={9} className="p-3 pl-12">
+                                <TableCell colSpan={7} className="p-3 pl-12">
                                   <div className="rounded-lg border border-border/70 bg-background/90 p-3 space-y-2">
                                     <div className="flex items-center justify-between text-xs border-b pb-1.5">
                                       <span className="font-semibold text-foreground flex items-center gap-1.5">
@@ -1638,8 +1474,7 @@ export function TrendPointAnalyticsDialog({
                                         Invoice Details for {rec.accountName} in {point.label}
                                       </span>
                                       <span className="text-muted-foreground text-[11px]">
-                                        Total: {formatNumber(rec.currentBottles)} bottles ·{" "}
-                                        {formatMoney(rec.currentRevenue)}
+                                        Total: {formatNumber(rec.currentBottles)} bottles
                                       </span>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
@@ -1661,8 +1496,7 @@ export function TrendPointAnalyticsDialog({
                                               {ord.product || activeFocus || "Wine SKU"}
                                             </span>
                                             <span className="font-bold text-foreground">
-                                              {ord.cases > 0 ? ord.cases : 1} btls ·{" "}
-                                              {formatMoney(ord.revenue || 0)}
+                                              {ord.cases > 0 ? ord.cases : 1} btls
                                             </span>
                                           </div>
                                         </div>
@@ -1723,40 +1557,6 @@ export function TrendPointAnalyticsDialog({
                         </div>
                       </TableHead>
                       <TableHead
-                        className="text-right min-w-[130px] cursor-pointer select-none hover:bg-muted/60 transition-colors"
-                        onClick={() => toggleProductSort("revenue")}
-                      >
-                        <div className="flex items-center justify-end gap-1.5 font-semibold text-xs text-foreground">
-                          <span>Revenue ($)</span>
-                          {productSort.column === "revenue" ? (
-                            productSort.direction === "asc" ? (
-                              <ArrowUp className="size-3.5 text-primary shrink-0" />
-                            ) : (
-                              <ArrowDown className="size-3.5 text-primary shrink-0" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="size-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                      </TableHead>
-                      <TableHead
-                        className="text-right min-w-[120px] cursor-pointer select-none hover:bg-muted/60 transition-colors"
-                        onClick={() => toggleProductSort("avgPrice")}
-                      >
-                        <div className="flex items-center justify-end gap-1.5 font-semibold text-xs text-foreground">
-                          <span>Avg Price/Btl</span>
-                          {productSort.column === "avgPrice" ? (
-                            productSort.direction === "asc" ? (
-                              <ArrowUp className="size-3.5 text-primary shrink-0" />
-                            ) : (
-                              <ArrowDown className="size-3.5 text-primary shrink-0" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="size-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                      </TableHead>
-                      <TableHead
                         className="w-48 cursor-pointer select-none hover:bg-muted/60 transition-colors"
                         onClick={() => toggleProductSort("volumeSharePct")}
                       >
@@ -1797,7 +1597,7 @@ export function TrendPointAnalyticsDialog({
                     {sortedProducts.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={8}
+                          colSpan={6}
                           className="h-44 text-center text-xs text-muted-foreground"
                         >
                           No products found in this period matching the search query.
@@ -1807,8 +1607,6 @@ export function TrendPointAnalyticsDialog({
                       sortedProducts.map((p, index) => {
                         const isSelected = selectedProducts.includes(p.productName);
                         const isFocused = activeFocus === p.productName;
-                        const avgPrice = p.bottles > 0 ? p.revenue / p.bottles : 0;
-
                         return (
                           <TableRow
                             key={p.productName}
@@ -1833,12 +1631,6 @@ export function TrendPointAnalyticsDialog({
                             </TableCell>
                             <TableCell className="text-right font-bold text-foreground tabular-nums">
                               {formatNumber(p.bottles)} btls
-                            </TableCell>
-                            <TableCell className="text-right font-medium text-foreground tabular-nums">
-                              {formatMoney(p.revenue)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-muted-foreground tabular-nums">
-                              {formatMoney(avgPrice)}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
@@ -1914,19 +1706,6 @@ export function TrendPointAnalyticsDialog({
                         </div>
                       </TableHead>
                       <TableHead
-                        className="text-right min-w-[130px] cursor-pointer select-none hover:bg-muted/60 transition-colors"
-                        onClick={() => toggleAccountSort("currentRevenue")}
-                      >
-                        <div className="flex items-center justify-end gap-1.5 font-semibold text-xs text-foreground">
-                          <span>Total Spend ($)</span>
-                          {accountSort.column === "currentRevenue" ? (
-                            accountSort.direction === "asc" ? <ArrowUp className="size-3.5 text-primary shrink-0" /> : <ArrowDown className="size-3.5 text-primary shrink-0" />
-                          ) : (
-                            <ArrowUpDown className="size-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                      </TableHead>
-                      <TableHead
                         className="text-right min-w-[100px] cursor-pointer select-none hover:bg-muted/60 transition-colors"
                         onClick={() => toggleAccountSort("invoices")}
                       >
@@ -1945,7 +1724,7 @@ export function TrendPointAnalyticsDialog({
                   <TableBody>
                     {sortedActiveAccounts.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="h-44 text-center text-xs text-muted-foreground">
+                        <TableCell colSpan={5} className="h-44 text-center text-xs text-muted-foreground">
                           No accounts found for this period.
                         </TableCell>
                       </TableRow>
@@ -1961,9 +1740,6 @@ export function TrendPointAnalyticsDialog({
                               </TableCell>
                               <TableCell className="text-right font-bold text-foreground tabular-nums">
                                 {formatNumber(acc.currentBottles)} btls
-                              </TableCell>
-                              <TableCell className="text-right font-medium text-foreground tabular-nums">
-                                {formatMoney(acc.currentRevenue)}
                               </TableCell>
                               <TableCell className="text-right font-mono text-muted-foreground tabular-nums">
                                 {acc.currentOrders.length}
@@ -2054,19 +1830,6 @@ export function TrendPointAnalyticsDialog({
                       </TableHead>
                       <TableHead
                         className="text-right min-w-[120px] cursor-pointer select-none hover:bg-muted/60 transition-colors"
-                        onClick={() => toggleOrderSort("revenue")}
-                      >
-                        <div className="flex items-center justify-end gap-1.5 font-semibold text-xs text-foreground">
-                          <span>Revenue ($)</span>
-                          {orderSort.column === "revenue" ? (
-                            orderSort.direction === "asc" ? <ArrowUp className="size-3.5 text-primary shrink-0" /> : <ArrowDown className="size-3.5 text-primary shrink-0" />
-                          ) : (
-                            <ArrowUpDown className="size-3 text-muted-foreground/40 shrink-0" />
-                          )}
-                        </div>
-                      </TableHead>
-                      <TableHead
-                        className="text-right min-w-[120px] cursor-pointer select-none hover:bg-muted/60 transition-colors"
                         onClick={() => toggleOrderSort("ref")}
                       >
                         <div className="flex items-center justify-end gap-1.5 font-semibold text-xs text-foreground">
@@ -2083,7 +1846,7 @@ export function TrendPointAnalyticsDialog({
                   <TableBody>
                     {sortedOrdersList.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="h-44 text-center text-xs text-muted-foreground">
+                        <TableCell colSpan={5} className="h-44 text-center text-xs text-muted-foreground">
                           No order tickets found for this period.
                         </TableCell>
                       </TableRow>
@@ -2102,9 +1865,6 @@ export function TrendPointAnalyticsDialog({
                           <TableCell className="text-foreground">{o.product || "—"}</TableCell>
                           <TableCell className="text-right font-bold tabular-nums">
                             {o.cases > 0 ? o.cases : 1}
-                          </TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">
-                            {formatMoney(o.revenue || 0)}
                           </TableCell>
                           <TableCell className="text-right font-mono text-[11px] text-muted-foreground">
                             {o.id ? `#${o.id.slice(0, 7)}` : `ORD-${idx + 1}`}
@@ -2127,10 +1887,6 @@ export function TrendPointAnalyticsDialog({
               <strong className="text-foreground font-semibold">
                 {formatNumber(displayBottles)} bottles
               </strong>{" "}
-              across{" "}
-              <strong className="text-foreground font-semibold">
-                {formatMoney(displayRevenue)}
-              </strong>
             </span>
             <span className="hidden sm:inline text-muted-foreground/60">•</span>
             <span>

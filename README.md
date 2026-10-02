@@ -11,13 +11,13 @@ Account health analysis for wine distribution businesses. Upload order history, 
   - **Account master** (optional) — account name, tier, region, type, sales rep
 - **Health scoring** per account (0–100) using signals such as:
   - Order frequency decline
-  - Revenue trend (last 90 days vs prior 90)
+  - Volume trend (last 90 days vs prior 90)
   - Days since last order
   - Visit cadence vs expected cycle
-  - Order value trends and visit-to-order conversion
+  - Volume trends and visit-to-order conversion
 - **Risk classification**: Healthy, At Risk, Critical, Dormant
 - **Focus recommendations** — priority accounts sorted by risk with reasons and suggested actions
-- **Summary stats** — counts by risk tier and revenue at risk
+- **Summary stats** — counts by risk tier and volume at risk
 
 All data stays in the browser (`localStorage`). No database or login required for v1.
 
@@ -41,8 +41,6 @@ Open [http://localhost:43123](http://localhost:43123).
 | Product | Recommended |
 | Volume (cases, units, or quantity) | Recommended |
 | Lead Team Member | Recommended |
-| Order Value | Optional |
-
 Use **Order analytics** (`/orders`) for order frequency, individual product tracking, and volume breakdowns after uploading order files.
 
 ### Visit patterns
@@ -73,7 +71,7 @@ When full order history is loaded, each account is scored from four weighted fac
 | Factor | Weight | What it measures |
 | --- | --- | --- |
 | Order recency | 35% | Days since last order vs the account’s typical buying cycle |
-| Volume trend | 25% | Revenue change (last 90 days vs prior 90) |
+| Volume trend | 25% | Bottle volume change (last 90 days vs prior 90) |
 | Visit coverage | 20% | Time since last rep visit; visits that didn’t convert to orders |
 | Order cadence | 20% | Order frequency decline vs expected interval |
 

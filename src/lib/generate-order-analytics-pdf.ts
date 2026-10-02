@@ -15,7 +15,6 @@ export type OrderAnalyticsPdfInput = {
   topRestaurants?: RestaurantVolumeRow[];
   totalOrders: number;
   totalBottles: number;
-  totalRevenue: number;
 };
 
 function repLabel(repFilter: string): string {
@@ -131,11 +130,6 @@ export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
   doc.text("TOTAL BOTTLES:", MARGIN_X + 135, 30);
   doc.setFont("helvetica", "normal");
   doc.text(`${formatNumber(input.totalBottles)} btls`, MARGIN_X + 162, 30);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("TOTAL REVENUE:", MARGIN_X + 195, 30);
-  doc.setFont("helvetica", "normal");
-  doc.text(formatMoney(input.totalRevenue), MARGIN_X + 225, 30);
 
   // Sort: most volume or most overdue
   const sorted = [...input.restaurantFrequency].sort((a, b) => {

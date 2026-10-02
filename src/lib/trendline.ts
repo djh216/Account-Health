@@ -80,7 +80,7 @@ export function calculateLinearFit(values: number[]): {
 
   for (let i = 0; i < n; i++) {
     const yPred = slope * i + intercept;
-    // Keep trendline bounded at 0 for volume/revenue
+    // Keep trendline bounded at 0 for volume
     const boundedY = Math.max(0, Math.round(yPred * 10) / 10);
     trendPoints.push(boundedY);
 

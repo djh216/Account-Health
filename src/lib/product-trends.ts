@@ -16,13 +16,12 @@ import { rollingPaceWindow } from "./pace-windows";
 
 export type ProductTrendGranularity = "monthly" | "weekly";
 export type ProductTrendTimeframe = "all" | "12m" | "6m" | "90d";
-export type ProductTrendMetric = "bottles" | "revenue" | "accounts";
+export type ProductTrendMetric = "bottles" | "accounts";
 export type ProductTrajectory = "accelerating" | "steady" | "decelerating" | "new" | "dormant";
 
 export type ProductAccountPlacement = {
   accountName: string;
   bottles: number;
-  revenue: number;
   orderCount: number;
   firstOrderDate: string;
   lastOrderDate: string;
@@ -50,7 +49,6 @@ export type ProductSlowingAlert = {
 export type ProductSummary = {
   productName: string;
   totalBottles: number;
-  totalRevenue: number;
   orderCount: number;
   accountCount: number;
   firstOrderDate: string;
@@ -64,8 +62,6 @@ export type ProductSummary = {
   trajectory: ProductTrajectory;
   paceLast3Months: number;
   pacePrior3Months: number;
-  revenueLast3Months: number;
-  revenuePrior3Months: number;
   quarterlyPaceDeltaPct: number | null;
   quarterlyPaceDeltaBtls: number;
   quarterlyTrajectory: ProductTrajectory;
@@ -78,7 +74,6 @@ export type ProductTrendPoint = {
   date: string;
   timestamp: number;
   totalBottles: number;
-  totalRevenue: number;
   activeAccountsCount: number;
   orderCount: number;
   [productKey: string]: number | string;
@@ -126,7 +121,6 @@ export function buildProductTrendData({
   allProductsSorted: string[];
   totalActiveProducts: number;
   totalBottles: number;
-  totalRevenue: number;
   topPerformer: ProductSummary | null;
   topGrowing: ProductSummary | null;
   atRiskProduct: ProductSummary | null;
@@ -135,7 +129,7 @@ export function buildProductTrendData({
   portfolioPaceLast3Months: number;
   portfolioPacePrior3Months: number;
   portfolioQuarterlyPaceDeltaPct: number | null;
-  peakPeriod: { label: string; bottles: number; revenue: number } | null;
+  peakPeriod: { label: string; bottles: number } | null;
   avgMonthlyBottles: number;
 } {
   const validOrders = orders.filter(
@@ -186,19 +180,15 @@ export function buildProductTrendData({
 
   for (const [pName, pOrders] of productOrderMap.entries()) {
     let totalBottles = 0;
-    let totalRevenue = 0;
     let recentVolume = 0;
     let priorVolume = 0;
     let paceLast3Months = 0;
     let pacePrior3Months = 0;
-    let revenueLast3Months = 0;
-    let revenuePrior3Months = 0;
 
     const accountMap = new Map<
       string,
       {
         bottles: number;
-        revenue: number;
         orderCount: number;
         dates: string[];
         paceLast3Months: number;
@@ -212,9 +202,7 @@ export function buildProductTrendData({
 
     for (const order of pOrders) {
       const btls = order.cases > 0 ? order.cases : 1;
-      const rev = order.revenue || 0;
       totalBottles += btls;
-      totalRevenue += rev;
 
       const orderDate = parseISO(order.date.slice(0, 10));
       if (!isNaN(orderDate.getTime())) {
@@ -227,10 +215,8 @@ export function buildProductTrendData({
 
         if (orderDate >= quarterWindow.currentStart && orderDate <= quarterWindow.currentEnd) {
           paceLast3Months += btls;
-          revenueLast3Months += rev;
         } else if (orderDate >= quarterWindow.priorStart && orderDate < quarterWindow.currentStart) {
           pacePrior3Months += btls;
-          revenuePrior3Months += rev;
         }
       }
 
@@ -247,7 +233,6 @@ export function buildProductTrendData({
       const accExisting = accountMap.get(accName);
       if (accExisting) {
         accExisting.bottles += btls;
-        accExisting.revenue += rev;
         accExisting.orderCount += 1;
         accExisting.dates.push(order.date);
         if (isRecent3M) accExisting.paceLast3Months += btls;
@@ -255,7 +240,6 @@ export function buildProductTrendData({
       } else {
         accountMap.set(accName, {
           bottles: btls,
-          revenue: rev,
           orderCount: 1,
           dates: [order.date],
           paceLast3Months: isRecent3M ? btls : 0,
@@ -280,7 +264,6 @@ export function buildProductTrendData({
         return {
           accountName: accName,
           bottles: info.bottles,
-          revenue: info.revenue,
           orderCount: info.orderCount,
           firstOrderDate: info.dates[0] ?? "",
           lastOrderDate: info.dates.at(-1) ?? "",
@@ -362,7 +345,6 @@ export function buildProductTrendData({
     allSummaries.push({
       productName: pName,
       totalBottles,
-      totalRevenue,
       orderCount: pOrders.length,
       accountCount: accountMap.size,
       firstOrderDate,
@@ -376,8 +358,6 @@ export function buildProductTrendData({
       trajectory,
       paceLast3Months,
       pacePrior3Months,
-      revenueLast3Months,
-      revenuePrior3Months,
       quarterlyPaceDeltaPct,
       quarterlyPaceDeltaBtls,
       quarterlyTrajectory,
@@ -414,7 +394,6 @@ export function buildProductTrendData({
     const pName = order.product!.trim();
     const orderDate = parseISO(order.date);
     const bottles = order.cases > 0 ? order.cases : 1;
-    const revenue = order.revenue || 0;
 
     let bucketKey: string;
     let bucketLabel: string;
@@ -442,7 +421,6 @@ export function buildProductTrendData({
         date: order.date,
         timestamp: bucketTimestamp,
         totalBottles: 0,
-        totalRevenue: 0,
         activeAccountsCount: 0,
         orderCount: 0,
       };
@@ -452,7 +430,6 @@ export function buildProductTrendData({
     }
 
     point.totalBottles += bottles;
-    point.totalRevenue += revenue;
     point.orderCount += 1;
 
     if (order.accountName) {
@@ -462,10 +439,6 @@ export function buildProductTrendData({
     // Per-product bottle metrics on the point
     const currentVal = (point[pName] as number) || 0;
     point[pName] = currentVal + bottles;
-
-    // Per-product revenue metrics
-    const revKey = `${pName}__rev`;
-    point[revKey] = ((point[revKey] as number) || 0) + revenue;
   }
 
   // Update activeAccountsCount on each point
@@ -482,16 +455,13 @@ export function buildProductTrendData({
     (sum, order) => sum + (order.cases > 0 ? order.cases : 1),
     0,
   );
-  const totalRevenue = relevantOrders.reduce((sum, order) => sum + (order.revenue || 0), 0);
-
   // Peak period
-  let peakPeriod: { label: string; bottles: number; revenue: number } | null = null;
+  let peakPeriod: { label: string; bottles: number } | null = null;
   for (const point of timePoints) {
     if (!peakPeriod || point.totalBottles > peakPeriod.bottles) {
       peakPeriod = {
         label: point.label,
         bottles: point.totalBottles,
-        revenue: point.totalRevenue,
       };
     }
   }
@@ -545,7 +515,6 @@ export function buildProductTrendData({
     allProductsSorted,
     totalActiveProducts: allSummaries.length,
     totalBottles,
-    totalRevenue,
     topPerformer,
     topGrowing,
     atRiskProduct,

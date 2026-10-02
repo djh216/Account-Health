@@ -65,7 +65,6 @@ export function AccountProductOrdersDialog({
   const summary = useMemo(() => {
     if (matchingOrders.length === 0) return null;
     const totalVolume = matchingOrders.reduce((sum, o) => sum + (o.cases || 0), 0);
-    const totalRevenue = matchingOrders.reduce((sum, o) => sum + (o.revenue || 0), 0);
     const avgVolume = totalVolume / matchingOrders.length;
     const dates = matchingOrders.map((o) => o.date).sort();
     const firstOrder = dates[0];
@@ -80,7 +79,6 @@ export function AccountProductOrdersDialog({
     return {
       orderCount: matchingOrders.length,
       totalVolume,
-      totalRevenue,
       avgVolume,
       avgBottlesPerMonth,
       firstOrder,
@@ -205,17 +203,10 @@ export function AccountProductOrdersDialog({
                         <TableRow>
                           <TableHead className="w-[30%]">Order Date</TableHead>
                           <TableHead className="text-right">Volume (Bottles)</TableHead>
-                          <TableHead className="text-right">Revenue</TableHead>
-                          <TableHead className="text-right">Price / Bottle</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {sortedOrders.map((order, index) => {
-                          const unitPrice =
-                            order.cases > 0 && order.revenue > 0
-                              ? order.revenue / order.cases
-                              : null;
-
                           return (
                             <TableRow key={order.id || `${order.date}-${index}`}>
                               <TableCell className="font-medium">
@@ -231,12 +222,6 @@ export function AccountProductOrdersDialog({
                                     {(order.cases || 0) === 1 ? "btl" : "btls"}
                                   </span>
                                 </span>
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums font-medium">
-                                {order.revenue ? formatMoney(order.revenue) : "—"}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums text-muted-foreground">
-                                {unitPrice ? formatMoney(unitPrice) : "—"}
                               </TableCell>
                             </TableRow>
                           );

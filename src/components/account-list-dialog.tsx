@@ -23,9 +23,9 @@ import type { LastOrderGap } from "@/lib/order-analytics";
 import type { AccountHealth } from "@/lib/types";
 
 function trendClass(item: AccountHealth): string {
-  if (item.revenueDeltaPct === null) return "text-muted-foreground";
-  if (item.revenueDeltaPct <= -20) return "text-rose-800";
-  if (item.revenueDeltaPct >= 10) return "text-emerald-800";
+  if (item.volumeDeltaPct === null) return "text-muted-foreground";
+  if (item.volumeDeltaPct <= -20) return "text-rose-800";
+  if (item.volumeDeltaPct >= 10) return "text-emerald-800";
   return "";
 }
 
@@ -133,13 +133,13 @@ export function AccountListDialog({
                       {showHistory ? (
                         <>
                           <span>
-                            90d revenue{" "}
+                            90d volume{" "}
                             <span className="text-foreground">
-                              {formatMoney(item.revenue90)}
+                              {formatNumber(item.volume90)} btls
                             </span>
                           </span>
                           <span className={trendClass(item)}>
-                            Trend {formatPct(item.revenueDeltaPct)}
+                            Trend {formatPct(item.volumeDeltaPct)}
                           </span>
                         </>
                       ) : null}

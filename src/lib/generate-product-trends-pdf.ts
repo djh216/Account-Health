@@ -14,7 +14,6 @@ export type ProductTrendsPdfInput = {
   products: ProductSummary[];
   slowingAlerts?: ProductSlowingAlert[];
   totalBottles: number;
-  totalRevenue: number;
 };
 
 function repLabel(repFilter: string): string {
@@ -98,11 +97,6 @@ export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
   doc.setFont("helvetica", "normal");
   doc.text(`${formatNumber(input.totalBottles)} btls`, MARGIN_X + 120, 30);
 
-  doc.setFont("helvetica", "bold");
-  doc.text("TOTAL REVENUE:", MARGIN_X + 155, 30);
-  doc.setFont("helvetica", "normal");
-  doc.text(formatMoney(input.totalRevenue), MARGIN_X + 188, 30);
-
   // Top Products Table
   const sorted = [...input.products].sort((a, b) => b.totalBottles - a.totalBottles);
 
@@ -121,7 +115,6 @@ export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
       p.accountCount,
       p.orderCount,
       formatNumber(p.totalBottles),
-      formatMoney(p.totalRevenue),
     ];
   });
 
@@ -138,13 +131,12 @@ export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
         "Accounts",
         "Orders",
         "Total Bottles",
-        "Total Revenue",
       ],
     ],
     body:
       productRows.length > 0
         ? productRows
-        : [["No product trend data available", "", "", "", "", "", "", "", ""]],
+        : [["No product trend data available", "", "", "", "", "", "", ""]],
     theme: "grid",
     headStyles: {
       fillColor: [241, 245, 249],

@@ -94,7 +94,6 @@ export function useReportExport() {
       topRestaurants: analytics.byRestaurant,
       totalOrders: analytics.totals.orderEvents || state.orders.length,
       totalBottles: analytics.totals.totalVolume,
-      totalRevenue: analytics.totals.totalRevenue,
     };
   }, [state.orders, enrichedAccounts.length, repFilter, asOf, generatedAt]);
 
@@ -119,7 +118,6 @@ export function useReportExport() {
       products: trendData.productSummaries,
       slowingAlerts,
       totalBottles: trendData.totalBottles,
-      totalRevenue: trendData.totalRevenue,
     };
   }, [state.orders, repFilter, asOf, generatedAt, outOfStockIds]);
 

@@ -25,7 +25,6 @@ export type AccountTrendPoint = {
   timestamp: number;
   totalBottles: number;
   totalCases: number;
-  totalRevenue: number;
   orderCount: number;
   [accountName: string]: number | string;
 };
@@ -34,7 +33,6 @@ export type AccountBottleSummary = {
   accountName: string;
   totalBottles: number;
   totalCases: number;
-  totalRevenue: number;
   orderCount: number;
   firstOrderDate: string;
   lastOrderDate: string;
@@ -46,8 +44,6 @@ export type AccountBottleSummary = {
   monthlyTrajectory: ProductTrajectory;
   paceLast3Months: number;
   pacePrior3Months: number;
-  revenueLast3Months: number;
-  revenuePrior3Months: number;
   quarterlyPaceDeltaPct: number | null;
   quarterlyPaceDeltaBtls: number;
   quarterlyTrajectory: ProductTrajectory;
@@ -112,7 +108,6 @@ export type BottleTrendDataResult = {
   data: AccountTrendPoint[];
   accountSummaries: AccountBottleSummary[];
   totalBottles: number;
-  totalRevenue: number;
   peakPeriod: { label: string; bottles: number } | null;
   avgMonthlyBottles: number;
 };
@@ -124,11 +119,9 @@ const BOTTLE_TREND_CACHE_LIMIT = 48;
 export function bottleTrendOrdersScopeKey(orders: Order[]): string {
   if (orders.length === 0) return "0";
   let volumeSum = 0;
-  let revenueCents = 0;
   const accounts = new Set<string>();
   for (const order of orders) {
     volumeSum += order.cases > 0 ? order.cases : 1;
-    revenueCents += Math.round((order.revenue || 0) * 100);
     if (accounts.size < 64) {
       accounts.add(normalizeName(order.accountName));
     }
@@ -136,7 +129,7 @@ export function bottleTrendOrdersScopeKey(orders: Order[]): string {
   const first = orders[0]!;
   const last = orders[orders.length - 1]!;
   const accountSample = [...accounts].sort().join("\0");
-  return `${orders.length}:${volumeSum}:${revenueCents}:${accountSample}:${first.date}:${last.date}`;
+  return `${orders.length}:${volumeSum}:${accountSample}:${first.date}:${last.date}`;
 }
 
 function bottleTrendCacheKey(
@@ -223,7 +216,6 @@ export function buildBottleTrendData({
   for (const order of relevantOrders) {
     const orderDate = parseISO(order.date);
     const bottles = order.cases > 0 ? order.cases : 1;
-    const revenue = order.revenue || 0;
 
     let bucketKey: string;
     let bucketLabel: string;
@@ -250,7 +242,6 @@ export function buildBottleTrendData({
         timestamp: bucketTimestamp,
         totalBottles: 0,
         totalCases: 0,
-        totalRevenue: 0,
         orderCount: 0,
       };
       buckets.set(bucketKey, point);
@@ -258,7 +249,6 @@ export function buildBottleTrendData({
 
     point.totalBottles += bottles;
     point.totalCases += bottles;
-    point.totalRevenue += revenue;
     point.orderCount += 1;
 
     if (includeAccountBreakdown) {
@@ -306,7 +296,6 @@ export function buildBottleTrendData({
       accountName: string;
       totalBottles: number;
       totalCases: number;
-      totalRevenue: number;
       orderCount: number;
       firstOrderDate: string;
       lastOrderDate: string;
@@ -314,8 +303,6 @@ export function buildBottleTrendData({
       pacePriorMonth: number;
       paceLast3Months: number;
       pacePrior3Months: number;
-      revenueLast3Months: number;
-      revenuePrior3Months: number;
     }
   >();
 
@@ -323,7 +310,6 @@ export function buildBottleTrendData({
   for (const order of relevantOrders) {
     const acc = order.accountName;
     const bottles = order.cases > 0 ? order.cases : 1;
-    const revenue = order.revenue || 0;
 
     let item = accountMap.get(acc);
     if (!item) {
@@ -331,7 +317,6 @@ export function buildBottleTrendData({
         accountName: acc,
         totalBottles: 0,
         totalCases: 0,
-        totalRevenue: 0,
         orderCount: 0,
         firstOrderDate: order.date,
         lastOrderDate: order.date,
@@ -339,15 +324,12 @@ export function buildBottleTrendData({
         pacePriorMonth: 0,
         paceLast3Months: 0,
         pacePrior3Months: 0,
-        revenueLast3Months: 0,
-        revenuePrior3Months: 0,
       };
       accountMap.set(acc, item);
     }
 
     item.totalBottles += bottles;
     item.totalCases += bottles;
-    item.totalRevenue += revenue;
     item.orderCount += 1;
 
     if (order.date < item.firstOrderDate) item.firstOrderDate = order.date;
@@ -362,7 +344,6 @@ export function buildBottleTrendData({
 
     const orderDate = parseISO(order.date);
     const bottles = order.cases > 0 ? order.cases : 1;
-    const revenue = order.revenue || 0;
 
     if (orderDate >= shortPaceWindow.currentStart && orderDate <= shortPaceWindow.currentEnd) {
       item.paceLastMonth += bottles;
@@ -375,10 +356,8 @@ export function buildBottleTrendData({
 
     if (orderDate >= quarterWindow.currentStart && orderDate <= quarterWindow.currentEnd) {
       item.paceLast3Months += bottles;
-      item.revenueLast3Months += revenue;
     } else if (orderDate >= quarterWindow.priorStart && orderDate < quarterWindow.currentStart) {
       item.pacePrior3Months += bottles;
-      item.revenuePrior3Months += revenue;
     }
   }
 
@@ -420,7 +399,6 @@ export function buildBottleTrendData({
     .sort((a, b) => b.totalBottles - a.totalBottles);
 
   const totalBottles = sortedPoints.reduce((sum, p) => sum + p.totalBottles, 0);
-  const totalRevenue = sortedPoints.reduce((sum, p) => sum + p.totalRevenue, 0);
 
   let peakPeriod: { label: string; bottles: number } | null = null;
   for (const p of sortedPoints) {
@@ -442,7 +420,6 @@ export function buildBottleTrendData({
     data: sortedPoints,
     accountSummaries,
     totalBottles,
-    totalRevenue,
     peakPeriod,
     avgMonthlyBottles,
   };

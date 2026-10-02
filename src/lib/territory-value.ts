@@ -8,7 +8,7 @@ function lineVolume(order: Order): number {
   return order.cases > 0 ? order.cases : 1;
 }
 
-/** All-time volume, falling back to revenue or recent activity when volume is missing. */
+/** All-time bottle volume, falling back to recent activity when line volume is missing. */
 export function territoryValueForAccount(
   account: AccountHealth,
   orderIndex: OrderIndex,
@@ -17,10 +17,7 @@ export function territoryValueForAccount(
   const volume = accountOrders.reduce((sum, order) => sum + lineVolume(order), 0);
   if (volume > 0) return volume;
 
-  const revenue = accountOrders.reduce((sum, order) => sum + order.revenue, 0);
-  if (revenue > 0) return revenue;
-
-  return Math.max(account.revenue90, account.revenuePrior90, account.cases90, 0);
+  return Math.max(account.volume90, account.volumePrior90, account.cases90, 0);
 }
 
 export function territoryTierLabel(tier: TerritoryValueTier): string {

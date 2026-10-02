@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { formatDate, formatDays, formatMoney, formatNumber } from "./format";
+import { formatDate, formatDays, formatNumber } from "./format";
 import type { AccountProjectionAndChurn } from "./order-projections";
 import { territoryTierLabel } from "./territory-value";
 
@@ -33,9 +33,8 @@ function churnRow(account: AccountProjectionAndChurn): (string | number)[] {
   const cadenceCell = `Last: ${lastDateStr} (${daysSinceStr})\nCycle: every ${account.typicalIntervalDays}d${overdueStr}`;
 
   const monthlyBtls = `${formatNumber(account.monthlyVolumeAtRisk)} btls/mo`;
-  const monthlyRev = formatMoney(account.monthlyRevenueAtRisk);
-  const annualRev = formatMoney(account.monthlyRevenueAtRisk * 12);
-  const atRiskCell = `${monthlyBtls}\n${monthlyRev}/mo\n(${annualRev}/yr)`;
+  const annualBtls = formatNumber(account.monthlyVolumeAtRisk * 12);
+  const atRiskCell = `${monthlyBtls}\n(${annualBtls} btls/yr)`;
 
   const signalsCell = account.churnSignals.length > 0
     ? account.churnSignals.join("\n• ")
@@ -88,8 +87,7 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
   // Summary Metrics Bar
   const totalAccounts = input.accounts.length;
   const totalMonthlyVolumeAtRisk = input.accounts.reduce((s, a) => s + (a.monthlyVolumeAtRisk || 0), 0);
-  const totalMonthlyRevenueAtRisk = input.accounts.reduce((s, a) => s + (a.monthlyRevenueAtRisk || 0), 0);
-  const totalAnnualRevenueAtRisk = totalMonthlyRevenueAtRisk * 12;
+  const totalAnnualVolumeAtRisk = totalMonthlyVolumeAtRisk * 12;
   const avgChurnScore = totalAccounts > 0
     ? Math.round(input.accounts.reduce((s, a) => s + (a.churnScore || 0), 0) / totalAccounts)
     : 0;
@@ -120,15 +118,9 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
   doc.text(`${formatNumber(totalMonthlyVolumeAtRisk)} btls/mo`, MARGIN_X + 142, 30);
 
   doc.setFont("helvetica", "bold");
-  doc.text("MONTHLY REVENUE AT RISK:", MARGIN_X + 168, 30);
+  doc.text("ANNUALIZED VOLUME AT RISK:", MARGIN_X + 168, 30);
   doc.setFont("helvetica", "normal");
-  doc.text(formatMoney(totalMonthlyRevenueAtRisk), MARGIN_X + 214, 30);
-
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(ROSE_ACCENT[0], ROSE_ACCENT[1], ROSE_ACCENT[2]);
-  doc.text("ANNUALIZED:", MARGIN_X + 233, 30);
-  doc.setFont("helvetica", "normal");
-  doc.text(formatMoney(totalAnnualRevenueAtRisk), MARGIN_X + 254, 30);
+  doc.text(`${formatNumber(totalAnnualVolumeAtRisk)} btls/yr`, MARGIN_X + 214, 30);
 
   // Sort accounts by churn score descending, then monthly volume at risk descending
   const sortedAccounts = [...input.accounts].sort((a, b) => {
@@ -148,7 +140,7 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
         "ACCOUNT & REP",
         "CHURN RISK",
         "ORDER CADENCE STATUS",
-        "EST. VALUE AT RISK",
+        "EST. VOLUME AT RISK",
         "CHURN SIGNALS",
         "RETENTION INTERVENTION PLAYBOOK",
       ],

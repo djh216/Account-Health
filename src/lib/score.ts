@@ -74,7 +74,7 @@ function trendScore(
   prior: number,
 ): { score: number; detail: string; delta: number | null } {
   if (prior <= 0 && recent <= 0) {
-    return { score: 20, detail: "No recent or prior-period revenue.", delta: null };
+    return { score: 20, detail: "No recent or prior-period volume.", delta: null };
   }
   if (prior <= 0) {
     return {
@@ -108,13 +108,13 @@ function trendScore(
   if (delta >= -40) {
     return {
       score: 38,
-      detail: `Revenue slipped ${Math.abs(Math.round(delta))}% in the last 90 days.`,
+      detail: `Volume slipped ${Math.abs(Math.round(delta))}% in the last 90 days.`,
       delta,
     };
   }
   return {
     score: 14,
-    detail: `Revenue collapsed ${Math.abs(Math.round(delta))}% versus the prior 90 days.`,
+    detail: `Volume collapsed ${Math.abs(Math.round(delta))}% versus the prior 90 days.`,
     delta,
   };
 }
@@ -291,8 +291,8 @@ function buildFocus(input: {
   delta: number | null;
   daysSinceVisit: number | null;
   visitsWithoutOrder: number;
-  revenue90: number;
-  revenuePrior90: number;
+  volume90: number;
+  volumePrior90: number;
 }): FocusAction | null {
   const {
     name,
@@ -303,8 +303,8 @@ function buildFocus(input: {
     delta,
     daysSinceVisit,
     visitsWithoutOrder,
-    revenue90,
-    revenuePrior90,
+    volume90,
+    volumePrior90,
   } = input;
 
   if (risk === "healthy") return null;
@@ -359,10 +359,10 @@ function buildFocus(input: {
   }
 
   if (mode === "history" && delta !== null && delta <= -35) {
-    const lost = Math.max(0, revenuePrior90 - revenue90);
+    const lost = Math.max(0, volumePrior90 - volume90);
     return {
       title: `Protect volume at ${name}`,
-      reason: `Ninety-day sales are down ${Math.abs(Math.round(delta))}%${lost ? ` (about $${Math.round(lost).toLocaleString()} off the book)` : ""}.`,
+      reason: `Ninety-day volume is down ${Math.abs(Math.round(delta))}%${lost ? ` (about ${Math.round(lost).toLocaleString()} btls off the book)` : ""}.`,
       action: "Schedule a list review and ask what replaced your wines.",
     };
   }
@@ -516,21 +516,21 @@ export function listNeedAttentionAccounts(accounts: AccountHealth[]): AccountHea
     .sort(sortAccountsByHealthScore);
 }
 
-export function listRevenueAtRiskAccounts(accounts: AccountHealth[]): AccountHealth[] {
+export function listVolumeAtRiskAccounts(accounts: AccountHealth[]): AccountHealth[] {
   return accounts
     .filter((item) => item.risk === "critical" || item.risk === "at_risk")
     .sort(
       (a, b) =>
-        Math.max(b.revenuePrior90, b.revenue90) -
-          Math.max(a.revenuePrior90, a.revenue90) ||
+        Math.max(b.volumePrior90, b.volume90) -
+          Math.max(a.volumePrior90, a.volume90) ||
         sortAccountsByHealthScore(a, b),
     );
 }
 
-export function listAccountsByRecentRevenue(accounts: AccountHealth[]): AccountHealth[] {
+export function listAccountsByRecentVolume(accounts: AccountHealth[]): AccountHealth[] {
   return [...accounts].sort(
     (a, b) =>
-      b.revenue90 - a.revenue90 ||
+      b.volume90 - a.volume90 ||
       sortAccountsByHealthScore(a, b),
   );
 }
@@ -589,15 +589,16 @@ export function scoreAccount(
     (visit) => toDate(visit.date) >= windowStart && toDate(visit.date) <= asOfDate,
   );
 
-  const revenue90 = recentOrders.reduce((sum, order) => sum + order.revenue, 0);
-  const revenuePrior90 = priorOrders.reduce((sum, order) => sum + order.revenue, 0);
+  const volume90 = recentOrders.reduce((sum, order) => sum + bottleVolume(order), 0);
+  const volumePrior90 = priorOrders.reduce((sum, order) => sum + bottleVolume(order), 0);
   const cases90 = recentOrders.reduce((sum, order) => sum + order.cases, 0);
   const cadenceOrderDates = accountOrders
     .filter((order) => Boolean(order.product?.trim()))
     .map((order) => order.date);
   const interval = typicalInterval(cadenceOrderDates, asOf);
   const snapshotMode =
-    accountOrders.length <= 1 || !accountOrders.some((order) => order.revenue > 0);
+    accountOrders.length <= 1 ||
+    !accountOrders.some((order) => bottleVolume(order) > 0 || Boolean(order.product?.trim()));
   const hasOrderHistory = uniqueOrderWeekAnchorDates(accountOrders).length > 1;
 
   const visitsWithoutOrder = recentVisits.filter((visit) => {
@@ -632,7 +633,7 @@ export function scoreAccount(
     visitsWithoutOrder,
     snapshotMode,
   );
-  const trend = trendScore(revenue90, revenuePrior90);
+  const trend = trendScore(volume90, volumePrior90);
   const volumeChange = volumeChangeScore(
     periodVolume,
     priorPeriodVolume,
@@ -740,8 +741,8 @@ export function scoreAccount(
     delta: trend.delta,
     daysSinceVisit,
     visitsWithoutOrder,
-    revenue90,
-    revenuePrior90,
+    volume90,
+    volumePrior90,
   });
 
   return {
@@ -753,9 +754,9 @@ export function scoreAccount(
     daysSinceOrder,
     lastVisitDate: lastVisit?.date ?? null,
     daysSinceVisit,
-    revenue90,
-    revenuePrior90,
-    revenueDeltaPct: trend.delta,
+    volume90,
+    volumePrior90,
+    volumeDeltaPct: trend.delta,
     orderCount90: orderEventCountFromOrders(recentOrders),
     orderCountPrior90: orderEventCountFromOrders(priorOrders),
     typicalIntervalDays: interval,
@@ -823,10 +824,10 @@ export function buildSnapshot(
       healthy: rankedAccounts.filter((item) => item.risk === "healthy").length,
       overdueOrders: listOverdueOrderAccounts(rankedAccounts).length,
       overdueVisits: listOverdueVisitAccounts(rankedAccounts).length,
-      revenue90: rankedAccounts.reduce((sum, item) => sum + item.revenue90, 0),
-      revenueAtRisk: rankedAccounts
+      volume90: rankedAccounts.reduce((sum, item) => sum + item.volume90, 0),
+      volumeAtRisk: rankedAccounts
         .filter((item) => item.risk === "critical" || item.risk === "at_risk")
-        .reduce((sum, item) => sum + Math.max(item.revenuePrior90, item.revenue90), 0),
+        .reduce((sum, item) => sum + Math.max(item.volumePrior90, item.volume90), 0),
     },
   };
 }

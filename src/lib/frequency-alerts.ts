@@ -35,10 +35,10 @@ export type AccountFrequencyAlert = {
   dropPercentage: number; // e.g. 65 means 65% drop in order frequency
   cadenceMultiplier: number; // e.g. 2.4 means taking 2.4x the usual time
   lastOrderDate: string;
-  // Volume & value metrics
-  revenueRecent90: number;
-  revenuePrior90: number;
-  revenueAtRisk: number;
+  // Volume metrics
+  volumeRecent90: number;
+  volumePrior90: number;
+  volumeAtRisk: number;
   bottlesAtRisk: number;
   // Context & action
   message: string;
@@ -223,11 +223,11 @@ export function detectOrderFrequencyDrops(
         "Check inventory levels and send updated catalog or seasonal allocation sheet.";
     }
 
-    const revenueAtRisk =
-      health.revenuePrior90 > 0
-        ? Math.max(0, health.revenuePrior90 - health.revenue90)
-        : health.revenue90 > 0
-          ? Math.round(health.revenue90 * (dropPercentage / 100))
+    const volumeAtRisk =
+      health.volumePrior90 > 0
+        ? Math.max(0, health.volumePrior90 - health.volume90)
+        : health.volume90 > 0
+          ? Math.round(health.volume90 * (dropPercentage / 100))
           : 0;
 
     const totalAccountBottles = accountOrders.reduce(
@@ -263,9 +263,9 @@ export function detectOrderFrequencyDrops(
       dropPercentage,
       cadenceMultiplier,
       lastOrderDate,
-      revenueRecent90: health.revenue90,
-      revenuePrior90: health.revenuePrior90,
-      revenueAtRisk,
+      volumeRecent90: health.volume90,
+      volumePrior90: health.volumePrior90,
+      volumeAtRisk,
       bottlesAtRisk,
       message,
       actionRecommendation,

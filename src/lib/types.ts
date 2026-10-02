@@ -35,7 +35,6 @@ export type Order = {
   accountId: string;
   accountName: string;
   date: string;
-  revenue: number;
   cases: number;
   skuCount?: number;
   product?: string;
@@ -96,9 +95,9 @@ export type AccountHealth = {
   daysSinceOrder: number | null;
   lastVisitDate: string | null;
   daysSinceVisit: number | null;
-  revenue90: number;
-  revenuePrior90: number;
-  revenueDeltaPct: number | null;
+  volume90: number;
+  volumePrior90: number;
+  volumeDeltaPct: number | null;
   orderCount90: number;
   orderCountPrior90: number;
   typicalIntervalDays: number | null;
@@ -129,8 +128,8 @@ export type PortfolioSnapshot = {
     healthy: number;
     overdueOrders: number;
     overdueVisits: number;
-    revenue90: number;
-    revenueAtRisk: number;
+    volume90: number;
+    volumeAtRisk: number;
   };
 };
 
@@ -139,7 +138,6 @@ export type ColumnMapping = {
   lastOrderDate?: string;
   lastVisitDate?: string;
   date?: string;
-  revenue?: string;
   cases?: string;
   skuCount?: string;
   type?: string;

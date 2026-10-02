@@ -58,9 +58,13 @@ function alertRow(alert: AccountFrequencyAlert): (string | number)[] {
 
   const paceCell = `-${alert.dropPercentage}%\n${alert.recentOrdersPerMonth}/mo vs ${alert.typicalOrdersPerMonth}/mo`;
 
-  const bottlesStr = alert.bottlesAtRisk > 0 ? `${formatNumber(alert.bottlesAtRisk)} btls` : "—";
-  const revenueStr = alert.revenueAtRisk > 0 ? formatMoney(alert.revenueAtRisk) : "—";
-  const atRiskCell = `${bottlesStr}\n${revenueStr}`;
+  const bottlesStr =
+    alert.bottlesAtRisk > 0
+      ? `${formatNumber(alert.bottlesAtRisk)} btls`
+      : alert.volumeAtRisk > 0
+        ? `${formatNumber(alert.volumeAtRisk)} btls`
+        : "—";
+  const atRiskCell = bottlesStr;
 
   const actionCell = `${alert.actionRecommendation}\n"${alert.message}"`;
 
@@ -106,8 +110,10 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
   const criticalCount = input.alerts.filter((a) => a.severity === "critical").length;
   const warningCount = input.alerts.filter((a) => a.severity === "warning").length;
   const watchCount = input.alerts.filter((a) => a.severity === "watch").length;
-  const totalBottlesAtRisk = input.alerts.reduce((s, a) => s + (a.bottlesAtRisk || 0), 0);
-  const totalRevenueAtRisk = input.alerts.reduce((s, a) => s + (a.revenueAtRisk || 0), 0);
+  const totalBottlesAtRisk = input.alerts.reduce(
+    (s, a) => s + (a.bottlesAtRisk || a.volumeAtRisk || 0),
+    0,
+  );
 
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
@@ -142,11 +148,6 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
   doc.text("EST. BOTTLES AT RISK:", MARGIN_X + 124, 30);
   doc.setFont("helvetica", "normal");
   doc.text(`${formatNumber(totalBottlesAtRisk)} btls`, MARGIN_X + 162, 30);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("EST. REVENUE AT RISK:", MARGIN_X + 185, 30);
-  doc.setFont("helvetica", "normal");
-  doc.text(formatMoney(totalRevenueAtRisk), MARGIN_X + 225, 30);
 
   // Sort alerts: critical first, then warning, then watch, ordered by days overdue
   const sortedAlerts = [...input.alerts].sort((a, b) => {
