@@ -30,7 +30,10 @@ export function RepFilterSelect({
       >
         <SelectValue placeholder="Sales rep" />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent
+        alignItemWithTrigger={false}
+        className="max-h-none overflow-y-visible [&_[role=listbox]]:max-h-none [&_[role=listbox]]:overflow-visible"
+      >
         <SelectItem value="all">All sales reps</SelectItem>
         {reps.map((rep) => (
           <SelectItem key={rep} value={rep}>

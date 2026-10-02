@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   AlertTriangle,
+  CalendarRange,
   ChevronDown,
   Download,
   FileText,
@@ -55,6 +56,8 @@ export function PrintReportButton({
     repFilter,
     exportCurrentPagePdf,
     exportFrequencyAlertsPdf,
+    exportRepActionPlansPdf,
+    hasRepActionPlanData,
     triggerSafePrint,
   } = useReportExport();
 
@@ -92,6 +95,17 @@ export function PrintReportButton({
   }
 
   // 2. Frequency alerts PDF download
+  async function handleDownloadRepActionPlanPdf() {
+    try {
+      await exportRepActionPlansPdf();
+      notify("✓ Rep 1 / 2 / 3 week action plan PDF downloaded!");
+      setDialogOpen(false);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "Could not generate action plan.";
+      notify(text);
+    }
+  }
+
   async function handleDownloadAlertsPdf() {
     try {
       await exportFrequencyAlertsPdf();
@@ -167,6 +181,22 @@ export function PrintReportButton({
                   </span>
                   <span className="text-xs text-muted-foreground">
                     Exact print-formatted vector PDF with headers & tables
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onClick={() => void handleDownloadRepActionPlanPdf()}
+                disabled={!hasRepActionPlanData}
+                className="cursor-pointer gap-2.5 rounded-md px-2.5 py-2 hover:bg-accent"
+              >
+                <CalendarRange className="size-4 text-primary shrink-0" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground">
+                    Download Rep Action Plan PDF
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Printable 1-, 2-, and 3-week priorities per rep with next steps
                   </span>
                 </div>
               </DropdownMenuItem>

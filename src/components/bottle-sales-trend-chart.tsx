@@ -27,7 +27,6 @@ import {
   Check,
   Layers,
   Search,
-  Square,
   TrendingUp,
   Wine,
   X,
@@ -51,7 +50,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -260,22 +258,21 @@ export function BottleSalesTrendChart({
 
   useEffect(() => {
     if (appliedInitialSelectionRef.current) return;
-    setSelectedAccounts(allAccountsSorted.length ? [...allAccountsSorted] : []);
-  }, [ordersScopeKey, allAccountsSorted]);
+    setSelectedAccounts([]);
+  }, [ordersScopeKey]);
 
   const effectiveSelectedAccounts = useMemo(() => {
     if (selectedAccounts.length === 0) return [];
     const valid = new Set(allAccountsSorted);
-    const filtered = selectedAccounts.filter((account) => valid.has(account));
-    if (filtered.length > 0) return filtered;
-    return allAccountsSorted;
+    return selectedAccounts.filter((account) => valid.has(account));
   }, [selectedAccounts, allAccountsSorted]);
+
+  const plotAccountLines = effectiveSelectedAccounts.length > 0;
 
   const [granularity, setGranularity] = useState<TrendGranularity>("monthly");
   const [timeframe, setTimeframe] = useState<TrendTimeframe>("all");
   const [includeCurrentMonth, setIncludeCurrentMonth] = useState(true);
   const [showAggregateLine, setShowAggregateLine] = useState(true);
-  const [showIndividualLines, setShowIndividualLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Color mapping per selected account
@@ -288,30 +285,41 @@ export function BottleSalesTrendChart({
     return map;
   }, [effectiveSelectedAccounts]);
 
-  // Build aggregate trend data
-  const {
-    data,
-    accountSummaries,
-    totalBottles,
-    peakPeriod,
-    avgMonthlyBottles,
-  } = useMemo(() => {
-    return buildBottleTrendData({
+  const chartTrendInput = useMemo(
+    () => ({
       orders: trendOrders,
       selectedAccounts: effectiveSelectedAccounts,
       granularity,
       timeframe,
       asOf,
-      includeAccountBreakdown: showIndividualLines,
-    });
-  }, [
-    trendOrders,
-    effectiveSelectedAccounts,
-    granularity,
-    timeframe,
-    asOf,
-    showIndividualLines,
-  ]);
+      includeAccountBreakdown: plotAccountLines,
+    }),
+    [trendOrders, effectiveSelectedAccounts, granularity, timeframe, asOf, plotAccountLines],
+  );
+
+  const catalogTrendInput = useMemo(
+    () => ({
+      orders: trendOrders,
+      selectedAccounts: [] as string[],
+      granularity,
+      timeframe,
+      asOf,
+      includeAccountBreakdown: false,
+    }),
+    [trendOrders, granularity, timeframe, asOf],
+  );
+
+  const {
+    data,
+    totalBottles,
+    peakPeriod,
+    avgMonthlyBottles,
+  } = useMemo(() => buildBottleTrendData(chartTrendInput), [chartTrendInput]);
+
+  const accountSummaries = useMemo(
+    () => buildBottleTrendData(catalogTrendInput).accountSummaries,
+    [catalogTrendInput],
+  );
 
   const chartSeries = useMemo(() => {
     if (includeCurrentMonth) return data;
@@ -331,13 +339,13 @@ export function BottleSalesTrendChart({
     if (showAggregateLine) {
       defs.push({ sourceKey: "totalBottles", trendKey: "totalBottles_trend" });
     }
-    if (showIndividualLines) {
+    if (plotAccountLines) {
       for (const acc of effectiveSelectedAccounts) {
         defs.push({ sourceKey: acc, trendKey: getSafeTrendKey(acc) });
       }
     }
     return defs;
-  }, [showAggregateLine, showIndividualLines, effectiveSelectedAccounts]);
+  }, [showAggregateLine, plotAccountLines, effectiveSelectedAccounts]);
 
   const { data: chartDataWithTrendlines, statsMap: trendStatsMap } = useMemo(() => {
     if (!showTrendlines || trendlineDefs.length === 0) {
@@ -358,12 +366,13 @@ export function BottleSalesTrendChart({
     }));
   }, [chartDataWithTrendlines]);
 
-  // Filtered account list for selector
-  const filteredAccountsForSelection = useMemo(() => {
+  const displayedAccountSummaries = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return allAccountsSorted;
-    return allAccountsSorted.filter((name) => name.toLowerCase().includes(q));
-  }, [allAccountsSorted, searchQuery]);
+    if (!q) return accountSummaries;
+    return accountSummaries.filter((summary) =>
+      summary.accountName.toLowerCase().includes(q),
+    );
+  }, [accountSummaries, searchQuery]);
 
   function runChartFilterUpdate(update: () => void) {
     startTransition(update);
@@ -433,10 +442,9 @@ export function BottleSalesTrendChart({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            Across{" "}
-            <span className="font-medium text-foreground">
-              {selectedAccounts.length} selected account{selectedAccounts.length === 1 ? "" : "s"}
-            </span>
+            {effectiveSelectedAccounts.length === 0
+              ? "All accounts aggregate"
+              : `${effectiveSelectedAccounts.length} plotted account${effectiveSelectedAccounts.length === 1 ? "" : "s"}`}
           </CardContent>
         </Card>
 
@@ -488,19 +496,25 @@ export function BottleSalesTrendChart({
           <CardHeader>
             <CardDescription className="flex items-center gap-1.5">
               <Layers className="size-4 text-primary" />
-              <span>Selected Accounts</span>
+              <span>Accounts on Chart</span>
             </CardDescription>
             <CardTitle className="font-heading text-2xl">
-              {selectedAccounts.length}{" "}
-              <span className="text-sm font-normal text-muted-foreground">
-                of {allAccountsSorted.length} accounts
-              </span>
+              {effectiveSelectedAccounts.length === 0 ? (
+                <span className="text-lg">All accounts</span>
+              ) : (
+                <>
+                  {effectiveSelectedAccounts.length}{" "}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    of {allAccountsSorted.length} plotted
+                  </span>
+                </>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {selectedAccounts.length === 0
-              ? "Select accounts below to view trends"
-              : "Active in aggregate & breakdown lines"}
+            {effectiveSelectedAccounts.length === 0
+              ? "Aggregate line uses every account in the catalog below"
+              : "Aggregate and lines reflect only plotted accounts"}
           </CardContent>
         </Card>
       </section>
@@ -510,12 +524,17 @@ export function BottleSalesTrendChart({
         <CardHeader className="border-b pb-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <CardTitle className="font-heading text-xl">
-                Bottle Sales Trend Over Time
+              <CardTitle className="font-heading text-xl flex flex-wrap items-center gap-2">
+                <span>Bottle Sales Trend Over Time</span>
+                <span className="text-xs font-normal text-muted-foreground bg-muted/80 border px-2.5 py-0.5 rounded-full">
+                  {effectiveSelectedAccounts.length === 0
+                    ? "All Accounts Aggregate"
+                    : `${effectiveSelectedAccounts.length} Account${effectiveSelectedAccounts.length === 1 ? "" : "s"} Plotted on Chart`}
+                </span>
               </CardTitle>
               <CardDescription>
-                Historical bottle purchasing trajectory for selected accounts, showing aggregate
-                volume and per-account distribution patterns.
+                Historical bottle purchasing trajectory. Select accounts in the catalog below to plot
+                individual lines on the chart.
                 {includeCurrentMonth
                   ? granularity === "monthly"
                     ? " The current month is included."
@@ -561,6 +580,7 @@ export function BottleSalesTrendChart({
                 {(
                   [
                     { id: "all", label: "All Time" },
+                    { id: "ytd", label: "YTD" },
                     { id: "12m", label: "12 Mos" },
                     { id: "6m", label: "6 Mos" },
                     { id: "90d", label: "90 Days" },
@@ -622,16 +642,6 @@ export function BottleSalesTrendChart({
                 </Button>
                 <Button
                   size="xs"
-                  variant={showIndividualLines ? "secondary" : "outline"}
-                  onClick={() =>
-                    runChartFilterUpdate(() => setShowIndividualLines((prev) => !prev))
-                  }
-                  className="text-xs"
-                >
-                  Account Lines
-                </Button>
-                <Button
-                  size="xs"
                   variant={showTrendlines ? "default" : "outline"}
                   onClick={() =>
                     runChartFilterUpdate(() => setShowTrendlines((prev) => !prev))
@@ -649,6 +659,44 @@ export function BottleSalesTrendChart({
               </div>
             </div>
           </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t pt-3 text-xs">
+            <span className="mr-1 font-medium text-muted-foreground">Quick comparison:</span>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => handleSelectTop(5)}
+              className="h-7 text-xs"
+            >
+              Top 5 Volume
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => handleSelectTop(10)}
+              className="h-7 text-xs"
+            >
+              Top 10 Volume
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={handleSelectAll}
+              className="h-7 text-xs"
+            >
+              Compare All ({allAccountsSorted.length})
+            </Button>
+            {effectiveSelectedAccounts.length > 0 && (
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={handleClearAll}
+                className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Reset to Aggregate
+              </Button>
+            )}
+          </div>
         </CardHeader>
 
         <CardContent className={cn("pt-6", chartDataStale && "opacity-60")}>
@@ -657,29 +705,15 @@ export function BottleSalesTrendChart({
               Updating chart for the selected rep…
             </p>
           ) : null}
-          {chartSeries.length === 0 || effectiveSelectedAccounts.length === 0 ? (
+          {chartSeries.length === 0 ? (
             <div className="flex h-80 flex-col items-center justify-center rounded-xl border border-dashed text-center p-6">
               <Wine className="size-10 text-muted-foreground/60 mb-2" />
               <p className="font-heading font-semibold text-foreground text-lg">
-                {selectedAccounts.length === 0
-                  ? "No accounts selected"
-                  : "No sales data found for the selected timeframe"}
+                No sales data found for the selected timeframe
               </p>
               <p className="text-xs text-muted-foreground max-w-sm mt-1">
-                {selectedAccounts.length === 0
-                  ? "Select one or more accounts below to render the bottle sales trend."
-                  : "Try expanding the timeframe to 12 Months or All Time."}
+                Try expanding the timeframe to 12 Months or All Time.
               </p>
-              {selectedAccounts.length === 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-4"
-                  onClick={() => handleSelectTop(5)}
-                >
-                  Select Top 5 Accounts
-                </Button>
-              )}
             </div>
           ) : (
             <div className="space-y-2">
@@ -835,12 +869,12 @@ export function BottleSalesTrendChart({
                               </div>
                             </div>
 
-                            {showIndividualLines && selectedAccounts.length > 0 && (
+                            {plotAccountLines && effectiveSelectedAccounts.length > 0 && (
                               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
                                   Account Breakdown
                                 </span>
-                                {selectedAccounts
+                                {effectiveSelectedAccounts
                                   .filter((acc) => (point[acc] as number) > 0)
                                   .sort(
                                     (a, b) =>
@@ -956,8 +990,8 @@ export function BottleSalesTrendChart({
                     )}
 
                     {/* Individual Selected Account Lines */}
-                    {showIndividualLines &&
-                      selectedAccounts.map((account) => (
+                    {plotAccountLines &&
+                      effectiveSelectedAccounts.map((account) => (
                         <Line
                           key={account}
                           type="monotone"
@@ -965,7 +999,7 @@ export function BottleSalesTrendChart({
                           name={account}
                           stroke={accountColorMap.get(account) || "#2563eb"}
                           strokeWidth={1.8}
-                          strokeDasharray={selectedAccounts.length > 6 ? "4 4" : undefined}
+                          strokeDasharray={effectiveSelectedAccounts.length > 6 ? "4 4" : undefined}
                           dot={{
                             r: 3.5,
                             fill: accountColorMap.get(account) || "#2563eb",
@@ -996,9 +1030,9 @@ export function BottleSalesTrendChart({
                       ))}
 
                     {/* Individual Selected Account Linear Trendlines */}
-                    {showIndividualLines &&
+                    {plotAccountLines &&
                       showTrendlines &&
-                      selectedAccounts.map((account) => {
+                      effectiveSelectedAccounts.map((account) => {
                         const trendKey = getSafeTrendKey(account);
                         const color = accountColorMap.get(account) || "#2563eb";
                         return (
@@ -1022,172 +1056,86 @@ export function BottleSalesTrendChart({
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
 
-      {/* Account Selection Management Section */}
-      <Card className="border-border">
-        <CardHeader className="pb-3 border-b">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="font-heading text-lg">
-                Select Accounts for Trend Comparison
-              </CardTitle>
-              <CardDescription>
-                Choose which accounts to include in the aggregate total and breakdown lines.
-              </CardDescription>
-            </div>
-
-            {/* Quick Presets */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Button
-                size="xs"
-                variant="outline"
-                className="text-xs"
-                onClick={() => handleSelectTop(5)}
-              >
-                Top 5
-              </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                className="text-xs"
-                onClick={() => handleSelectTop(10)}
-              >
-                Top 10
-              </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                className="text-xs"
-                onClick={handleSelectAll}
-              >
-                Select All ({allAccountsSorted.length})
-              </Button>
+          {effectiveSelectedAccounts.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
+              <span className="text-xs font-semibold text-muted-foreground">
+                Plotted Curves ({effectiveSelectedAccounts.length}):
+              </span>
+              {effectiveSelectedAccounts.map((account) => {
+                const chartColor = accountColorMap.get(account);
+                return (
+                  <span
+                    key={account}
+                    className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-[11px] font-medium"
+                  >
+                    <span
+                      className="size-2 rounded-full shrink-0"
+                      style={{ backgroundColor: chartColor || "#881337" }}
+                    />
+                    {account}
+                  </span>
+                );
+              })}
               <Button
                 size="xs"
                 variant="ghost"
-                className="text-xs text-muted-foreground hover:text-foreground"
                 onClick={handleClearAll}
+                className="h-6 text-[11px] text-muted-foreground hover:text-foreground ml-1"
               >
-                Clear
+                Reset to Aggregate
               </Button>
-            </div>
-          </div>
-
-          {/* Search Input for Account Filter */}
-          <div className="mt-3 relative">
-            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
-            <Input
-              id={searchInputId}
-              type="search"
-              placeholder="Search accounts to select or compare…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 text-xs"
-            />
-          </div>
-        </CardHeader>
-
-        <CardContent className="pt-4">
-          {/* Active Selection Chips */}
-          {selectedAccounts.length > 0 && (
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Currently Comparing ({selectedAccounts.length})
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  Click &apos;×&apos; on any chip to remove
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
-                {selectedAccounts.map((account) => {
-                  const color = accountColorMap.get(account) || "#881337";
-                  return (
-                    <Badge
-                      key={account}
-                      variant="outline"
-                      className="flex items-center gap-1.5 py-1 px-2.5 text-xs bg-card hover:bg-muted/60 transition"
-                    >
-                      <span
-                        className="size-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
-                      <span className="font-medium">{account}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAccount(account)}
-                        className="ml-1 rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground"
-                        title={`Remove ${account}`}
-                      >
-                        <X className="size-3" />
-                        <span className="sr-only">Remove {account}</span>
-                      </button>
-                    </Badge>
-                  );
-                })}
-              </div>
             </div>
           )}
 
-          {/* Account Selection Multi-grid */}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 max-h-64 overflow-y-auto pr-1 border rounded-lg p-2.5 bg-muted/20">
-            {filteredAccountsForSelection.map((account) => {
-              const isSelected = selectedAccounts.includes(account);
-              const color = accountColorMap.get(account);
-
-              return (
-                <button
-                  key={account}
-                  type="button"
-                  onClick={() => handleToggleAccount(account)}
-                  className={cn(
-                    "flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-xs text-left transition border",
-                    isSelected
-                      ? "bg-card border-primary/40 font-semibold shadow-2xs text-foreground"
-                      : "bg-background/80 border-transparent hover:bg-card hover:border-border text-muted-foreground",
-                  )}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isSelected ? (
-                      <span
-                        className="size-2 rounded-full shrink-0"
-                        style={{ backgroundColor: color || "#881337" }}
-                      />
-                    ) : (
-                      <Square className="size-3.5 text-muted-foreground/60 shrink-0" />
-                    )}
-                    <span className="break-words leading-tight">{account}</span>
+          {accountSummaries.length > 0 && (
+            <div className="mt-6 border-t bg-muted/5">
+              <div className="space-y-3 p-6 pb-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="font-heading flex flex-wrap items-center gap-2 text-base font-bold text-foreground">
+                      <span>Individual Account Catalog & Bottle Velocities</span>
+                      <span className="rounded-md border bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                        Click row or checkbox to plot on chart above
+                      </span>
+                    </h3>
+                    <CardDescription className="mt-0.5 text-xs">
+                      Volume and purchasing history for every account in the selected timeframe.
+                      The 30-day pace is the last 30 days versus the prior 30 days. The 90-day pace
+                      is the last 90 days versus the 90 days before that.
+                    </CardDescription>
                   </div>
-                  {isSelected && (
-                    <Check className="size-3.5 text-primary shrink-0 ml-1" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Selected Accounts Performance Table */}
-      {accountSummaries.length > 0 && (
-        <Card className="border-border overflow-hidden">
-          <CardHeader className="border-b">
-            <CardTitle className="font-heading text-lg">
-              Selected Accounts Bottle Breakdown
-            </CardTitle>
-            <CardDescription>
-              Volume and purchasing history for selected accounts. The 30-day pace is the last 30 days versus the prior 30 days. The 90-day pace is the last 90 days versus the 90 days before that.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
+                  <div className="relative w-48 sm:w-60">
+                    <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+                    <Input
+                      id={searchInputId}
+                      placeholder="Search account…"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-8 pl-8 text-xs"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="overflow-x-auto border-t border-border bg-card">
+              <Table className="text-xs">
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8"></TableHead>
-                    <TableHead>Account</TableHead>
+                  <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="w-12 py-2.5 px-3 text-center font-semibold text-foreground">
+                      Chart
+                    </TableHead>
+                    <TableHead className="py-2.5 px-3 font-semibold text-foreground">
+                      Account
+                    </TableHead>
                     <TableHead className="text-right">Total Bottles</TableHead>
                     <TableHead className="text-right">Avg Bottles / Order</TableHead>
                     <TableHead className="text-right whitespace-nowrap">Monthly Velocity</TableHead>
@@ -1200,8 +1148,18 @@ export function BottleSalesTrendChart({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {accountSummaries.map((summary) => {
-                    const color = accountColorMap.get(summary.accountName);
+                  {displayedAccountSummaries.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
+                        No accounts match your search.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    displayedAccountSummaries.map((summary) => {
+                    const isSelectedInChart = effectiveSelectedAccounts.includes(
+                      summary.accountName,
+                    );
+                    const chartColor = accountColorMap.get(summary.accountName);
                     const health = accountHealthByName?.get(
                       normalizeName(summary.accountName),
                     );
@@ -1211,28 +1169,77 @@ export function BottleSalesTrendChart({
                     return (
                       <TableRow
                         key={summary.accountName}
-                        onClick={() => onSelectAccount?.(summary.accountName)}
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => handleToggleAccount(summary.accountName)}
+                        className={cn(
+                          "cursor-pointer border-b transition-colors last:border-0",
+                          isSelectedInChart
+                            ? "bg-primary/5 hover:bg-primary/10"
+                            : "hover:bg-muted/40",
+                        )}
                       >
-                        <TableCell>
-                          <span
-                            className="size-3 rounded-full inline-block"
-                            style={{ backgroundColor: color || "#881337" }}
-                          />
+                        <TableCell
+                          className="py-2.5 px-3 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAccount(summary.accountName)}
+                            className={cn(
+                              "mx-auto flex size-5 items-center justify-center rounded-md border transition-all",
+                              isSelectedInChart
+                                ? "border-transparent text-white shadow-xs"
+                                : "border-input bg-background text-transparent hover:border-primary/60 hover:text-muted-foreground/40",
+                            )}
+                            style={
+                              isSelectedInChart
+                                ? { backgroundColor: chartColor || "#881337" }
+                                : undefined
+                            }
+                            title={
+                              isSelectedInChart
+                                ? `Remove ${summary.accountName} from chart`
+                                : `Plot ${summary.accountName} on chart`
+                            }
+                          >
+                            <Check
+                              className={cn(
+                                "size-3.5 stroke-[3]",
+                                isSelectedInChart ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                          </button>
                         </TableCell>
-                        <TableCell className="text-foreground">
-                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                            <span className="font-medium">{summary.accountName}</span>
-                            {health?.territoryRank != null ? (
-                              <span className="text-xs tabular-nums text-muted-foreground">
-                                #{health.territoryRank}
-                              </span>
-                            ) : null}
-                            {health != null ? (
-                              <span className="text-xs font-semibold tabular-nums text-muted-foreground">
-                                · {health.score} health
-                              </span>
-                            ) : null}
+                        <TableCell className="py-2.5 px-3 align-top text-foreground">
+                          <div className="flex min-w-0 items-start gap-2">
+                            {isSelectedInChart && (
+                              <span
+                                className="mt-1 size-2 shrink-0 rounded-full ring-2 ring-primary/20"
+                                style={{ backgroundColor: chartColor || "#881337" }}
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <button
+                                type="button"
+                                className={cn(
+                                  "break-words text-left transition-colors",
+                                  isSelectedInChart
+                                    ? "font-bold text-foreground"
+                                    : "font-medium group-hover:text-primary",
+                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectAccount?.(summary.accountName);
+                                }}
+                              >
+                                {summary.accountName}
+                              </button>
+                              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] tabular-nums text-muted-foreground">
+                                {health?.territoryRank != null ? (
+                                  <span>#{health.territoryRank}</span>
+                                ) : null}
+                                {health != null ? <span>· {health.score} health</span> : null}
+                              </div>
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums text-foreground">
@@ -1276,13 +1283,15 @@ export function BottleSalesTrendChart({
                         </TableCell>
                       </TableRow>
                     );
-                  })}
+                  })
+                  )}
                 </TableBody>
               </Table>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Interactive Trend Point Analytics Dialog */}
       <TrendPointAnalyticsDialog

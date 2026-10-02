@@ -7,6 +7,7 @@ import {
   parseISO,
   startOfMonth,
   startOfWeek,
+  startOfYear,
   subDays,
   subMonths,
 } from "date-fns";
@@ -16,7 +17,7 @@ import { rollingPaceWindow } from "./pace-windows";
 import type { ProductTrajectory } from "./product-trends";
 
 export type TrendGranularity = "monthly" | "weekly";
-export type TrendTimeframe = "all" | "12m" | "6m" | "90d";
+export type TrendTimeframe = "all" | "ytd" | "12m" | "6m" | "90d";
 
 export type AccountTrendPoint = {
   key: string;
@@ -179,7 +180,9 @@ export function buildBottleTrendData({
   // Snap to the start of the first week or month so a plotted bucket is complete.
   // The current period still ends at asOf.
   let cutoffDate: Date | null = null;
-  if (timeframe === "90d") {
+  if (timeframe === "ytd") {
+    cutoffDate = startOfYear(asOfDate);
+  } else if (timeframe === "90d") {
     cutoffDate = subDays(asOfDate, 90);
   } else if (timeframe === "6m") {
     cutoffDate = subMonths(asOfDate, 6);
@@ -187,10 +190,14 @@ export function buildBottleTrendData({
     cutoffDate = subMonths(asOfDate, 12);
   }
   if (cutoffDate) {
+    const yearStart = startOfYear(asOfDate);
     cutoffDate =
       granularity === "weekly"
         ? startOfWeek(cutoffDate, { weekStartsOn: 1 })
         : startOfMonth(cutoffDate);
+    if (timeframe === "ytd" && cutoffDate < yearStart) {
+      cutoffDate = yearStart;
+    }
   }
 
   const selectedSet = new Set(selectedAccounts.map((a) => normalizeName(a)));

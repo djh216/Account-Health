@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
+import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import {
@@ -10,10 +11,13 @@ import {
   downloadFrequencyAlertsPdf,
   downloadOrderAnalyticsPdf,
   downloadProductTrendsPdf,
+  downloadRepActionPlansPdf,
+  buildRepActionPlans,
   type FocusHealthPdfInput,
   type FrequencyAlertsPdfInput,
   type OrderAnalyticsPdfInput,
   type ProductTrendsPdfInput,
+  type RepActionPlansPdfInput,
 } from "@/lib/report-export";
 import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
 import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
@@ -29,7 +33,7 @@ export type ReportPageType = "health" | "orders" | "products";
 
 export function useReportExport() {
   const pathname = usePathname();
-  const { state, snapshot, repFilter } = useFilteredPortfolio();
+  const { state, fullState, snapshot, repFilter, reps } = useFilteredPortfolio();
   const { ids: outOfStockIds } = useOutOfStockProducts();
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -44,6 +48,11 @@ export function useReportExport() {
   const enrichedAccounts = useMemo(
     () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
     [snapshot.accounts, state.orders],
+  );
+
+  const visibleFullState = useMemo(
+    () => excludeHomeBaseFromPortfolio(fullState),
+    [fullState],
   );
 
   const alerts = useMemo(
@@ -70,6 +79,18 @@ export function useReportExport() {
       allAccounts: enrichedAccounts,
     };
   }, [enrichedAccounts, repFilter, asOf, generatedAt]);
+
+  const repActionPlansInput = useMemo((): RepActionPlansPdfInput | null => {
+    if (visibleFullState.accounts.length === 0) return null;
+    const plans = buildRepActionPlans(visibleFullState, reps, repFilter);
+    if (plans.length === 0) return null;
+    return {
+      repFilter,
+      asOf,
+      generatedAt,
+      plans,
+    };
+  }, [visibleFullState, reps, repFilter, asOf, generatedAt]);
 
   // 2. Frequency Alerts PDF Input
   const frequencyAlertsInput = useMemo((): FrequencyAlertsPdfInput | null => {
@@ -137,6 +158,22 @@ export function useReportExport() {
       setBusyAction(null);
     }
   }, [focusHealthInput]);
+
+  const exportRepActionPlansPdf = useCallback(async () => {
+    if (!repActionPlansInput) {
+      throw new Error(
+        "No account data available to build rep action plans. Load sample data or upload records first.",
+      );
+    }
+    setBusy(true);
+    setBusyAction("Generating Rep Action Plan PDF…");
+    try {
+      downloadRepActionPlansPdf(repActionPlansInput);
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [repActionPlansInput]);
 
   const exportFrequencyAlertsPdf = useCallback(async () => {
     if (!frequencyAlertsInput) {
@@ -298,11 +335,13 @@ export function useReportExport() {
     exportReport,
     exportCurrentPagePdf,
     exportFocusHealthPdf,
+    exportRepActionPlansPdf,
     exportFrequencyAlertsPdf,
     exportOrderAnalyticsPdf,
     exportProductTrendsPdf,
     triggerSafePrint,
     hasHealthData: Boolean(focusHealthInput),
+    hasRepActionPlanData: Boolean(repActionPlansInput),
     hasOrderData: Boolean(orderAnalyticsInput),
     hasProductData: Boolean(productTrendsInput),
     hasAlertsData: Boolean(frequencyAlertsInput),

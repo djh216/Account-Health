@@ -713,7 +713,32 @@ export function ProductSalesTrendsDashboard() {
                 </CardContent>
               </Card>
 
-              <Card className="border-border">
+              <Card
+                className={cn(
+                  "border-border",
+                  trends.topGrowing &&
+                    "cursor-pointer transition-colors hover:border-primary/40 hover:bg-primary/[0.03]",
+                )}
+                onClick={() => {
+                  if (trends.topGrowing) setSelectedDetailProduct(trends.topGrowing);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    trends.topGrowing &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    setSelectedDetailProduct(trends.topGrowing);
+                  }
+                }}
+                role={trends.topGrowing ? "button" : undefined}
+                tabIndex={trends.topGrowing ? 0 : undefined}
+                title={
+                  trends.topGrowing
+                    ? `Open catalog detail for ${trends.topGrowing.productName}`
+                    : undefined
+                }
+              >
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingUp className="size-4 text-indigo-600 dark:text-indigo-400" />
@@ -732,6 +757,9 @@ export function ProductSalesTrendsDashboard() {
                           : "Expanding"}
                       </span>{" "}
                       velocity vs prior 28d ({trends.topGrowing.recentVolume} btls in last 28d vs {trends.topGrowing.priorVolume} btls prior)
+                      <span className="mt-1 block text-[11px] text-primary/80">
+                        Click for Individual Wine Catalog & Sales Velocities
+                      </span>
                     </>
                   ) : (
                     "All products steady"
@@ -739,7 +767,32 @@ export function ProductSalesTrendsDashboard() {
                 </CardContent>
               </Card>
 
-              <Card className="border-border">
+              <Card
+                className={cn(
+                  "border-border",
+                  trends.atRiskProduct &&
+                    "cursor-pointer transition-colors hover:border-primary/40 hover:bg-primary/[0.03]",
+                )}
+                onClick={() => {
+                  if (trends.atRiskProduct) setSelectedDetailProduct(trends.atRiskProduct);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    trends.atRiskProduct &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    setSelectedDetailProduct(trends.atRiskProduct);
+                  }
+                }}
+                role={trends.atRiskProduct ? "button" : undefined}
+                tabIndex={trends.atRiskProduct ? 0 : undefined}
+                title={
+                  trends.atRiskProduct
+                    ? `Open catalog detail for ${trends.atRiskProduct.productName}`
+                    : undefined
+                }
+              >
                 <CardHeader>
                   <CardDescription className="flex items-center gap-1.5">
                     <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />
@@ -758,6 +811,9 @@ export function ProductSalesTrendsDashboard() {
                           : "Decelerating"}
                       </span>{" "}
                       velocity vs prior 28d ({trends.atRiskProduct.recentVolume} btls in last 28d vs {trends.atRiskProduct.priorVolume} btls prior)
+                      <span className="mt-1 block text-[11px] text-primary/80">
+                        Click for Individual Wine Catalog & Sales Velocities
+                      </span>
                     </>
                   ) : (
                     "No steep deceleration detected"
@@ -1931,7 +1987,10 @@ export function ProductSalesTrendsDashboard() {
                       <Wine className="size-5" />
                     </div>
                     <div>
-                      <DialogTitle className="font-heading text-xl md:text-2xl text-foreground font-bold">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Individual Wine Catalog & Sales Velocities
+                      </p>
+                      <DialogTitle className="font-heading text-xl md:text-2xl text-foreground font-bold mt-0.5">
                         {selectedDetailProduct.productName}
                       </DialogTitle>
                       <DialogDescription className="text-xs text-muted-foreground mt-0.5">

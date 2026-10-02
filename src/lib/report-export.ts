@@ -51,6 +51,13 @@ export {
   generateImminentChurnPdfDocument,
   type ImminentChurnPdfInput,
 } from "./generate-imminent-churn-pdf";
+export {
+  downloadRepActionPlansPdf,
+  generateRepActionPlansPdfDocument,
+  type RepActionPlansPdfInput,
+} from "./generate-rep-action-plan-pdf";
+export type { RepActionPlan } from "./rep-action-plans";
+export { buildRepActionPlans } from "./rep-action-plans";
 
 export function frequencyAlertsReportFilename(input: FrequencyAlertsPdfInput): string {
   const repSlug =

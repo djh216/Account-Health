@@ -505,7 +505,7 @@ export function OrderAnalyticsDashboard() {
                   className="shrink-0 bg-white/90 hover:bg-white text-xs font-semibold text-amber-950 border-amber-300 shadow-2xs dark:bg-amber-900/50 dark:text-amber-100 dark:border-amber-700"
                   onClick={() => setNotificationSidebarOpen(true)}
                 >
-                  View Alerts Sidebar ({frequencyAlerts.length})
+                  View Alerts ({frequencyAlerts.length})
                 </Button>
               </div>
             ) : null}

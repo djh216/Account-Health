@@ -18,6 +18,7 @@ import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { ClearDataButton } from "@/components/clear-data-button";
 import { ExportReportButton } from "@/components/export-report-button";
 import { PrintReportButton } from "@/components/print-report-button";
+import { RepActionPlanExportButton } from "@/components/rep-action-plan-export-button";
 import { RiskBadge } from "@/components/risk-badge";
 import { RepFilterSelect } from "@/components/rep-filter-select";
 import {
@@ -408,7 +409,7 @@ export function Dashboard() {
                   className="shrink-0 bg-white/90 hover:bg-white text-xs font-semibold text-amber-950 border-amber-300 shadow-2xs dark:bg-amber-900/50 dark:text-amber-100 dark:border-amber-700"
                   onClick={() => setNotificationSidebarOpen(true)}
                 >
-                  View Alerts Sidebar ({frequencyAlerts.length})
+                  View Alerts ({frequencyAlerts.length})
                 </Button>
               </div>
             ) : null}
@@ -548,7 +549,20 @@ export function Dashboard() {
               </div>
             </section>
 
-            <section className="grid gap-4 lg:grid-cols-3">
+            <section className="space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="font-heading text-xl">Weekly action plans</h2>
+                  <p className="text-sm text-muted-foreground max-w-2xl">
+                    Top 10 accounts per rep for week 1, week 2, and week 3 — ranked by risk,
+                    territory value, and health score. Export a print-ready PDF with action
+                    titles, reasons, and next steps
+                    {repFilter === "all" ? " for every rep on the book." : ` for ${repFilter}.`}
+                  </p>
+                </div>
+                <RepActionPlanExportButton onMessage={flash} />
+              </div>
+              <div className="grid gap-4 lg:grid-cols-3">
               {FOCUS_SECTIONS.map((section) => (
                 <FocusHorizonCard
                   key={section.horizon}
@@ -566,6 +580,7 @@ export function Dashboard() {
                   }
                 />
               ))}
+              </div>
             </section>
 
             <Card>
