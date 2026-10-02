@@ -1,7 +1,15 @@
 "use client";
 
 import { parseISO, startOfMonth, startOfWeek } from "date-fns";
-import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   CartesianGrid,
   Legend,
@@ -55,6 +63,7 @@ import {
 import { formatDate, formatMoney, formatNumber } from "@/lib/format";
 import {
   buildBottleTrendData,
+  bottleTrendOrdersScopeKey,
   TREND_PALETTE,
   type TrendGranularity,
   type TrendTimeframe,
@@ -68,9 +77,9 @@ function AccountTrajectoryPill({
   windowLabel,
 }: {
   trajectory: ProductTrajectory;
-  windowLabel: "1M" | "90d";
+  windowLabel: "30d" | "90d";
 }) {
-  const ageLabel = windowLabel === "1M" ? "30d" : "90d";
+  const ageLabel = windowLabel;
   switch (trajectory) {
     case "accelerating":
       return (
@@ -218,33 +227,46 @@ export function BottleSalesTrendChart({
   const trendOrders = deferHeavyCompute || orders.length > 800 ? chartOrders : orders;
   const chartDataStale =
     (deferHeavyCompute || orders.length > 800) && trendOrders !== orders;
+  /** Keep chart + account picker aligned while deferred rep switches catch up. */
+  const activeOrders = chartDataStale ? trendOrders : orders;
 
   // Distinct account names ordered by volume
   const allAccountsSorted = useMemo(() => {
     const volMap = new Map<string, number>();
-    for (const o of trendOrders) {
+    for (const o of activeOrders) {
       const b = o.cases > 0 ? o.cases : 1;
       volMap.set(o.accountName, (volMap.get(o.accountName) || 0) + b);
     }
     return Array.from(volMap.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name);
-  }, [trendOrders]);
+  }, [activeOrders]);
 
-  const appliedDefaultSelectionRef = useRef(
-    Boolean(initialSelectedAccounts && initialSelectedAccounts.length > 0),
+  const ordersScopeKey = useMemo(
+    () => bottleTrendOrdersScopeKey(activeOrders),
+    [activeOrders],
   );
 
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>(
     () => initialSelectedAccounts ?? [],
   );
 
+  const appliedInitialSelectionRef = useRef(
+    Boolean(initialSelectedAccounts && initialSelectedAccounts.length > 0),
+  );
+
   useEffect(() => {
-    if (appliedDefaultSelectionRef.current) return;
-    if (allAccountsSorted.length === 0) return;
-    setSelectedAccounts([...allAccountsSorted]);
-    appliedDefaultSelectionRef.current = true;
-  }, [allAccountsSorted]);
+    if (appliedInitialSelectionRef.current) return;
+    setSelectedAccounts(allAccountsSorted.length ? [...allAccountsSorted] : []);
+  }, [ordersScopeKey, allAccountsSorted]);
+
+  const effectiveSelectedAccounts = useMemo(() => {
+    if (selectedAccounts.length === 0) return [];
+    const valid = new Set(allAccountsSorted);
+    const filtered = selectedAccounts.filter((account) => valid.has(account));
+    if (filtered.length > 0) return filtered;
+    return allAccountsSorted;
+  }, [selectedAccounts, allAccountsSorted]);
 
   const [granularity, setGranularity] = useState<TrendGranularity>("monthly");
   const [timeframe, setTimeframe] = useState<TrendTimeframe>("all");
@@ -256,12 +278,12 @@ export function BottleSalesTrendChart({
   // Color mapping per selected account
   const accountColorMap = useMemo(() => {
     const map = new Map<string, string>();
-    selectedAccounts.forEach((acc, index) => {
+    effectiveSelectedAccounts.forEach((acc, index) => {
       // Pick color from palette, cycling if more than palette length
       map.set(acc, TREND_PALETTE[index % TREND_PALETTE.length]);
     });
     return map;
-  }, [selectedAccounts]);
+  }, [effectiveSelectedAccounts]);
 
   // Build aggregate trend data
   const {
@@ -274,12 +296,20 @@ export function BottleSalesTrendChart({
   } = useMemo(() => {
     return buildBottleTrendData({
       orders: trendOrders,
-      selectedAccounts,
+      selectedAccounts: effectiveSelectedAccounts,
       granularity,
       timeframe,
       asOf,
+      includeAccountBreakdown: showIndividualLines,
     });
-  }, [trendOrders, selectedAccounts, granularity, timeframe, asOf]);
+  }, [
+    trendOrders,
+    effectiveSelectedAccounts,
+    granularity,
+    timeframe,
+    asOf,
+    showIndividualLines,
+  ]);
 
   const chartSeries = useMemo(() => {
     if (includeCurrentMonth) return data;
@@ -300,16 +330,19 @@ export function BottleSalesTrendChart({
       defs.push({ sourceKey: "totalBottles", trendKey: "totalBottles_trend" });
     }
     if (showIndividualLines) {
-      for (const acc of selectedAccounts) {
+      for (const acc of effectiveSelectedAccounts) {
         defs.push({ sourceKey: acc, trendKey: getSafeTrendKey(acc) });
       }
     }
     return defs;
-  }, [showAggregateLine, showIndividualLines, selectedAccounts]);
+  }, [showAggregateLine, showIndividualLines, effectiveSelectedAccounts]);
 
   const { data: chartDataWithTrendlines, statsMap: trendStatsMap } = useMemo(() => {
+    if (!showTrendlines || trendlineDefs.length === 0) {
+      return { data: chartSeries, statsMap: new Map() };
+    }
     return augmentDataWithTrendlines(chartSeries, trendlineDefs);
-  }, [chartSeries, trendlineDefs]);
+  }, [chartSeries, trendlineDefs, showTrendlines]);
 
   const aggregateTrendStats = trendStatsMap.get("totalBottles");
 
@@ -329,6 +362,10 @@ export function BottleSalesTrendChart({
     if (!q) return allAccountsSorted;
     return allAccountsSorted.filter((name) => name.toLowerCase().includes(q));
   }, [allAccountsSorted, searchQuery]);
+
+  function runChartFilterUpdate(update: () => void) {
+    startTransition(update);
+  }
 
   function handleToggleAccount(account: string) {
     setSelectedAccounts((prev) => {
@@ -418,9 +455,9 @@ export function BottleSalesTrendChart({
         </Card>
 
         <PaceSummaryCard
-          label="1-Mo Pace vs Prior"
+          label="30-Day Pace vs Prior"
           deltaPct={aggregateMonthPaceDeltaPct}
-          detail={`${formatNumber(aggregatePaceLastMonth)} btls this month vs ${formatNumber(aggregatePacePriorMonth)} last month`}
+          detail={`${formatNumber(aggregatePaceLastMonth)} btls last 30 days vs ${formatNumber(aggregatePacePriorMonth)} prior 30 days`}
         />
 
         <PaceSummaryCard
@@ -493,7 +530,7 @@ export function BottleSalesTrendChart({
               <div className="flex items-center gap-1 rounded-lg bg-muted p-1 text-xs">
                 <button
                   type="button"
-                  onClick={() => setGranularity("monthly")}
+                  onClick={() => runChartFilterUpdate(() => setGranularity("monthly"))}
                   className={cn(
                     "rounded-md px-2.5 py-1 font-medium transition",
                     granularity === "monthly"
@@ -505,7 +542,7 @@ export function BottleSalesTrendChart({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setGranularity("weekly")}
+                  onClick={() => runChartFilterUpdate(() => setGranularity("weekly"))}
                   className={cn(
                     "rounded-md px-2.5 py-1 font-medium transition",
                     granularity === "weekly"
@@ -530,7 +567,7 @@ export function BottleSalesTrendChart({
                   <button
                     key={tf.id}
                     type="button"
-                    onClick={() => setTimeframe(tf.id)}
+                    onClick={() => runChartFilterUpdate(() => setTimeframe(tf.id))}
                     className={cn(
                       "rounded-md px-2.5 py-1 font-medium transition",
                       timeframe === tf.id
@@ -546,7 +583,9 @@ export function BottleSalesTrendChart({
               <Button
                 size="xs"
                 variant={includeCurrentMonth ? "default" : "outline"}
-                onClick={() => setIncludeCurrentMonth((prev) => !prev)}
+                onClick={() =>
+                  runChartFilterUpdate(() => setIncludeCurrentMonth((prev) => !prev))
+                }
                 className={cn(
                   "h-8 text-xs gap-1.5 transition-colors font-medium",
                   includeCurrentMonth
@@ -572,7 +611,9 @@ export function BottleSalesTrendChart({
                 <Button
                   size="xs"
                   variant={showAggregateLine ? "default" : "outline"}
-                  onClick={() => setShowAggregateLine((prev) => !prev)}
+                  onClick={() =>
+                    runChartFilterUpdate(() => setShowAggregateLine((prev) => !prev))
+                  }
                   className="text-xs"
                 >
                   Aggregate Line
@@ -580,7 +621,9 @@ export function BottleSalesTrendChart({
                 <Button
                   size="xs"
                   variant={showIndividualLines ? "secondary" : "outline"}
-                  onClick={() => setShowIndividualLines((prev) => !prev)}
+                  onClick={() =>
+                    runChartFilterUpdate(() => setShowIndividualLines((prev) => !prev))
+                  }
                   className="text-xs"
                 >
                   Account Lines
@@ -588,7 +631,9 @@ export function BottleSalesTrendChart({
                 <Button
                   size="xs"
                   variant={showTrendlines ? "default" : "outline"}
-                  onClick={() => setShowTrendlines((prev) => !prev)}
+                  onClick={() =>
+                    runChartFilterUpdate(() => setShowTrendlines((prev) => !prev))
+                  }
                   className={cn(
                     "text-xs gap-1.5 transition-colors font-medium",
                     showTrendlines
@@ -610,7 +655,7 @@ export function BottleSalesTrendChart({
               Updating chart for the selected rep…
             </p>
           ) : null}
-          {chartSeries.length === 0 || selectedAccounts.length === 0 ? (
+          {chartSeries.length === 0 || effectiveSelectedAccounts.length === 0 ? (
             <div className="flex h-80 flex-col items-center justify-center rounded-xl border border-dashed text-center p-6">
               <Wine className="size-10 text-muted-foreground/60 mb-2" />
               <p className="font-heading font-semibold text-foreground text-lg">
@@ -1137,7 +1182,7 @@ export function BottleSalesTrendChart({
               Selected Accounts Bottle Breakdown
             </CardTitle>
             <CardDescription>
-              Volume and purchasing history for selected accounts. One-month pace is this month versus last month, including the current month even when it is not finished. The 90-day pace is the last 90 days versus the 90 days before that.
+              Volume and purchasing history for selected accounts. The 30-day pace is the last 30 days versus the prior 30 days. The 90-day pace is the last 90 days versus the 90 days before that.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -1151,8 +1196,8 @@ export function BottleSalesTrendChart({
                     <TableHead className="text-right">Avg Bottles / Order</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right whitespace-nowrap">Monthly Velocity</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">1-Mo Pace vs Prior</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Trajectory (1M)</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">30-Day Pace vs Prior</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Trajectory (30d)</TableHead>
                     <TableHead className="text-right whitespace-nowrap">Last 90-Day Pace vs Prior</TableHead>
                     <TableHead className="text-right whitespace-nowrap">Trajectory (90d)</TableHead>
                     <TableHead className="text-right">Orders</TableHead>
@@ -1196,12 +1241,12 @@ export function BottleSalesTrendChart({
                           deltaPct={summary.monthlyPaceDeltaPct}
                           recent={summary.paceLastMonth}
                           prior={summary.pacePriorMonth}
-                          title={`1-month pace: ${formatNumber(summary.paceLastMonth)} btls this month (including days still remaining) vs ${formatNumber(summary.pacePriorMonth)} btls last month`}
+                          title={`30-day pace: ${formatNumber(summary.paceLastMonth)} btls last 30 days vs ${formatNumber(summary.pacePriorMonth)} btls prior 30 days`}
                         />
                         <TableCell className="text-right whitespace-nowrap">
                           <AccountTrajectoryPill
                             trajectory={summary.monthlyTrajectory}
-                            windowLabel="1M"
+                            windowLabel="30d"
                           />
                         </TableCell>
                         <PaceComparisonCell

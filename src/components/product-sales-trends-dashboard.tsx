@@ -1,6 +1,13 @@
 "use client";
 
-import { useDeferredValue, useId, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { parseISO, startOfMonth } from "date-fns";
 import {
   ArrowDownRight,
@@ -344,6 +351,9 @@ export function ProductSalesTrendsDashboard() {
   }, [selectedProducts, metric]);
 
   const { data: chartDataWithTrendlines, statsMap: productTrendStatsMap } = useMemo(() => {
+    if (!showTrendlines || productTrendlineDefs.length === 0) {
+      return { data: chartSeries, statsMap: new Map() };
+    }
     const augmented = augmentDataWithTrendlines(chartSeries, productTrendlineDefs);
     if (selectedProducts.length === 0) return augmented;
 
@@ -360,7 +370,11 @@ export function ProductSalesTrendsDashboard() {
     });
 
     return { data, statsMap: augmented.statsMap };
-  }, [chartSeries, productTrendlineDefs, selectedProducts, metric]);
+  }, [chartSeries, productTrendlineDefs, selectedProducts, metric, showTrendlines]);
+
+  function runChartFilterUpdate(update: () => void) {
+    startTransition(update);
+  }
 
   // Aggregate stats when 0 products selected
   const aggregateProductTrendStats = useMemo(() => {
@@ -817,7 +831,7 @@ export function ProductSalesTrendsDashboard() {
                     <div className="flex rounded-lg border bg-muted/40 p-0.5 text-xs">
                       <button
                         type="button"
-                        onClick={() => setMetric("bottles")}
+                        onClick={() => runChartFilterUpdate(() => setMetric("bottles"))}
                         className={cn(
                           "rounded-md px-2.5 py-1 font-medium transition-colors",
                           metric === "bottles"
@@ -829,7 +843,7 @@ export function ProductSalesTrendsDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setMetric("revenue")}
+                        onClick={() => runChartFilterUpdate(() => setMetric("revenue"))}
                         className={cn(
                           "rounded-md px-2.5 py-1 font-medium transition-colors",
                           metric === "revenue"
@@ -841,7 +855,7 @@ export function ProductSalesTrendsDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setMetric("accounts")}
+                        onClick={() => runChartFilterUpdate(() => setMetric("accounts"))}
                         className={cn(
                           "rounded-md px-2.5 py-1 font-medium transition-colors",
                           metric === "accounts"
@@ -857,7 +871,9 @@ export function ProductSalesTrendsDashboard() {
                     <div className="flex rounded-lg border bg-muted/40 p-0.5 text-xs">
                       <button
                         type="button"
-                        onClick={() => setGranularity("monthly")}
+                        onClick={() =>
+                          runChartFilterUpdate(() => setGranularity("monthly"))
+                        }
                         className={cn(
                           "rounded-md px-2.5 py-1 font-medium transition-colors",
                           granularity === "monthly"
@@ -869,7 +885,9 @@ export function ProductSalesTrendsDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setGranularity("weekly")}
+                        onClick={() =>
+                          runChartFilterUpdate(() => setGranularity("weekly"))
+                        }
                         className={cn(
                           "rounded-md px-2.5 py-1 font-medium transition-colors",
                           granularity === "weekly"
@@ -884,7 +902,11 @@ export function ProductSalesTrendsDashboard() {
                     {/* Timeframe Select */}
                     <Select
                       value={timeframe}
-                      onValueChange={(val) => setTimeframe(val as ProductTrendTimeframe)}
+                      onValueChange={(val) =>
+                        runChartFilterUpdate(() =>
+                          setTimeframe(val as ProductTrendTimeframe),
+                        )
+                      }
                     >
                       <SelectTrigger className="w-[125px] h-8 text-xs">
                         <SelectValue placeholder="Timeframe" />
@@ -900,7 +922,9 @@ export function ProductSalesTrendsDashboard() {
                     <Button
                       size="xs"
                       variant={includeCurrentMonth ? "default" : "outline"}
-                      onClick={() => setIncludeCurrentMonth((prev) => !prev)}
+                      onClick={() =>
+                        runChartFilterUpdate(() => setIncludeCurrentMonth((prev) => !prev))
+                      }
                       className={cn(
                         "h-8 text-xs gap-1.5 transition-colors font-medium",
                         includeCurrentMonth
@@ -920,7 +944,9 @@ export function ProductSalesTrendsDashboard() {
                     <Button
                       size="xs"
                       variant={showTrendlines ? "default" : "outline"}
-                      onClick={() => setShowTrendlines((prev) => !prev)}
+                      onClick={() =>
+                        runChartFilterUpdate(() => setShowTrendlines((prev) => !prev))
+                      }
                       className={cn(
                         "h-8 text-xs gap-1.5 transition-colors font-medium",
                         showTrendlines

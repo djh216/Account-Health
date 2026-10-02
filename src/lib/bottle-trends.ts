@@ -12,7 +12,7 @@ import {
 } from "date-fns";
 import type { Order } from "./types";
 import { normalizeName } from "./format";
-import { calendarPaceWindow, rollingPaceWindow } from "./pace-windows";
+import { rollingPaceWindow } from "./pace-windows";
 import type { ProductTrajectory } from "./product-trends";
 
 export type TrendGranularity = "monthly" | "weekly";
@@ -120,11 +120,23 @@ export type BottleTrendDataResult = {
 const bottleTrendCache = new Map<string, BottleTrendDataResult>();
 const BOTTLE_TREND_CACHE_LIMIT = 48;
 
-function bottleTrendOrdersKey(orders: Order[]): string {
+/** Fingerprint of an order slice (e.g. rep-filtered) for cache keys and UI scope resets. */
+export function bottleTrendOrdersScopeKey(orders: Order[]): string {
   if (orders.length === 0) return "0";
-  const mid = orders[Math.floor(orders.length / 2)]!;
+  let volumeSum = 0;
+  let revenueCents = 0;
+  const accounts = new Set<string>();
+  for (const order of orders) {
+    volumeSum += order.cases > 0 ? order.cases : 1;
+    revenueCents += Math.round((order.revenue || 0) * 100);
+    if (accounts.size < 64) {
+      accounts.add(normalizeName(order.accountName));
+    }
+  }
+  const first = orders[0]!;
   const last = orders[orders.length - 1]!;
-  return `${orders.length}:${orders[0]!.date}:${mid.date}:${last.date}:${last.accountName}`;
+  const accountSample = [...accounts].sort().join("\0");
+  return `${orders.length}:${volumeSum}:${revenueCents}:${accountSample}:${first.date}:${last.date}`;
 }
 
 function bottleTrendCacheKey(
@@ -133,12 +145,13 @@ function bottleTrendCacheKey(
   granularity: TrendGranularity,
   timeframe: TrendTimeframe,
   asOf: string | undefined,
+  includeAccountBreakdown: boolean,
 ): string {
   const accountKey =
     selectedAccounts.length === 0
       ? "__all__"
       : selectedAccounts.slice().sort().join("\0");
-  return `${bottleTrendOrdersKey(orders)}:${granularity}:${timeframe}:${asOf ?? ""}:${accountKey}`;
+  return `${bottleTrendOrdersScopeKey(orders)}:${granularity}:${timeframe}:${asOf ?? ""}:${includeAccountBreakdown ? 1 : 0}:${accountKey}`;
 }
 
 export function buildBottleTrendData({
@@ -147,12 +160,15 @@ export function buildBottleTrendData({
   granularity = "monthly",
   timeframe = "all",
   asOf,
+  includeAccountBreakdown = true,
 }: {
   orders: Order[];
   selectedAccounts: string[];
   granularity?: TrendGranularity;
   timeframe?: TrendTimeframe;
   asOf?: string;
+  /** When false, skip per-account point columns (aggregate-only charts). */
+  includeAccountBreakdown?: boolean;
 }): BottleTrendDataResult {
   const cacheKey = bottleTrendCacheKey(
     orders,
@@ -160,6 +176,7 @@ export function buildBottleTrendData({
     granularity,
     timeframe,
     asOf,
+    includeAccountBreakdown,
   );
   const cached = bottleTrendCache.get(cacheKey);
   if (cached) return cached;
@@ -244,10 +261,11 @@ export function buildBottleTrendData({
     point.totalRevenue += revenue;
     point.orderCount += 1;
 
-    // Attribute to specific account
-    const accKey = order.accountName;
-    const currentAccBottles = (point[accKey] as number) || 0;
-    point[accKey] = currentAccBottles + bottles;
+    if (includeAccountBreakdown) {
+      const accKey = order.accountName;
+      const currentAccBottles = (point[accKey] as number) || 0;
+      point[accKey] = currentAccBottles + bottles;
+    }
   }
 
   // Sort chronological
@@ -255,18 +273,18 @@ export function buildBottleTrendData({
     (a, b) => a.timestamp - b.timestamp,
   );
 
-  // Fill in zero for missing accounts in each bucket so recharts lines stay smooth
-  for (const point of sortedPoints) {
-    for (const acc of selectedAccounts) {
-      if (point[acc] === undefined) {
-        point[acc] = 0;
+  if (includeAccountBreakdown) {
+    for (const point of sortedPoints) {
+      for (const acc of selectedAccounts) {
+        if (point[acc] === undefined) {
+          point[acc] = 0;
+        }
       }
     }
   }
 
-  // One-month pace stays on calendar months, including the current month when it is incomplete.
-  // The longer pace is the last 90 days versus the prior 90 days.
-  const monthWindow = calendarPaceWindow(asOfDate, 1);
+  // Short pace: last 30 days vs the prior 30 days. Long pace: last 90 vs prior 90.
+  const shortPaceWindow = rollingPaceWindow(asOfDate, 30);
   const quarterWindow = rollingPaceWindow(asOfDate, 90);
 
   // Valid orders up to asOf for account macro pace
@@ -346,9 +364,12 @@ export function buildBottleTrendData({
     const bottles = order.cases > 0 ? order.cases : 1;
     const revenue = order.revenue || 0;
 
-    if (orderDate >= monthWindow.currentStart && orderDate <= monthWindow.currentEnd) {
+    if (orderDate >= shortPaceWindow.currentStart && orderDate <= shortPaceWindow.currentEnd) {
       item.paceLastMonth += bottles;
-    } else if (orderDate >= monthWindow.priorStart && orderDate < monthWindow.currentStart) {
+    } else if (
+      orderDate >= shortPaceWindow.priorStart &&
+      orderDate < shortPaceWindow.currentStart
+    ) {
       item.pacePriorMonth += bottles;
     }
 
