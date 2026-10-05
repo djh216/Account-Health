@@ -4,6 +4,11 @@ import { formatDate, formatNumber } from "./format";
 import type { ProductSlowingAlert } from "./product-trends";
 import { buildExportCsvFilename, buildExportPdfFilename } from "./pdf-filename";
 import {
+  artifactFromJsPdf,
+  downloadPdfArtifact,
+  type PdfExportArtifact,
+} from "./pdf-present";
+import {
   formatPdfLastVisitFromLookup,
   type PdfAccountVisitLookup,
 } from "./pdf-account-visit";
@@ -67,7 +72,7 @@ function alertRow(
   ];
 }
 
-export function downloadProductSlowdownPdf(input: ProductSlowdownPdfInput): void {
+export function generateProductSlowdownPdfDocument(input: ProductSlowdownPdfInput): jsPDF {
   const doc = new jsPDF({
     orientation: "landscape",
     unit: "mm",
@@ -213,8 +218,24 @@ export function downloadProductSlowdownPdf(input: ProductSlowdownPdfInput): void
     },
   });
 
+  return doc;
+}
+
+export function buildProductSlowdownPdfArtifact(
+  input: ProductSlowdownPdfInput,
+): PdfExportArtifact {
+  if (input.alerts.length === 0) {
+    throw new Error("No product slowdown alerts to export.");
+  }
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(buildExportPdfFilename(input.repFilter, "product-slowdown-report", stamp));
+  return artifactFromJsPdf(
+    generateProductSlowdownPdfDocument(input),
+    buildExportPdfFilename(input.repFilter, "product-slowdown-report", stamp),
+  );
+}
+
+export function downloadProductSlowdownPdf(input: ProductSlowdownPdfInput): void {
+  downloadPdfArtifact(buildProductSlowdownPdfArtifact(input));
 }
 
 export function downloadProductSlowdownCsv(input: ProductSlowdownPdfInput): void {

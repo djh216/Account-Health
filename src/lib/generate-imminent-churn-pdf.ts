@@ -4,6 +4,11 @@ import { formatDate, formatDays, formatNumber } from "./format";
 import type { AccountProjectionAndChurn } from "./order-projections";
 import { buildExportPdfFilename } from "./pdf-filename";
 import {
+  artifactFromJsPdf,
+  downloadPdfArtifact,
+  type PdfExportArtifact,
+} from "./pdf-present";
+import {
   formatPdfLastVisitFromLookup,
   type PdfAccountVisitLookup,
 } from "./pdf-account-visit";
@@ -203,12 +208,20 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
   return doc;
 }
 
+export function buildImminentChurnPdfArtifact(input: ImminentChurnPdfInput): PdfExportArtifact {
+  if (input.accounts.length === 0) {
+    throw new Error("No imminent churn accounts to export.");
+  }
+  const stamp = input.generatedAt.slice(0, 10);
+  return artifactFromJsPdf(
+    generateImminentChurnPdfDocument(input),
+    buildExportPdfFilename(input.repFilter, "imminent-churn-intervention", stamp),
+  );
+}
+
 export function downloadImminentChurnPdf(input: ImminentChurnPdfInput): void {
   if (typeof window === "undefined") {
     throw new Error("PDF export is only available in the browser.");
   }
-
-  const doc = generateImminentChurnPdfDocument(input);
-  const stamp = input.generatedAt.slice(0, 10);
-  doc.save(buildExportPdfFilename(input.repFilter, "imminent-churn-intervention", stamp));
+  downloadPdfArtifact(buildImminentChurnPdfArtifact(input));
 }

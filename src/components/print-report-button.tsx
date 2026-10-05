@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarRange, ChevronDown, Download, FileText, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  BarChart3,
+  CalendarRange,
+  ChevronDown,
+  Download,
+  FileText,
+  Loader2,
+  TrendingDown,
+  Wine,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -46,9 +56,20 @@ export function PrintReportButton({
     canExport,
     activePage,
     exportCurrentPagePdf,
-    exportFrequencyAlertsPdf,
+    exportFocusHealthPdf,
+    exportOrderAnalyticsPdf,
+    exportProductTrendsPdf,
     exportRepActionPlansPdf,
+    exportFrequencyAlertsPdf,
+    exportProductSlowdownPdf,
+    exportImminentChurnPdf,
+    hasHealthData,
     hasRepActionPlanData,
+    hasOrderData,
+    hasProductData,
+    hasAlertsData,
+    hasProductSlowdownData,
+    hasImminentChurnData,
   } = useReportExport();
 
   const [localToast, setLocalToast] = useState<string | null>(null);
@@ -71,6 +92,15 @@ export function PrintReportButton({
     }
   }
 
+  async function runExport(exportFn: () => Promise<void>, reportLabel: string) {
+    try {
+      await exportFn();
+      notify(`${reportLabel} PDF ready — print or save from the preview.`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not generate PDF.");
+    }
+  }
+
   async function handlePrimaryExport() {
     try {
       if (primaryExport === "alerts") {
@@ -87,33 +117,6 @@ export function PrintReportButton({
       notify(`${pageShortName} PDF ready — print or save from the preview.`);
     } catch (err) {
       notify(err instanceof Error ? err.message : "Could not generate PDF.");
-    }
-  }
-
-  async function handlePagePdf() {
-    try {
-      await exportCurrentPagePdf(effectivePage);
-      notify(`${pageShortName} PDF ready — print or save from the preview.`);
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not generate PDF.");
-    }
-  }
-
-  async function handleActionPlanPdf() {
-    try {
-      await exportRepActionPlansPdf();
-      notify("Action plan PDF ready — print or save from the preview.");
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not generate action plan.");
-    }
-  }
-
-  async function handleAlertsPdf() {
-    try {
-      await exportFrequencyAlertsPdf();
-      notify("Frequency alerts PDF ready — print or save from the preview.");
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Could not generate alerts PDF.");
     }
   }
 
@@ -167,26 +170,68 @@ export function PrintReportButton({
           >
             <ChevronDown className="size-3.5 opacity-70" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuLabel className="text-xs text-muted-foreground">
               PDF reports
             </DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => void handlePagePdf()} className="gap-2">
+            <DropdownMenuItem
+              onClick={() => void runExport(exportFocusHealthPdf, "Account health")}
+              disabled={!hasHealthData}
+              className="gap-2"
+            >
               <FileText className="size-4 shrink-0 text-primary" />
-              {pageShortName}
+              Account health &amp; focus
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => void handleActionPlanPdf()}
+              onClick={() => void runExport(exportOrderAnalyticsPdf, "Order analytics")}
+              disabled={!hasOrderData}
+              className="gap-2"
+            >
+              <BarChart3 className="size-4 shrink-0 text-primary" />
+              Order analytics
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void runExport(exportProductTrendsPdf, "Product sales trends")}
+              disabled={!hasProductData}
+              className="gap-2"
+            >
+              <Wine className="size-4 shrink-0 text-primary" />
+              Product sales trends
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => void runExport(exportRepActionPlansPdf, "Rep action plan")}
               disabled={!hasRepActionPlanData}
               className="gap-2"
             >
               <CalendarRange className="size-4 shrink-0 text-primary" />
               Rep action plan (weeks 1–3)
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => void handleAlertsPdf()} className="gap-2">
-              <FileText className="size-4 shrink-0 text-amber-600" />
+            <DropdownMenuItem
+              onClick={() => void runExport(exportFrequencyAlertsPdf, "Frequency drop alerts")}
+              disabled={!hasAlertsData}
+              className="gap-2"
+            >
+              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
               Frequency drop alerts
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void runExport(exportProductSlowdownPdf, "Product slowdown")}
+              disabled={!hasProductSlowdownData}
+              className="gap-2"
+            >
+              <TrendingDown className="size-4 shrink-0 text-amber-600" />
+              Product slowdown report
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                void runExport(exportImminentChurnPdf, "Imminent churn intervention")
+              }
+              disabled={!hasImminentChurnData}
+              className="gap-2"
+            >
+              <AlertTriangle className="size-4 shrink-0 text-rose-600" />
+              Imminent churn intervention
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

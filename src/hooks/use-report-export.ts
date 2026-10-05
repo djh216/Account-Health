@@ -9,11 +9,15 @@ import { buildFrequencyAlertsPdfArtifact } from "@/lib/generate-frequency-alerts
 import { buildOrderAnalyticsPdfArtifact } from "@/lib/generate-order-analytics-pdf";
 import { buildProductTrendsPdfArtifact } from "@/lib/generate-product-trends-pdf";
 import { buildRepActionPlansPdfArtifact } from "@/lib/generate-rep-action-plan-pdf";
+import { buildProductSlowdownPdfArtifact } from "@/lib/generate-product-slowdown-pdf";
+import { buildImminentChurnPdfArtifact } from "@/lib/generate-imminent-churn-pdf";
 import {
   buildRepActionPlans,
   buildPdfAccountVisitLookup,
 } from "@/lib/report-export";
 import { revokePdfArtifact, type PdfExportArtifact } from "@/lib/pdf-present";
+import { closedBusinessAccountId } from "@/lib/closed-business-accounts";
+import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
 import { outOfStockProductId } from "@/lib/out-of-stock-products";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { focusAccountsByHorizon } from "@/lib/score";
@@ -40,8 +44,10 @@ export function useReportExportController() {
     orderAnalytics,
     productTrends,
     productAlerts,
+    projectionsSummary,
   } = useFilteredPortfolio();
   const { ids: outOfStockIds } = useOutOfStockProducts();
+  const { ids: closedAccountIds } = useClosedBusinessAccounts();
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [pdfPreview, setPdfPreview] = useState<PdfPreviewSession | null>(null);
@@ -86,6 +92,19 @@ export function useReportExportController() {
     state.orders.length > 0 ||
     enrichedAccounts.length > 0;
   const hasProductData = productTrends.productSummaries.length > 0;
+  const hasProductSlowdownData = productAlerts.length > 0;
+
+  const imminentChurnAccounts = useMemo(
+    () =>
+      projectionsSummary.accounts.filter(
+        (account) =>
+          account.churnTier === "high" &&
+          !closedAccountIds.has(closedBusinessAccountId(account.accountName)),
+      ),
+    [projectionsSummary.accounts, closedAccountIds],
+  );
+
+  const hasImminentChurnData = imminentChurnAccounts.length > 0;
 
   const exportFocusHealthPdf = useCallback(async () => {
     if (!hasHealthData) {
@@ -243,6 +262,70 @@ export function useReportExportController() {
     enrichedAccounts,
   ]);
 
+  const exportProductSlowdownPdf = useCallback(async () => {
+    if (!hasProductSlowdownData) {
+      throw new Error(
+        "No product slowdown alerts to export. Load orders and check the alerts panel.",
+      );
+    }
+    setBusy(true);
+    setBusyAction("Generating Product Slowdown PDF…");
+    try {
+      openPdfPreview(
+        "Product slowdown report",
+        buildProductSlowdownPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          alerts: productAlerts,
+          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
+        }),
+      );
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [
+    hasProductSlowdownData,
+    openPdfPreview,
+    repFilter,
+    asOf,
+    productAlerts,
+    enrichedAccounts,
+  ]);
+
+  const exportImminentChurnPdf = useCallback(async () => {
+    if (!hasImminentChurnData) {
+      throw new Error(
+        "No high-churn accounts to export. Open volume projections after loading order history.",
+      );
+    }
+    setBusy(true);
+    setBusyAction("Generating Imminent Churn PDF…");
+    try {
+      openPdfPreview(
+        "Imminent churn intervention",
+        buildImminentChurnPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          accounts: imminentChurnAccounts,
+          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
+        }),
+      );
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [
+    hasImminentChurnData,
+    openPdfPreview,
+    repFilter,
+    asOf,
+    imminentChurnAccounts,
+    enrichedAccounts,
+  ]);
+
   const exportCurrentPagePdf = useCallback(
     async (pageOverride?: ReportPageType) => {
       const page = pageOverride ?? activePage;
@@ -358,12 +441,16 @@ export function useReportExportController() {
     exportFrequencyAlertsPdf,
     exportOrderAnalyticsPdf,
     exportProductTrendsPdf,
+    exportProductSlowdownPdf,
+    exportImminentChurnPdf,
     triggerSafePrint,
     hasHealthData,
     hasRepActionPlanData,
     hasOrderData,
     hasProductData,
     hasAlertsData,
+    hasProductSlowdownData,
+    hasImminentChurnData,
     pdfPreview,
     closePdfPreview,
   };
