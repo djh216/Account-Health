@@ -1,7 +1,9 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FOCUS_SECTIONS } from "./focus-sections";
-import { formatDate } from "./format";
+import { formatDate, formatHealthScoreChange } from "./format";
+import { buildExportPdfFilename } from "./pdf-filename";
+import { formatPdfLastVisitCell } from "./pdf-account-visit";
 import type { AccountHealth, FocusHorizon, RiskLevel } from "./types";
 import { territoryTierLabel } from "./territory-value";
 
@@ -60,13 +62,21 @@ function focusRow(window: string, item: AccountHealth): (string | number)[] {
       ? `${(item.daysSinceOrder / item.typicalIntervalDays).toFixed(1)}x cycle`
       : "—";
 
+  const lastOrderCell =
+    item.lastOrderDate && item.daysSinceOrder !== null
+      ? `${formatDate(item.lastOrderDate)}\n(${item.daysSinceOrder}d ago)`
+      : item.lastOrderDate
+        ? formatDate(item.lastOrderDate)
+        : "—";
+
   return [
     window,
     `${item.account.name}${rep}`,
     RISK_SHORT[item.risk],
     tier,
-    item.score,
-    compactDays(item.daysSinceOrder),
+    `${item.score}${formatHealthScoreChange(item.scoreChange14d) ?? ""}`,
+    lastOrderCell,
+    formatPdfLastVisitCell(item.lastVisitDate, item.daysSinceVisit),
     compactFrequency(item.typicalIntervalDays),
     cadenceMultiplier,
   ];
@@ -178,6 +188,7 @@ export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
         "Territory Tier",
         "Health Score",
         "Last Order",
+        "Last Visit",
         "Cadence",
         "Cadence Pace",
       ],
@@ -185,7 +196,7 @@ export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
     body:
       focusBody.length > 0
         ? focusBody
-        : [["—", "No focus accounts in active horizons", "—", "—", "—", "—", "—", "—"]],
+        : [["—", "No focus accounts in active horizons", "—", "—", "—", "—", "—", "—", "—"]],
     theme: "grid",
     headStyles: {
       fillColor: [241, 245, 249],
@@ -208,10 +219,11 @@ export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
       1: { cellWidth: 68 },
       2: { cellWidth: 24, fontStyle: "bold" },
       3: { cellWidth: 26 },
-      4: { cellWidth: 22, halign: "right", fontStyle: "bold" },
-      5: { cellWidth: 22, halign: "right" },
+      4: { cellWidth: 20, halign: "right", fontStyle: "bold" },
+      5: { cellWidth: 24, halign: "right" },
       6: { cellWidth: 22, halign: "right" },
-      7: { cellWidth: 28, halign: "right" },
+      7: { cellWidth: 20, halign: "right" },
+      8: { cellWidth: 24, halign: "right" },
     },
   });
 
@@ -232,10 +244,6 @@ export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
     });
   }
 
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(`cellar-pulse-account-health-${repSlug}-${stamp}.pdf`);
+  doc.save(buildExportPdfFilename(input.repFilter, "account-health", stamp));
 }

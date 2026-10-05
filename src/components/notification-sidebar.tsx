@@ -38,7 +38,12 @@ import type { ProductSlowingAlert } from "@/lib/product-trends";
 import { ExportReportButton } from "@/components/export-report-button";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { excludeOutOfStock } from "@/lib/out-of-stock-products";
+import {
+  ExcludeAccountClosedButton,
+  ExcludeProductOutOfStockButton,
+} from "@/components/analytics-exclusion-controls";
 import { cn } from "@/lib/utils";
+import type { PdfAccountVisitLookup } from "@/lib/report-export";
 
 type AlertCategory = "all" | "accounts" | "products";
 type FilterTab = "all" | "critical" | "warning" | "acknowledged";
@@ -51,9 +56,11 @@ export function NotificationSidebar({
   onOpenChange,
   onSelectAccount,
   onSelectProduct,
+  accountVisitLookup,
 }: {
   alerts: AccountFrequencyAlert[];
   productAlerts?: ProductSlowingAlert[];
+  accountVisitLookup?: PdfAccountVisitLookup;
   defaultCategory?: AlertCategory;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -167,6 +174,7 @@ export function NotificationSidebar({
         asOf: new Date().toISOString(),
         generatedAt: new Date().toISOString(),
         alerts: productAlerts,
+        accountVisitLookup,
       });
     } catch {
       // ignore
@@ -699,6 +707,8 @@ export function NotificationSidebar({
                             >
                               {copiedId === pAlert.id ? "Copied!" : "Copy Briefing"}
                             </Button>
+
+                            <ExcludeProductOutOfStockButton productName={pAlert.productName} />
                           </div>
 
                           <button
@@ -953,6 +963,11 @@ export function NotificationSidebar({
                             >
                               {copiedId === alert.id ? "Copied!" : "Copy Briefing"}
                             </Button>
+
+                            <ExcludeAccountClosedButton
+                              accountName={alert.accountName}
+                              accountId={alert.id}
+                            />
                           </div>
 
                           <button

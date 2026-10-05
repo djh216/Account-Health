@@ -36,6 +36,7 @@ import {
   downloadProductSlowdownCsv,
   downloadProductSlowdownPdf,
   type ProductSlowdownPdfInput,
+  type PdfAccountVisitLookup,
 } from "@/lib/report-export";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { excludeOutOfStock } from "@/lib/out-of-stock-products";
@@ -49,10 +50,12 @@ export function ProductSlowdownReportDialog({
   trigger,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
+  accountVisitLookup,
 }: {
   alerts: ProductSlowingAlert[];
   repFilter?: string;
   asOf?: string;
+  accountVisitLookup?: PdfAccountVisitLookup;
   onMessage?: (message: string) => void;
   trigger?: React.ReactNode;
   open?: boolean;
@@ -95,8 +98,9 @@ export function ProductSlowdownReportDialog({
       asOf: reportDate,
       generatedAt: todayIso(),
       alerts: activeAlerts,
+      accountVisitLookup,
     }),
-    [repFilter, reportDate, activeAlerts],
+    [repFilter, reportDate, activeAlerts, accountVisitLookup],
   );
 
   function handleMarkOutOfStock(alert: ProductSlowingAlert) {

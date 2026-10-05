@@ -15,6 +15,10 @@ import {
 import { DashboardPageLoading } from "@/components/page-loading";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
+import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
+import { useFrequencyDropRoster } from "@/hooks/use-frequency-drop-roster";
+import type { FrequencyDropClearance } from "@/lib/frequency-drop-roster";
+import { excludeClosedBusinessAccounts } from "@/lib/closed-business-accounts";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import { detectSlowingProductAlerts } from "@/lib/product-trends";
@@ -98,6 +102,8 @@ type FilteredPortfolioContextValue = {
   enrichedAccounts: AccountHealth[];
   productTrends: PortfolioAnalyticsBundle["productTrends"];
   frequencyAlerts: AccountFrequencyAlert[];
+  frequencyDropRecentClearances: FrequencyDropClearance[];
+  frequencyDropRecentClearanceCount: number;
   productAlerts: ProductSlowingAlert[];
   projectionsSummary: PortfolioProjectionSummary;
   newAccounts: PortfolioAnalyticsBundle["newAccounts"];
@@ -128,6 +134,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     getServerRepFilterSnapshot,
   );
   const { ids: outOfStockIds } = useOutOfStockProducts();
+  const { ids: closedAccountIds } = useClosedBusinessAccounts();
 
   const analyticsCacheRef = useRef<Map<string, PortfolioAnalyticsCacheEntry>>(new Map());
   const analyticsCacheSourceRef = useRef("");
@@ -289,6 +296,32 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     [activeCore?.productTrends.productSummaries, outOfStockIds],
   );
 
+  const frequencyAlerts = useMemo(
+    () =>
+      excludeClosedBusinessAccounts(activeCore?.frequencyAlerts ?? [], closedAccountIds),
+    [activeCore?.frequencyAlerts, closedAccountIds],
+  );
+
+  const rosterAsOf =
+    activeCore?.snapshot.asOf ??
+    visibleState.analysisAsOf ??
+    new Date().toISOString().slice(0, 10);
+
+  const { recentClearances: rosterClearances } = useFrequencyDropRoster(
+    visibleStateKey,
+    repFilter,
+    activeCore?.frequencyAlerts ?? [],
+    rosterAsOf,
+    hasPortfolioData && Boolean(activeCore),
+  );
+
+  const frequencyDropRecentClearances = useMemo(
+    () => rosterClearances.filter((entry) => !closedAccountIds.has(entry.id)),
+    [rosterClearances, closedAccountIds],
+  );
+
+  const frequencyDropRecentClearanceCount = frequencyDropRecentClearances.length;
+
   const resetAll = useCallback(() => {
     reset();
     resetRepFilter();
@@ -343,6 +376,8 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
           avgMonthlyBottles: 0,
         },
         frequencyAlerts: [],
+        frequencyDropRecentClearances: [],
+        frequencyDropRecentClearanceCount: 0,
         productAlerts: [],
         projectionsSummary: emptyProjectionsSummary(),
         newAccounts: [],
@@ -366,7 +401,9 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
       orderAnalytics: bundle.orderAnalytics,
       enrichedAccounts: activeCore.enrichedAccounts,
       productTrends: activeCore.productTrends,
-      frequencyAlerts: activeCore.frequencyAlerts,
+      frequencyAlerts,
+      frequencyDropRecentClearances,
+      frequencyDropRecentClearanceCount,
       productAlerts,
       projectionsSummary: bundle.projectionsSummary,
       newAccounts: activeCore.newAccounts,
@@ -387,6 +424,9 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     importParseResult,
     resetAll,
     productAlerts,
+    frequencyAlerts,
+    frequencyDropRecentClearances,
+    frequencyDropRecentClearanceCount,
   ]);
 
   if (!value) {

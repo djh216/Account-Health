@@ -142,3 +142,11 @@ export function normalizeName(value: string): string {
 export function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+/** Parenthetical delta for health score vs 14 days prior, e.g. `(+3)` or `(-2)`. */
+export function formatHealthScoreChange(delta: number | null | undefined): string | null {
+  if (delta === null || delta === undefined || Number.isNaN(delta)) return null;
+  if (delta > 0) return `(+${delta})`;
+  if (delta < 0) return `(${delta})`;
+  return `(0)`;
+}

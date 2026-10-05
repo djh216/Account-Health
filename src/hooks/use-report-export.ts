@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
-import { excludeOutOfStock } from "@/lib/out-of-stock-products";
+import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
+import { excludeOutOfStock, outOfStockProductId } from "@/lib/out-of-stock-products";
+import { excludeClosedBusinessAccounts } from "@/lib/closed-business-accounts";
 import {
   downloadFocusHealthPdf,
   downloadFrequencyAlertsPdf,
@@ -13,6 +15,7 @@ import {
   downloadProductTrendsPdf,
   downloadRepActionPlansPdf,
   buildRepActionPlans,
+  buildPdfAccountVisitLookup,
   type FocusHealthPdfInput,
   type FrequencyAlertsPdfInput,
   type OrderAnalyticsPdfInput,
@@ -35,6 +38,7 @@ export function useReportExport() {
   const pathname = usePathname();
   const { state, fullState, snapshot, repFilter, reps } = useFilteredPortfolio();
   const { ids: outOfStockIds } = useOutOfStockProducts();
+  const { ids: closedAccountIds } = useClosedBusinessAccounts();
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
@@ -57,16 +61,24 @@ export function useReportExport() {
 
   const alerts = useMemo(
     () =>
-      detectOrderFrequencyDrops(
-        enrichedAccounts,
-        state.orders,
-        state.analysisAsOf ?? snapshot.asOf,
+      excludeClosedBusinessAccounts(
+        detectOrderFrequencyDrops(
+          enrichedAccounts,
+          state.orders,
+          state.analysisAsOf ?? snapshot.asOf,
+        ),
+        closedAccountIds,
       ),
-    [enrichedAccounts, state.orders, state.analysisAsOf, snapshot.asOf],
+    [enrichedAccounts, state.orders, state.analysisAsOf, snapshot.asOf, closedAccountIds],
   );
 
   const asOf = state.analysisAsOf ?? snapshot.asOf ?? todayIso();
   const generatedAt = asOf;
+
+  const accountVisitLookup = useMemo(
+    () => buildPdfAccountVisitLookup(enrichedAccounts),
+    [enrichedAccounts],
+  );
 
   // 1. Focus Health PDF Input
   const focusHealthInput = useMemo((): FocusHealthPdfInput | null => {
@@ -100,8 +112,9 @@ export function useReportExport() {
       asOf,
       generatedAt,
       alerts,
+      accountVisitLookup,
     };
-  }, [enrichedAccounts.length, repFilter, asOf, generatedAt, alerts]);
+  }, [enrichedAccounts.length, repFilter, asOf, generatedAt, alerts, accountVisitLookup]);
 
   // 3. Order Analytics PDF Input
   const orderAnalyticsInput = useMemo((): OrderAnalyticsPdfInput | null => {
@@ -115,8 +128,9 @@ export function useReportExport() {
       topRestaurants: analytics.byRestaurant,
       totalOrders: analytics.totals.orderEvents || state.orders.length,
       totalBottles: analytics.totals.totalVolume,
+      accountVisitLookup,
     };
-  }, [state.orders, enrichedAccounts.length, repFilter, asOf, generatedAt]);
+  }, [state.orders, enrichedAccounts.length, repFilter, asOf, generatedAt, accountVisitLookup]);
 
   // 4. Product Trends PDF Input
   const productTrendsInput = useMemo((): ProductTrendsPdfInput | null => {
@@ -132,15 +146,19 @@ export function useReportExport() {
       detectSlowingProductAlerts(trendData.productSummaries),
       outOfStockIds,
     );
+    const products = trendData.productSummaries.filter(
+      (summary) => !outOfStockIds.has(outOfStockProductId(summary.productName)),
+    );
     return {
       repFilter,
       asOf,
       generatedAt,
-      products: trendData.productSummaries,
+      products,
       slowingAlerts,
       totalBottles: trendData.totalBottles,
+      accountVisitLookup,
     };
-  }, [state.orders, repFilter, asOf, generatedAt, outOfStockIds]);
+  }, [state.orders, repFilter, asOf, generatedAt, outOfStockIds, accountVisitLookup]);
 
   const canExport = snapshot.accounts.length > 0 || state.orders.length > 0;
 

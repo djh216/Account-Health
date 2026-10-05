@@ -1,5 +1,6 @@
 import { todayIso } from "./format";
 import { stripPaDemoPortfolio } from "./pa-demo";
+import { ensureUploadLastVisitIndex } from "./upload-last-visits";
 import {
   clearPortfolio,
   loadPortfolio,
@@ -17,6 +18,7 @@ const EMPTY_PORTFOLIO: PortfolioState = {
   orders: [],
   visits: [],
   reports: [],
+  uploadLastVisitIndex: {},
   analysisAsOf: todayIso(),
 };
 
@@ -33,10 +35,16 @@ export function subscribePortfolio(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+function withUploadLastVisitIndex(state: PortfolioState): PortfolioState {
+  const uploadLastVisitIndex = ensureUploadLastVisitIndex(state);
+  if (uploadLastVisitIndex === state.uploadLastVisitIndex) return state;
+  return { ...state, uploadLastVisitIndex };
+}
+
 export function getPortfolioSnapshot(): PortfolioState {
   if (memory) return memory;
   const stored = loadPortfolio();
-  memory = stored ?? EMPTY_PORTFOLIO;
+  memory = withUploadLastVisitIndex(stored ?? EMPTY_PORTFOLIO);
   return memory;
 }
 
@@ -56,7 +64,7 @@ export async function hydratePortfolioFromStorage(): Promise<PortfolioState> {
         fullAccounts > memAccounts ||
         fullOrders > memOrders
       ) {
-        memory = full;
+        memory = withUploadLastVisitIndex(full);
         notify();
       }
     }

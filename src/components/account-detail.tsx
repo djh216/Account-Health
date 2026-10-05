@@ -1,5 +1,7 @@
 "use client";
 
+import { HealthScoreChangeReasons } from "@/components/health-score-change-reasons";
+import { HealthScoreExplainer } from "@/components/health-score-explainer";
 import { RiskBadge } from "@/components/risk-badge";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { OrderCadenceAlert } from "@/components/order-cadence-alert";
@@ -80,7 +82,13 @@ export function AccountDetail({
                   <TerritoryValueBadge tier={account.territoryTier} />
                 ) : null}
                 <span className="text-sm text-muted-foreground">
-                  Score {account.score}
+                  Score{" "}
+                  <HealthScoreExplainer
+                    score={account.score}
+                    change={account.scoreChange14d}
+                    reasons={account.scoreChange14dReasons}
+                    scrollToReasonsId="health-score-change-reasons"
+                  />
                   {account.territoryRank
                     ? ` · Territory rank #${account.territoryRank}`
                     : ""}
@@ -144,7 +152,24 @@ export function AccountDetail({
                   <Stat
                     label="Last visit"
                     value={formatDays(account.daysSinceVisit)}
-                    hint={formatDate(account.lastVisitDate)}
+                    hint={
+                      account.lastVisitDate
+                        ? [
+                            formatDate(account.lastVisitDate),
+                            account.typicalVisitIntervalDays
+                              ? `Typical cadence ~every ${account.typicalVisitIntervalDays}d`
+                              : null,
+                            account.visitCadenceOverdue && account.expectedVisitDate
+                              ? `Due for visit by ${formatDate(account.expectedVisitDate)}`
+                              : null,
+                            account.avgVisitDurationMinutes90 != null
+                              ? `Avg ${Math.round(account.avgVisitDurationMinutes90)} min/stop (90d)`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : undefined
+                    }
                   />
                   {snapshot ? (
                     <>
@@ -194,6 +219,25 @@ export function AccountDetail({
                       />
                     </>
                   )}
+                </div>
+
+                <div
+                  id="health-score-change-reasons"
+                  className="scroll-mt-4 rounded-xl border border-border/80 bg-muted/25 p-4"
+                >
+                  <h3 className="font-heading text-base">
+                    Last 14 days — why the score moved
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Based on orders and activity through today vs the score as of 14
+                    days ago.
+                  </p>
+                  <div className="mt-3">
+                    <HealthScoreChangeReasons
+                      change={account.scoreChange14d}
+                      reasons={account.scoreChange14dReasons}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-3">

@@ -47,6 +47,8 @@ export type Visit = {
   date: string;
   salesRep?: string;
   outcome?: string;
+  /** Time on site in minutes (e.g. Outfield Duration). */
+  durationMinutes?: number;
 };
 
 export type UploadedReport = {
@@ -89,6 +91,10 @@ export type TerritoryValueTier = (typeof TERRITORY_VALUE_TIERS)[number];
 export type AccountHealth = {
   account: Account;
   score: number;
+  /** Current score minus score as of 14 days ago (orders + activity through each as-of). */
+  scoreChange14d?: number | null;
+  /** Plain-language drivers for scoreChange14d (account detail). */
+  scoreChange14dReasons?: string[];
   risk: RiskLevel;
   mode: ScoreMode;
   lastOrderDate: string | null;
@@ -106,6 +112,14 @@ export type AccountHealth = {
   expectedOrderDate: string | null;
   visitCount90: number;
   visitsWithoutOrder: number;
+  typicalVisitIntervalDays?: number;
+  visitCadenceOverdue?: boolean;
+  visitCadenceDaysOverdue?: number | null;
+  expectedVisitDate?: string | null;
+  avgVisitDurationMinutes90?: number | null;
+  lastVisitDurationMinutes?: number | null;
+  recentOrders14d?: number;
+  recentVisits14d?: number;
   cases90: number;
   factors: HealthFactor[];
   focus: FocusAction | null;
@@ -149,6 +163,7 @@ export type ColumnMapping = {
   salesRep?: string;
   outcome?: string;
   product?: string;
+  visitDuration?: string;
 };
 
 export type ParseResult = {
@@ -160,10 +175,19 @@ export type ParseResult = {
   warnings: string[];
 };
 
+/** Per-account last visit from snapshot-style uploads (keys: account id and normalized name). */
+export type UploadLastVisitEntry = {
+  date: string;
+  uploadedAt: string;
+};
+
+export type UploadLastVisitIndex = Record<string, UploadLastVisitEntry>;
+
 export type PortfolioState = {
   accounts: Account[];
   orders: Order[];
   visits: Visit[];
   reports: UploadedReport[];
+  uploadLastVisitIndex?: UploadLastVisitIndex;
   analysisAsOf?: string;
 };

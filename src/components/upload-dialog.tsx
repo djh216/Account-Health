@@ -32,6 +32,7 @@ const ALL_FIELDS: Array<{ key: keyof ColumnMapping; label: string }> = [
   { key: "skuCount", label: "SKU count" },
   { key: "product", label: "Product" },
   { key: "outcome", label: "Visit outcome / notes" },
+  { key: "visitDuration", label: "Duration (minutes on site)" },
 ];
 
 function fieldsForKind(kind: ReportKind): Array<{ key: keyof ColumnMapping; label: string }> {
@@ -69,7 +70,11 @@ function fieldsForKind(kind: ReportKind): Array<{ key: keyof ColumnMapping; labe
   }
   if (kind === "visits") {
     return ALL_FIELDS.filter((field) =>
-      ["account", "date", "lastVisitDate", "salesRep", "outcome"].includes(field.key),
+      ["account", "date", "salesRep", "outcome", "visitDuration"].includes(field.key),
+    ).map((field) =>
+      field.key === "date"
+        ? { ...field, label: "Visit date (Outfield: Created)" }
+        : field,
     );
   }
   return ALL_FIELDS.filter((field) =>
@@ -114,8 +119,8 @@ export function UploadDialog({
         missing.push("Date or Last order date");
       }
     } else if (parsed.kind === "visits") {
-      if (!parsed.mapping.date && !parsed.mapping.lastVisitDate) {
-        missing.push("Date or Last visit date");
+      if (!parsed.mapping.date) {
+        missing.push("Visit date (Created column)");
       }
     }
     return missing;
@@ -205,9 +210,17 @@ export function UploadDialog({
         [key]: value === "__none" ? undefined : value,
       };
       const kind = detectKind(current.fileName, mapping, current.rows);
+      const nextMapping =
+        kind === "visits" && mapping.date
+          ? {
+              ...mapping,
+              lastVisitDate:
+                mapping.lastVisitDate === mapping.date ? undefined : mapping.lastVisitDate,
+            }
+          : mapping;
       return {
         ...current,
-        mapping,
+        mapping: nextMapping,
         kind,
         warnings: [],
       };

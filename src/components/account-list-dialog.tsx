@@ -1,5 +1,6 @@
 "use client";
 
+import { HealthScoreExplainer } from "@/components/health-score-explainer";
 import { RiskBadge } from "@/components/risk-badge";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import {
@@ -90,8 +91,13 @@ export function AccountListDialog({
                           <TerritoryValueBadge tier={item.territoryTier} />
                         ) : null}
                         <RiskBadge risk={item.risk} />
-                        <span className="text-sm tabular-nums text-muted-foreground font-medium">
-                          Score {item.score}
+                        <span className="text-sm text-muted-foreground font-medium">
+                          Score{" "}
+                          <HealthScoreExplainer
+                            score={item.score}
+                            change={item.scoreChange14d}
+                            reasons={item.scoreChange14dReasons}
+                          />
                         </span>
                       </div>
                     </div>

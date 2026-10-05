@@ -51,6 +51,8 @@ import { VolumeProjectionChurnPanel } from "@/components/volume-projection-churn
 import { BottleSalesTrendChart } from "@/components/bottle-sales-trend-chart";
 import type { AccountHealth } from "@/lib/types";
 import { hasSpecifiedProduct } from "@/lib/order-analytics";
+import { FREQUENCY_DROP_RECENT_CLEARANCE_DAYS } from "@/lib/frequency-drop-roster";
+import { buildPdfAccountVisitLookup } from "@/lib/report-export";
 import {
   orderCadenceTone,
   orderCadenceToneClass,
@@ -236,6 +238,8 @@ export function OrderAnalyticsDashboard() {
     enrichedAccounts,
     productTrends,
     frequencyAlerts,
+    frequencyDropRecentClearances,
+    frequencyDropRecentClearanceCount,
     productAlerts,
     projectionsSummary,
     newAccounts,
@@ -298,6 +302,23 @@ export function OrderAnalyticsDashboard() {
         .filter((item): item is AccountHealth => item !== undefined),
     [retainedAccounts, healthByAccountName],
   );
+
+  const accountVisitLookup = useMemo(
+    () => buildPdfAccountVisitLookup(enrichedAccounts),
+    [enrichedAccounts],
+  );
+
+  const frequencyDropClearedAccounts = useMemo(() => {
+    if (frequencyDropRecentClearances.length === 0) return [];
+    const clearanceIds = new Set(frequencyDropRecentClearances.map((entry) => entry.id));
+    return enrichedAccounts.filter((health) => {
+      const primaryId = health.account.id || normalizeName(health.account.name);
+      return (
+        clearanceIds.has(primaryId) ||
+        clearanceIds.has(normalizeName(health.account.name))
+      );
+    });
+  }, [enrichedAccounts, frequencyDropRecentClearances]);
 
   const returningCustomerHealthRows = useMemo(
     () =>
@@ -496,6 +517,9 @@ export function OrderAnalyticsDashboard() {
                     <p className="text-xs text-amber-900/80 dark:text-amber-300/80 mt-0.5">
                       {criticalAlertsCount > 0 ? `${criticalAlertsCount} critical rate drops. ` : ""}
                       Reorder cadence has slowed or stalled past their historical typical pace.
+                      {frequencyDropRecentClearanceCount > 0
+                        ? ` ${frequencyDropRecentClearanceCount} account${frequencyDropRecentClearanceCount === 1 ? "" : "s"} recently cleared this report (last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days).`
+                        : ""}
                     </p>
                   </div>
                 </div>
@@ -506,6 +530,35 @@ export function OrderAnalyticsDashboard() {
                   onClick={() => setNotificationSidebarOpen(true)}
                 >
                   View Alerts ({frequencyAlerts.length})
+                </Button>
+              </div>
+            ) : null}
+
+            {frequencyAlerts.length === 0 && frequencyDropRecentClearanceCount > 0 ? (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-emerald-300/80 bg-emerald-50/70 p-4 text-emerald-950 dark:border-emerald-800/80 dark:bg-emerald-950/20 dark:text-emerald-100">
+                <div>
+                  <p className="font-semibold text-sm">
+                    {frequencyDropRecentClearanceCount} account
+                    {frequencyDropRecentClearanceCount === 1 ? "" : "s"} recently off the frequency drop report
+                  </p>
+                  <p className="text-xs text-emerald-900/80 dark:text-emerald-200/80 mt-0.5">
+                    Cadence recovered in the last {FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days — no longer on the active drop list.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 bg-white/90 hover:bg-white text-xs font-semibold text-emerald-950 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-100 dark:border-emerald-700"
+                  onClick={() =>
+                    setAccountListDialog({
+                      title: "Off order frequency drop report",
+                      description: `Accounts that cleared the frequency drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days.`,
+                      accounts: frequencyDropClearedAccounts,
+                      emptyMessage: `No accounts have cleared the frequency drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days yet.`,
+                    })
+                  }
+                >
+                  View recovered ({frequencyDropRecentClearanceCount})
                 </Button>
               </div>
             ) : null}
@@ -531,6 +584,19 @@ export function OrderAnalyticsDashboard() {
                     description: `First order in the last ${NEW_ACCOUNT_WINDOW_DAYS} days with no order history before that window.`,
                     accounts: newAccountHealthRows,
                     emptyMessage: `No new accounts with orders in the last ${NEW_ACCOUNT_WINDOW_DAYS} days.`,
+                  })
+                }
+              />
+              <Kpi
+                label="Off frequency report"
+                value={String(frequencyDropRecentClearanceCount)}
+                hint={`Cadence recovered in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days · Click to view`}
+                onClick={() =>
+                  setAccountListDialog({
+                    title: "Off order frequency drop report",
+                    description: `These accounts were on the frequency drop report recently and no longer qualify based on the latest order cadence (last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days).`,
+                    accounts: frequencyDropClearedAccounts,
+                    emptyMessage: `No accounts have cleared the frequency drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days yet.`,
                   })
                 }
               />
@@ -720,6 +786,7 @@ export function OrderAnalyticsDashboard() {
                   summary={projectionsSummary}
                   repFilter={repFilter}
                   asOf={state.analysisAsOf ?? analytics.asOf}
+                  accountVisitLookup={accountVisitLookup}
                   onSelectAccount={(accountName) => {
                     const tracking =
                       analytics.byAccount.find(
@@ -846,6 +913,7 @@ export function OrderAnalyticsDashboard() {
                   deferHeavyCompute={bottleTrendOrders.length > 800}
                   asOf={state.analysisAsOf ?? snapshot.asOf}
                   accountHealthByName={healthByAccountName}
+                  onNotify={flash}
                   onSelectAccount={(accountName) => {
                     const row = analytics.byAccount.find(
                       (a) => normalizeName(a.accountName) === normalizeName(accountName),
@@ -1001,6 +1069,7 @@ export function OrderAnalyticsDashboard() {
       <NotificationSidebar
         alerts={frequencyAlerts}
         productAlerts={productAlerts}
+        accountVisitLookup={accountVisitLookup}
         open={notificationSidebarOpen}
         onOpenChange={setNotificationSidebarOpen}
         onSelectAccount={(accountName, accountId) => {

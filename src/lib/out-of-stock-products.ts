@@ -1,6 +1,13 @@
+import { normalizeName } from "./format";
+
 export const OUT_OF_STOCK_CHANGE_EVENT = "cellar-pulse-out-of-stock-change";
 
 const STORAGE_KEY = "cellar-pulse.out-of-stock-products";
+
+/** Stable id shared with product slowdown alerts and catalog exclusions. */
+export function outOfStockProductId(productName: string): string {
+  return `prod_alert_${normalizeName(productName)}`;
+}
 
 export type OutOfStockProduct = {
   id: string;

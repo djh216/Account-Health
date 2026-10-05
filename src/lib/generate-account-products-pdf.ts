@@ -1,6 +1,8 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, formatNumber } from "./format";
+import { buildExportPdfFilename } from "./pdf-filename";
+import { formatPdfLastVisitCell } from "./pdf-account-visit";
 
 const MARGIN_X = 12;
 const BURGUNDY: [number, number, number] = [120, 28, 48];
@@ -17,6 +19,10 @@ export type AccountProductPdfRow = {
 
 export type AccountProductsPdfInput = {
   accountName: string;
+  /** Sales rep on the account (used as the download filename prefix). */
+  salesRep?: string;
+  lastVisitDate?: string | null;
+  daysSinceVisit?: number | null;
   asOf: string;
   generatedAt: string;
   products: AccountProductPdfRow[];
@@ -65,8 +71,12 @@ export function downloadAccountProductsPdf(input: AccountProductsPdfInput): void
   doc.setTextColor(TEXT_DARK[0], TEXT_DARK[1], TEXT_DARK[2]);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
+  const lastVisitLine = formatPdfLastVisitCell(
+    input.lastVisitDate,
+    input.daysSinceVisit,
+  ).replace("\n", " · ");
   doc.text(
-    `${input.products.length} product${input.products.length === 1 ? "" : "s"}  ·  ${formatNumber(totalVolume)} bottles all time`,
+    `${input.products.length} product${input.products.length === 1 ? "" : "s"}  ·  ${formatNumber(totalVolume)} bottles all time  ·  Last visit: ${lastVisitLine}`,
     MARGIN_X,
     26,
   );
@@ -125,5 +135,9 @@ export function downloadAccountProductsPdf(input: AccountProductsPdfInput): void
   });
 
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(`cellar-pulse-${slug(input.accountName) || "account"}-products-${stamp}.pdf`);
+  const accountSlug = slug(input.accountName) || "account";
+  const repKey = input.salesRep?.trim() || "all-reps";
+  doc.save(
+    buildExportPdfFilename(repKey, `${accountSlug}-products`, stamp),
+  );
 }

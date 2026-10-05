@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, formatMoney, formatNumber } from "./format";
 import type { ProductSummary, ProductSlowingAlert } from "./product-trends";
+import { buildExportPdfFilename } from "./pdf-filename";
 
 const MARGIN_X = 12;
 const BURGUNDY: [number, number, number] = [120, 28, 48];
@@ -184,10 +185,6 @@ export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
     });
   }
 
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(`cellar-pulse-product-trends-${repSlug}-${stamp}.pdf`);
+  doc.save(buildExportPdfFilename(input.repFilter, "product-trends", stamp));
 }

@@ -40,6 +40,12 @@ import {
   type TrendlineDefinition,
 } from "@/lib/trendline";
 import { TrendPointAnalyticsDialog } from "@/components/trend-point-analytics-dialog";
+import {
+  ExcludeAccountClosedButton,
+  ExcludedAccountsPanel,
+} from "@/components/analytics-exclusion-controls";
+import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
+import { isAccountClosedBusiness } from "@/lib/closed-business-accounts";
 import type { ProductTrendPoint } from "@/lib/product-trends";
 import {
   Card,
@@ -213,6 +219,7 @@ type BottleSalesTrendChartProps = {
   deferHeavyCompute?: boolean;
   /** Territory rank and health score keyed by normalized account name. */
   accountHealthByName?: Map<string, AccountHealth>;
+  onNotify?: (message: string) => void;
 };
 
 export function BottleSalesTrendChart({
@@ -222,8 +229,10 @@ export function BottleSalesTrendChart({
   onSelectAccount,
   deferHeavyCompute = false,
   accountHealthByName,
+  onNotify,
 }: BottleSalesTrendChartProps) {
   const searchInputId = useId();
+  const { ids: closedAccountIds } = useClosedBusinessAccounts();
   const chartOrders = useDeferredValue(orders);
   const trendOrders = deferHeavyCompute || orders.length > 800 ? chartOrders : orders;
   const chartDataStale =
@@ -366,13 +375,26 @@ export function BottleSalesTrendChart({
     }));
   }, [chartDataWithTrendlines]);
 
+  const activeAccountSummaries = useMemo(
+    () =>
+      accountSummaries.filter(
+        (summary) => !isAccountClosedBusiness(summary.accountName, closedAccountIds),
+      ),
+    [accountSummaries, closedAccountIds],
+  );
+
   const displayedAccountSummaries = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return accountSummaries;
-    return accountSummaries.filter((summary) =>
+    if (!q) return activeAccountSummaries;
+    return activeAccountSummaries.filter((summary) =>
       summary.accountName.toLowerCase().includes(q),
     );
-  }, [accountSummaries, searchQuery]);
+  }, [activeAccountSummaries, searchQuery]);
+
+  function handleAccountExcludedFromLists(accountName: string) {
+    setSelectedAccounts((prev) => prev.filter((name) => name !== accountName));
+    onNotify?.(`Removed ${accountName} from account lists (closed business).`);
+  }
 
   function runChartFilterUpdate(update: () => void) {
     startTransition(update);
@@ -1239,6 +1261,11 @@ export function BottleSalesTrendChart({
                                 ) : null}
                                 {health != null ? <span>· {health.score} health</span> : null}
                               </div>
+                              <ExcludeAccountClosedButton
+                                accountName={summary.accountName}
+                                className="mt-1.5"
+                                onExcluded={handleAccountExcludedFromLists}
+                              />
                             </div>
                           </div>
                         </TableCell>
@@ -1288,6 +1315,12 @@ export function BottleSalesTrendChart({
                 </TableBody>
               </Table>
             </div>
+            <ExcludedAccountsPanel
+              className="mx-4 mb-4 mt-3"
+              onRestore={(accountName) =>
+                onNotify?.(`Restored ${accountName} to account lists.`)
+              }
+            />
             </div>
           )}
         </CardContent>

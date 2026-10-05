@@ -2,6 +2,8 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, formatMoney, formatNumber } from "./format";
 import type { AccountFrequencyAlert } from "./frequency-alerts";
+import { buildExportPdfFilename } from "./pdf-filename";
+import { formatPdfLastVisitFromLookup, type PdfAccountVisitLookup } from "./pdf-account-visit";
 import { territoryTierLabel } from "./territory-value";
 
 const MARGIN_X = 12;
@@ -13,6 +15,7 @@ export type FrequencyAlertsPdfInput = {
   asOf: string;
   generatedAt: string;
   alerts: AccountFrequencyAlert[];
+  accountVisitLookup?: PdfAccountVisitLookup;
 };
 
 function repLabel(repFilter: string): string {
@@ -43,7 +46,10 @@ function severityColor(
   }
 }
 
-function alertRow(alert: AccountFrequencyAlert): (string | number)[] {
+function alertRow(
+  alert: AccountFrequencyAlert,
+  accountVisitLookup?: PdfAccountVisitLookup,
+): (string | number)[] {
   const tierStr = alert.territoryTier ? ` (${territoryTierLabel(alert.territoryTier)})` : "";
   const repStr = alert.salesRep ? `\nRep: ${alert.salesRep}` : "";
   const accountCell = `${alert.accountName}${tierStr}${repStr}`;
@@ -71,6 +77,7 @@ function alertRow(alert: AccountFrequencyAlert): (string | number)[] {
   return [
     severityLabel(alert.severity),
     accountCell,
+    formatPdfLastVisitFromLookup(accountVisitLookup, alert.id, alert.accountName),
     cadenceCell,
     paceCell,
     atRiskCell,
@@ -158,7 +165,9 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
     return b.daysPastTypical - a.daysPastTypical;
   });
 
-  const tableBody = sortedAlerts.map(alertRow);
+  const tableBody = sortedAlerts.map((alert) =>
+    alertRow(alert, input.accountVisitLookup),
+  );
 
   autoTable(doc, {
     startY: 38,
@@ -167,6 +176,7 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
       [
         "SEVERITY",
         "ACCOUNT & REP",
+        "LAST VISIT",
         "CADENCE DELAY",
         "PACE DROP",
         "AT RISK",
@@ -193,12 +203,13 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
       lineWidth: 0.15,
     },
     columnStyles: {
-      0: { cellWidth: 20, fontStyle: "bold" },
-      1: { cellWidth: 55 },
-      2: { cellWidth: 42 },
-      3: { cellWidth: 32 },
-      4: { cellWidth: 32 },
-      5: { cellWidth: "auto" },
+      0: { cellWidth: 18, fontStyle: "bold" },
+      1: { cellWidth: 48 },
+      2: { cellWidth: 24 },
+      3: { cellWidth: 38 },
+      4: { cellWidth: 28 },
+      5: { cellWidth: 28 },
+      6: { cellWidth: "auto" },
     },
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 0) {
@@ -221,12 +232,6 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
     },
   });
 
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  const filename = `cellar-pulse-frequency-drop-alerts-${repSlug}-${stamp}.pdf`;
-
-  doc.save(filename);
+  doc.save(buildExportPdfFilename(input.repFilter, "frequency-drop-alerts", stamp));
 }

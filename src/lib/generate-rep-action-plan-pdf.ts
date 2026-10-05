@@ -1,7 +1,9 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FOCUS_SECTIONS } from "./focus-sections";
-import { formatDate } from "./format";
+import { formatDate, formatHealthScoreChange } from "./format";
+import { buildExportPdfFilename } from "./pdf-filename";
+import { formatPdfLastVisitCell } from "./pdf-account-visit";
 import type { RepActionPlan } from "./rep-action-plans";
 import { totalFocusActions } from "./rep-action-plans";
 import type { AccountHealth, FocusHorizon, RiskLevel } from "./types";
@@ -51,8 +53,9 @@ function actionRow(priority: number, item: AccountHealth): (string | number)[] {
     priority,
     item.account.name,
     `${RISK_SHORT[item.risk]} · ${tier}`,
-    item.score,
+    `${item.score}${formatHealthScoreChange(item.scoreChange14d) ?? ""}`,
     `${lastOrder}\n${cadence}`,
+    formatPdfLastVisitCell(item.lastVisitDate, item.daysSinceVisit),
     focus?.title ?? `Work ${item.account.name}`,
     focus?.reason ?? "Priority account on this rep's ranked call plan.",
     focus?.action ?? "Confirm next visit and reorder date before leaving.",
@@ -131,7 +134,7 @@ function addHorizonTable(
   const body =
     accounts.length > 0
       ? accounts.map((item, index) => actionRow(index + 1, item))
-      : [["—", "No accounts in this window", "—", "—", "—", "—", "—", "—"]];
+      : [["—", "No accounts in this window", "—", "—", "—", "—", "—", "—", "—"]];
 
   autoTable(doc, {
     startY: startY + 7,
@@ -143,6 +146,7 @@ function addHorizonTable(
         "Risk · Tier",
         "Score",
         "Last order · Cadence",
+        "Last visit",
         "Action title",
         "Why now",
         "Do this",
@@ -169,10 +173,11 @@ function addHorizonTable(
       1: { cellWidth: 32 },
       2: { cellWidth: 26, fontStyle: "bold" },
       3: { cellWidth: 12, halign: "right" },
-      4: { cellWidth: 28 },
-      5: { cellWidth: 38, fontStyle: "bold" },
-      6: { cellWidth: 42 },
-      7: { cellWidth: 42 },
+      4: { cellWidth: 26 },
+      5: { cellWidth: 22 },
+      6: { cellWidth: 34, fontStyle: "bold" },
+      7: { cellWidth: 38 },
+      8: { cellWidth: 38 },
     },
     styles: {
       overflow: "linebreak",
@@ -252,9 +257,5 @@ export function downloadRepActionPlansPdf(input: RepActionPlansPdfInput): void {
 
   const doc = generateRepActionPlansPdfDocument(input);
   const stamp = input.generatedAt.slice(0, 10);
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
-  doc.save(`cellar-pulse-rep-action-plan-${repSlug}-${stamp}.pdf`);
+  doc.save(buildExportPdfFilename(input.repFilter, "rep-action-plan", stamp));
 }

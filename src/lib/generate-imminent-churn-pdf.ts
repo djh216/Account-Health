@@ -2,6 +2,11 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, formatDays, formatNumber } from "./format";
 import type { AccountProjectionAndChurn } from "./order-projections";
+import { buildExportPdfFilename } from "./pdf-filename";
+import {
+  formatPdfLastVisitFromLookup,
+  type PdfAccountVisitLookup,
+} from "./pdf-account-visit";
 import { territoryTierLabel } from "./territory-value";
 
 const MARGIN_X = 12;
@@ -14,13 +19,17 @@ export type ImminentChurnPdfInput = {
   asOf: string;
   generatedAt: string;
   accounts: AccountProjectionAndChurn[];
+  accountVisitLookup?: PdfAccountVisitLookup;
 };
 
 function repLabel(repFilter: string): string {
   return repFilter === "all" ? "All Sales Reps" : `Rep: ${repFilter}`;
 }
 
-function churnRow(account: AccountProjectionAndChurn): (string | number)[] {
+function churnRow(
+  account: AccountProjectionAndChurn,
+  accountVisitLookup?: PdfAccountVisitLookup,
+): (string | number)[] {
   const tierStr = account.territoryTier ? ` · ${territoryTierLabel(account.territoryTier)} Tier` : "";
   const repStr = account.salesRep ? `\nRep: ${account.salesRep}` : "";
   const accountCell = `${account.accountName}${tierStr}${repStr}`;
@@ -44,6 +53,7 @@ function churnRow(account: AccountProjectionAndChurn): (string | number)[] {
 
   return [
     accountCell,
+    formatPdfLastVisitFromLookup(accountVisitLookup, undefined, account.accountName),
     scoreCell,
     cadenceCell,
     atRiskCell,
@@ -130,7 +140,9 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
     return b.monthlyVolumeAtRisk - a.monthlyVolumeAtRisk;
   });
 
-  const tableBody = sortedAccounts.map(churnRow);
+  const tableBody = sortedAccounts.map((account) =>
+    churnRow(account, input.accountVisitLookup),
+  );
 
   autoTable(doc, {
     startY: 38,
@@ -138,6 +150,7 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
     head: [
       [
         "ACCOUNT & REP",
+        "LAST VISIT",
         "CHURN RISK",
         "ORDER CADENCE STATUS",
         "EST. VOLUME AT RISK",
@@ -165,12 +178,13 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
       lineWidth: 0.15,
     },
     columnStyles: {
-      0: { cellWidth: 50, fontStyle: "bold" },
-      1: { cellWidth: 32, fontStyle: "bold" },
-      2: { cellWidth: 44 },
-      3: { cellWidth: 34 },
-      4: { cellWidth: 50 },
-      5: { cellWidth: "auto" },
+      0: { cellWidth: 46, fontStyle: "bold" },
+      1: { cellWidth: 24 },
+      2: { cellWidth: 28, fontStyle: "bold" },
+      3: { cellWidth: 40 },
+      4: { cellWidth: 30 },
+      5: { cellWidth: 44 },
+      6: { cellWidth: "auto" },
     },
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 1) {
@@ -195,12 +209,6 @@ export function downloadImminentChurnPdf(input: ImminentChurnPdfInput): void {
   }
 
   const doc = generateImminentChurnPdfDocument(input);
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  const filename = `cellar-pulse-imminent-churn-intervention-${repSlug}-${stamp}.pdf`;
-
-  doc.save(filename);
+  doc.save(buildExportPdfFilename(input.repFilter, "imminent-churn-intervention", stamp));
 }

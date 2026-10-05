@@ -93,9 +93,10 @@ import {
 import { formatDate, formatMoney, formatNumber, formatPct } from "@/lib/format";
 import { generateSampleWinePortfolio } from "@/lib/sample-data";
 import { setPortfolio } from "@/lib/portfolio-store";
-import { excludeOutOfStock } from "@/lib/out-of-stock-products";
+import { excludeOutOfStock, outOfStockProductId } from "@/lib/out-of-stock-products";
 import {
   buildProductTrendData,
+  deriveProductTrendHighlights,
   PRODUCT_PALETTE,
   type ProductSummary,
   type ProductTrajectory,
@@ -105,7 +106,12 @@ import {
   type ProductTrendPoint,
   detectSlowingProductAlerts,
 } from "@/lib/product-trends";
+import {
+  ExcludeProductOutOfStockButton,
+  ExcludedProductsPanel,
+} from "@/components/analytics-exclusion-controls";
 import { cn } from "@/lib/utils";
+import { buildPdfAccountVisitLookup } from "@/lib/report-export";
 
 /** Read a series value by its real key. Recharts string dataKeys split on "." */
 function seriesValue(point: ProductTrendPoint, key: string): number {
@@ -246,6 +252,11 @@ export function ProductSalesTrendsDashboard() {
     [frequencyAlerts],
   );
 
+  const accountVisitLookup = useMemo(
+    () => buildPdfAccountVisitLookup(enrichedAccounts),
+    [enrichedAccounts],
+  );
+
   const useCachedProductTrends =
     selectedProducts.length === 0 &&
     granularity === "monthly" &&
@@ -297,6 +308,34 @@ export function ProductSalesTrendsDashboard() {
     () => excludeOutOfStock(detectedProductAlerts, outOfStockIds),
     [detectedProductAlerts, outOfStockIds],
   );
+
+  const visibleProductSummaries = useMemo(
+    () =>
+      trends.productSummaries.filter(
+        (summary) => !outOfStockIds.has(outOfStockProductId(summary.productName)),
+      ),
+    [trends.productSummaries, outOfStockIds],
+  );
+
+  const visibleTrends = useMemo(
+    () => ({
+      ...trends,
+      productSummaries: visibleProductSummaries,
+      ...deriveProductTrendHighlights(visibleProductSummaries),
+    }),
+    [trends, visibleProductSummaries],
+  );
+
+  function handleProductExcludedFromLists(productName: string) {
+    setSelectedProducts((prev) => prev.filter((name) => name !== productName));
+    if (selectedDetailProduct?.productName === productName) {
+      setSelectedDetailProduct(null);
+    }
+    if (placementProduct?.productName === productName) {
+      setPlacementProduct(null);
+    }
+    flash(`Removed ${productName} from wine lists (out of stock).`);
+  }
 
   const criticalProductAlertsCount = useMemo(
     () => productAlerts.filter((a) => a.severity === "critical").length,
@@ -383,16 +422,16 @@ export function ProductSalesTrendsDashboard() {
 
   // Handle Quick Selections
   function handleSelectTopVolume(count = 5) {
-    const top = trends.productSummaries.slice(0, count).map((s) => s.productName);
+    const top = visibleProductSummaries.slice(0, count).map((s) => s.productName);
     setSelectedProducts(top);
   }
 
   function handleSelectGrowing(count = 5) {
-    const growing = trends.productSummaries
+    const growing = visibleProductSummaries
       .filter((s) => s.trajectory === "accelerating")
       .slice(0, count)
       .map((s) => s.productName);
-    setSelectedProducts(growing.length > 0 ? growing : trends.productSummaries.slice(0, 5).map((s) => s.productName));
+    setSelectedProducts(growing.length > 0 ? growing : visibleProductSummaries.slice(0, 5).map((s) => s.productName));
   }
 
   function handleSelectAll() {
@@ -418,7 +457,7 @@ export function ProductSalesTrendsDashboard() {
 
   // Filtered & Sorted Table Rows
   const displayedSummaries = useMemo(() => {
-    return trends.productSummaries
+    return visibleProductSummaries
       .filter((s) => {
         const activeTrajectory = trajectoryScope === "3m" ? s.quarterlyTrajectory : s.trajectory;
         if (trajectoryFilter !== "all" && activeTrajectory !== trajectoryFilter) return false;
@@ -438,7 +477,7 @@ export function ProductSalesTrendsDashboard() {
         }
         return sortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
       });
-  }, [trends.productSummaries, trajectoryFilter, trajectoryScope, searchQuery, sortField, sortAsc]);
+  }, [visibleProductSummaries, trajectoryFilter, trajectoryScope, searchQuery, sortField, sortAsc]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -467,7 +506,7 @@ export function ProductSalesTrendsDashboard() {
       "Last Order Date",
     ];
 
-    const rows = trends.productSummaries.map((s) => [
+    const rows = visibleProductSummaries.map((s) => [
       `"${s.productName.replace(/"/g, '""')}"`,
       s.totalBottles,
       s.avgBottlesPerOrder,
@@ -679,7 +718,7 @@ export function ProductSalesTrendsDashboard() {
                     <span>Active Wine SKUs</span>
                   </CardDescription>
                   <CardTitle className="font-heading text-2xl">
-                    {formatNumber(trends.totalActiveProducts)}{" "}
+                    {formatNumber(visibleTrends.totalActiveProducts)}{" "}
                     <span className="text-sm font-normal text-muted-foreground">products</span>
                   </CardTitle>
                 </CardHeader>
@@ -695,17 +734,17 @@ export function ProductSalesTrendsDashboard() {
                     <BarChart2 className="size-4 text-emerald-600 dark:text-emerald-400" />
                     <span>#1 Volume Leader (All-Time)</span>
                   </CardDescription>
-                  <CardTitle className="font-heading text-xl break-words leading-tight" title={trends.topPerformer?.productName}>
-                    {trends.topPerformer ? trends.topPerformer.productName : "—"}
+                  <CardTitle className="font-heading text-xl break-words leading-tight" title={visibleTrends.topPerformer?.productName}>
+                    {visibleTrends.topPerformer ? visibleTrends.topPerformer.productName : "—"}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-xs text-muted-foreground">
-                  {trends.topPerformer ? (
+                  {visibleTrends.topPerformer ? (
                     <>
                       <span className="font-medium text-foreground">
-                        {formatNumber(trends.topPerformer.totalBottles)} btls
+                        {formatNumber(visibleTrends.topPerformer.totalBottles)} btls
                       </span>{" "}
-                      ({formatNumber(trends.topPerformer.totalBottles)} btls) · {trends.topPerformer.accountCount} accounts
+                      ({formatNumber(visibleTrends.topPerformer.totalBottles)} btls) · {visibleTrends.topPerformer.accountCount} accounts
                     </>
                   ) : (
                     "No product volume"
@@ -716,26 +755,26 @@ export function ProductSalesTrendsDashboard() {
               <Card
                 className={cn(
                   "border-border",
-                  trends.topGrowing &&
+                  visibleTrends.topGrowing &&
                     "cursor-pointer transition-colors hover:border-primary/40 hover:bg-primary/[0.03]",
                 )}
                 onClick={() => {
-                  if (trends.topGrowing) setSelectedDetailProduct(trends.topGrowing);
+                  if (visibleTrends.topGrowing) setSelectedDetailProduct(visibleTrends.topGrowing);
                 }}
                 onKeyDown={(event) => {
                   if (
-                    trends.topGrowing &&
+                    visibleTrends.topGrowing &&
                     (event.key === "Enter" || event.key === " ")
                   ) {
                     event.preventDefault();
-                    setSelectedDetailProduct(trends.topGrowing);
+                    setSelectedDetailProduct(visibleTrends.topGrowing);
                   }
                 }}
-                role={trends.topGrowing ? "button" : undefined}
-                tabIndex={trends.topGrowing ? 0 : undefined}
+                role={visibleTrends.topGrowing ? "button" : undefined}
+                tabIndex={visibleTrends.topGrowing ? 0 : undefined}
                 title={
-                  trends.topGrowing
-                    ? `Open catalog detail for ${trends.topGrowing.productName}`
+                  visibleTrends.topGrowing
+                    ? `Open catalog detail for ${visibleTrends.topGrowing.productName}`
                     : undefined
                 }
               >
@@ -744,19 +783,19 @@ export function ProductSalesTrendsDashboard() {
                     <TrendingUp className="size-4 text-indigo-600 dark:text-indigo-400" />
                     <span>Top Growth Momentum (28-Day Window)</span>
                   </CardDescription>
-                  <CardTitle className="font-heading text-xl break-words leading-tight" title={trends.topGrowing?.productName}>
-                    {trends.topGrowing ? trends.topGrowing.productName : "—"}
+                  <CardTitle className="font-heading text-xl break-words leading-tight" title={visibleTrends.topGrowing?.productName}>
+                    {visibleTrends.topGrowing ? visibleTrends.topGrowing.productName : "—"}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-xs text-muted-foreground">
-                  {trends.topGrowing ? (
+                  {visibleTrends.topGrowing ? (
                     <>
                       <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                        {trends.topGrowing.velocityDeltaPct !== null
-                          ? `+${trends.topGrowing.velocityDeltaPct.toFixed(0)}%`
+                        {visibleTrends.topGrowing.velocityDeltaPct !== null
+                          ? `+${visibleTrends.topGrowing.velocityDeltaPct.toFixed(0)}%`
                           : "Expanding"}
                       </span>{" "}
-                      velocity vs prior 28d ({trends.topGrowing.recentVolume} btls in last 28d vs {trends.topGrowing.priorVolume} btls prior)
+                      velocity vs prior 28d ({visibleTrends.topGrowing.recentVolume} btls in last 28d vs {visibleTrends.topGrowing.priorVolume} btls prior)
                       <span className="mt-1 block text-[11px] text-primary/80">
                         Click for Individual Wine Catalog & Sales Velocities
                       </span>
@@ -770,26 +809,26 @@ export function ProductSalesTrendsDashboard() {
               <Card
                 className={cn(
                   "border-border",
-                  trends.atRiskProduct &&
+                  visibleTrends.atRiskProduct &&
                     "cursor-pointer transition-colors hover:border-primary/40 hover:bg-primary/[0.03]",
                 )}
                 onClick={() => {
-                  if (trends.atRiskProduct) setSelectedDetailProduct(trends.atRiskProduct);
+                  if (visibleTrends.atRiskProduct) setSelectedDetailProduct(visibleTrends.atRiskProduct);
                 }}
                 onKeyDown={(event) => {
                   if (
-                    trends.atRiskProduct &&
+                    visibleTrends.atRiskProduct &&
                     (event.key === "Enter" || event.key === " ")
                   ) {
                     event.preventDefault();
-                    setSelectedDetailProduct(trends.atRiskProduct);
+                    setSelectedDetailProduct(visibleTrends.atRiskProduct);
                   }
                 }}
-                role={trends.atRiskProduct ? "button" : undefined}
-                tabIndex={trends.atRiskProduct ? 0 : undefined}
+                role={visibleTrends.atRiskProduct ? "button" : undefined}
+                tabIndex={visibleTrends.atRiskProduct ? 0 : undefined}
                 title={
-                  trends.atRiskProduct
-                    ? `Open catalog detail for ${trends.atRiskProduct.productName}`
+                  visibleTrends.atRiskProduct
+                    ? `Open catalog detail for ${visibleTrends.atRiskProduct.productName}`
                     : undefined
                 }
               >
@@ -798,19 +837,19 @@ export function ProductSalesTrendsDashboard() {
                     <TrendingDown className="size-4 text-rose-600 dark:text-rose-400" />
                     <span>Cooling SKU (28-Day Window)</span>
                   </CardDescription>
-                  <CardTitle className="font-heading text-xl break-words leading-tight" title={trends.atRiskProduct?.productName}>
-                    {trends.atRiskProduct ? trends.atRiskProduct.productName : "None"}
+                  <CardTitle className="font-heading text-xl break-words leading-tight" title={visibleTrends.atRiskProduct?.productName}>
+                    {visibleTrends.atRiskProduct ? visibleTrends.atRiskProduct.productName : "None"}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-xs text-muted-foreground">
-                  {trends.atRiskProduct ? (
+                  {visibleTrends.atRiskProduct ? (
                     <>
                       <span className="font-semibold text-rose-600 dark:text-rose-400">
-                        {trends.atRiskProduct.velocityDeltaPct !== null
-                          ? `${trends.atRiskProduct.velocityDeltaPct.toFixed(0)}%`
+                        {visibleTrends.atRiskProduct.velocityDeltaPct !== null
+                          ? `${visibleTrends.atRiskProduct.velocityDeltaPct.toFixed(0)}%`
                           : "Decelerating"}
                       </span>{" "}
-                      velocity vs prior 28d ({trends.atRiskProduct.recentVolume} btls in last 28d vs {trends.atRiskProduct.priorVolume} btls prior)
+                      velocity vs prior 28d ({visibleTrends.atRiskProduct.recentVolume} btls in last 28d vs {visibleTrends.atRiskProduct.priorVolume} btls prior)
                       <span className="mt-1 block text-[11px] text-primary/80">
                         Click for Individual Wine Catalog & Sales Velocities
                       </span>
@@ -1010,7 +1049,7 @@ export function ProductSalesTrendsDashboard() {
                     onClick={handleSelectAll}
                     className="h-7 text-xs"
                   >
-                    Compare All ({trends.totalActiveProducts})
+                    Compare All ({visibleTrends.totalActiveProducts})
                   </Button>
                   {selectedProducts.length > 0 && (
                     <Button
@@ -1576,11 +1615,11 @@ export function ProductSalesTrendsDashboard() {
                   <div className="flex flex-wrap gap-1 pt-1">
                     {(
                       [
-                        { id: "all", label: `All Wines (${trends.totalActiveProducts})` },
+                        { id: "all", label: `All Wines (${visibleTrends.totalActiveProducts})` },
                         {
                           id: "accelerating",
                           label: `🚀 Accelerating (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
-                            trends.productSummaries.filter((s) =>
+                            visibleProductSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "accelerating"
                                 : s.trajectory === "accelerating",
@@ -1590,7 +1629,7 @@ export function ProductSalesTrendsDashboard() {
                         {
                           id: "steady",
                           label: `Steady (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
-                            trends.productSummaries.filter((s) =>
+                            visibleProductSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "steady"
                                 : s.trajectory === "steady",
@@ -1600,7 +1639,7 @@ export function ProductSalesTrendsDashboard() {
                         {
                           id: "decelerating",
                           label: `📉 Decelerating (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
-                            trends.productSummaries.filter((s) =>
+                            visibleProductSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "decelerating"
                                 : s.trajectory === "decelerating",
@@ -1610,7 +1649,7 @@ export function ProductSalesTrendsDashboard() {
                         {
                           id: "new",
                           label: `🆕 New Wines (<${trajectoryScope === "3m" ? "90d" : "60d"}: ${
-                            trends.productSummaries.filter((s) =>
+                            visibleProductSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "new"
                                 : s.trajectory === "new",
@@ -1620,7 +1659,7 @@ export function ProductSalesTrendsDashboard() {
                         {
                           id: "dormant",
                           label: `⏸️ Dormant (>${trajectoryScope === "3m" ? "90d" : "60d"}: ${
-                            trends.productSummaries.filter((s) =>
+                            visibleProductSummaries.filter((s) =>
                               trajectoryScope === "3m"
                                 ? s.quarterlyTrajectory === "dormant"
                                 : s.trajectory === "dormant",
@@ -1882,17 +1921,23 @@ export function ProductSalesTrendsDashboard() {
                                 {formatDate(summary.lastOrderDate)}
                               </TableCell>
                               <TableCell className="py-2.5 px-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                <Button
-                                  size="xs"
-                                  variant="ghost"
-                                  className="h-6 px-2 text-xs text-primary font-medium hover:bg-primary/10"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedDetailProduct(summary);
-                                  }}
-                                >
-                                  View
-                                </Button>
+                                <div className="flex flex-col items-end gap-1">
+                                  <Button
+                                    size="xs"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs text-primary font-medium hover:bg-primary/10"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedDetailProduct(summary);
+                                    }}
+                                  >
+                                    View
+                                  </Button>
+                                  <ExcludeProductOutOfStockButton
+                                    productName={summary.productName}
+                                    onExcluded={handleProductExcludedFromLists}
+                                  />
+                                </div>
                               </TableCell>
                             </TableRow>
                           );
@@ -1901,6 +1946,12 @@ export function ProductSalesTrendsDashboard() {
                     </TableBody>
                   </Table>
                 </div>
+                <ExcludedProductsPanel
+                  className="mx-4 mb-4 mt-3"
+                  onRestore={(productName) =>
+                    flash(`Restored ${productName} to wine lists.`)
+                  }
+                />
               </div>
             </Card>
           </>
@@ -2000,6 +2051,13 @@ export function ProductSalesTrendsDashboard() {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
+                    <ExcludeProductOutOfStockButton
+                      productName={selectedDetailProduct.productName}
+                      onExcluded={(productName) => {
+                        handleProductExcludedFromLists(productName);
+                        setSelectedDetailProduct(null);
+                      }}
+                    />
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-muted-foreground font-medium">28d Velocity:</span>
                       <TrajectoryPill trajectory={selectedDetailProduct.trajectory} showWindow />
@@ -2198,6 +2256,7 @@ export function ProductSalesTrendsDashboard() {
         onOpenChange={setNotificationSidebarOpen}
         alerts={frequencyAlerts}
         productAlerts={productAlerts}
+        accountVisitLookup={accountVisitLookup}
         defaultCategory="products"
         onSelectAccount={() => {
           setNotificationSidebarOpen(false);
@@ -2232,6 +2291,7 @@ export function ProductSalesTrendsDashboard() {
         alerts={detectedProductAlerts}
         repFilter={repFilter}
         asOf={state.analysisAsOf ?? snapshot.asOf}
+        accountVisitLookup={accountVisitLookup}
         onMessage={flash}
       />
     </div>

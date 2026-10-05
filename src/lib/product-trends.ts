@@ -470,34 +470,42 @@ export function buildProductTrendData({
   const activeMonths = Math.max(1, timePoints.length);
   const avgMonthlyBottles = Math.round(totalBottles / activeMonths);
 
-  // Top performer (highest overall bottle volume)
+  const highlights = deriveProductTrendHighlights(allSummaries);
+
+  return {
+    data: timePoints,
+    productSummaries: allSummaries,
+    allProductsSorted,
+    totalBottles,
+    peakPeriod,
+    avgMonthlyBottles,
+    ...highlights,
+  };
+}
+
+export function deriveProductTrendHighlights(allSummaries: ProductSummary[]) {
   const topPerformer = allSummaries[0] || null;
 
-  // Top growing (highest positive velocity delta with at least 4 bottles recent)
   const growingSummaries = allSummaries
     .filter((s) => s.trajectory === "accelerating" && s.recentVolume >= 4)
     .sort((a, b) => (b.velocityDeltaPct ?? 0) - (a.velocityDeltaPct ?? 0));
   const topGrowing = growingSummaries[0] || null;
 
-  // At risk (decelerating with prior history)
   const deceleratingSummaries = allSummaries
     .filter((s) => s.trajectory === "decelerating" && s.priorVolume >= 4)
     .sort((a, b) => (a.velocityDeltaPct ?? 0) - (b.velocityDeltaPct ?? 0));
   const atRiskProduct = deceleratingSummaries[0] || null;
 
-  // Top growing quarterly (highest positive 3-month pace delta with at least 6 bottles in last 3M)
   const growingQuarterlySummaries = allSummaries
     .filter((s) => s.quarterlyTrajectory === "accelerating" && s.paceLast3Months >= 6)
     .sort((a, b) => (b.quarterlyPaceDeltaPct ?? 0) - (a.quarterlyPaceDeltaPct ?? 0));
   const topGrowingQuarterly = growingQuarterlySummaries[0] || null;
 
-  // Cooling quarterly (steepest negative 3-month pace delta with at least 6 bottles in prior 3M)
   const coolingQuarterlySummaries = allSummaries
     .filter((s) => s.quarterlyTrajectory === "decelerating" && s.pacePrior3Months >= 6)
     .sort((a, b) => (a.quarterlyPaceDeltaPct ?? 0) - (b.quarterlyPaceDeltaPct ?? 0));
   const coolingQuarterly = coolingQuarterlySummaries[0] || null;
 
-  // Portfolio-wide 3-month pace
   const portfolioPaceLast3Months = allSummaries.reduce((acc, s) => acc + s.paceLast3Months, 0);
   const portfolioPacePrior3Months = allSummaries.reduce((acc, s) => acc + s.pacePrior3Months, 0);
   let portfolioQuarterlyPaceDeltaPct: number | null = null;
@@ -510,11 +518,7 @@ export function buildProductTrendData({
   }
 
   return {
-    data: timePoints,
-    productSummaries: allSummaries,
-    allProductsSorted,
     totalActiveProducts: allSummaries.length,
-    totalBottles,
     topPerformer,
     topGrowing,
     atRiskProduct,
@@ -523,8 +527,6 @@ export function buildProductTrendData({
     portfolioPaceLast3Months,
     portfolioPacePrior3Months,
     portfolioQuarterlyPaceDeltaPct,
-    peakPeriod,
-    avgMonthlyBottles,
   };
 }
 

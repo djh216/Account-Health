@@ -2,6 +2,11 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, formatNumber } from "./format";
 import type { ProductSlowingAlert } from "./product-trends";
+import { buildExportCsvFilename, buildExportPdfFilename } from "./pdf-filename";
+import {
+  formatPdfLastVisitFromLookup,
+  type PdfAccountVisitLookup,
+} from "./pdf-account-visit";
 
 const MARGIN_X = 12;
 const BURGUNDY: [number, number, number] = [120, 28, 48];
@@ -12,6 +17,7 @@ export type ProductSlowdownPdfInput = {
   asOf: string;
   generatedAt: string;
   alerts: ProductSlowingAlert[];
+  accountVisitLookup?: PdfAccountVisitLookup;
 };
 
 function repLabel(repFilter: string): string {
@@ -29,13 +35,27 @@ function severityLabel(severity: ProductSlowingAlert["severity"]): string {
   }
 }
 
-function alertRow(alert: ProductSlowingAlert): (string | number)[] {
+function atRiskAccountsCell(
+  alert: ProductSlowingAlert,
+  accountVisitLookup?: PdfAccountVisitLookup,
+): string {
+  if (alert.topAtRiskAccounts.length === 0) return "Historical buyer accounts";
+  return alert.topAtRiskAccounts
+    .map((name) => {
+      const visit = formatPdfLastVisitFromLookup(accountVisitLookup, undefined, name);
+      if (visit === "—") return name;
+      return `${name}\nLast visit: ${visit.replace("\n", " ")}`;
+    })
+    .join("\n\n");
+}
+
+function alertRow(
+  alert: ProductSlowingAlert,
+  accountVisitLookup?: PdfAccountVisitLookup,
+): (string | number)[] {
   const productCell = `${alert.productName}\n${alert.accountCount} active account(s)\nLast ordered: ${alert.lastOrderDate ? formatDate(alert.lastOrderDate) : "—"}`;
   const volumeCell = `Last Month: ${formatNumber(alert.recentVolume28d)} btls\nPrior Month: ${formatNumber(alert.priorVolume28d)} btls\nDrop: -${formatNumber(alert.volumeDropBtls)} btls (-${alert.dropPercentage}%)`;
-  const accountsCell =
-    alert.topAtRiskAccounts.length > 0
-      ? alert.topAtRiskAccounts.join("\n")
-      : "Historical buyer accounts";
+  const accountsCell = atRiskAccountsCell(alert, accountVisitLookup);
   const actionCell = `${alert.recommendation}\n"${alert.message}"`;
 
   return [
@@ -118,7 +138,9 @@ export function downloadProductSlowdownPdf(input: ProductSlowdownPdfInput): void
   });
 
   // Main Slowdown Table
-  const tableData = input.alerts.map(alertRow);
+  const tableData = input.alerts.map((alert) =>
+    alertRow(alert, input.accountVisitLookup),
+  );
 
   autoTable(doc, {
     startY: 40,
@@ -127,7 +149,7 @@ export function downloadProductSlowdownPdf(input: ProductSlowdownPdfInput): void
         "SEVERITY",
         "WINE PRODUCT SKU & PLACEMENTS",
         "MONTHLY VS PRIOR MONTH VOLUME",
-        "TOP ACCOUNTS AT RISK",
+        "TOP ACCOUNTS AT RISK (LAST VISIT)",
         "ANALYSIS & RECOMMENDED ACTION",
       ],
     ],
@@ -191,14 +213,8 @@ export function downloadProductSlowdownPdf(input: ProductSlowdownPdfInput): void
     },
   });
 
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  const filename = `cellar-pulse-product-slowdown-report-${repSlug}-${stamp}.pdf`;
-
-  doc.save(filename);
+  doc.save(buildExportPdfFilename(input.repFilter, "product-slowdown-report", stamp));
 }
 
 export function downloadProductSlowdownCsv(input: ProductSlowdownPdfInput): void {
@@ -238,13 +254,9 @@ export function downloadProductSlowdownCsv(input: ProductSlowdownPdfInput): void
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
   a.href = url;
-  a.download = `cellar-pulse-product-slowdown-report-${repSlug}-${stamp}.csv`;
+  a.download = buildExportCsvFilename(input.repFilter, "product-slowdown-report", stamp);
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

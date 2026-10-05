@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
+import { closedBusinessAccountId } from "@/lib/closed-business-accounts";
 import {
   Table,
   TableBody,
@@ -44,7 +46,7 @@ import {
   formatPct,
   todayIso,
 } from "@/lib/format";
-import { downloadImminentChurnPdf } from "@/lib/report-export";
+import { downloadImminentChurnPdf, type PdfAccountVisitLookup } from "@/lib/report-export";
 import { territoryTierLabel } from "@/lib/territory-value";
 import { cn } from "@/lib/utils";
 import {
@@ -126,11 +128,13 @@ export function VolumeProjectionChurnPanel({
   onSelectAccount,
   repFilter = "all",
   asOf,
+  accountVisitLookup,
 }: {
   summary: PortfolioProjectionSummary;
   onSelectAccount?: (accountName: string) => void;
   repFilter?: string;
   asOf?: string;
+  accountVisitLookup?: PdfAccountVisitLookup;
 }) {
   const searchInputId = useId();
   const [horizon, setHorizon] = useState<ProjectionHorizon>(30);
@@ -181,8 +185,8 @@ export function VolumeProjectionChurnPanel({
     return sortProjectionRows(list, sort.column, sort.direction);
   }, [summary.accounts, churnFilter, searchQuery, sort]);
 
-  // User-removed accounts from the Imminent Churn Intervention report
-  const [removedAccountNames, setRemovedAccountNames] = useState<string[]>([]);
+  const { ids: closedAccountIds, mark: markAccountClosed, restore: restoreClosedAccount } =
+    useClosedBusinessAccounts();
   const [lastRemovedAccount, setLastRemovedAccount] = useState<string | null>(null);
 
   // All high churn accounts identified by the model
@@ -191,34 +195,48 @@ export function VolumeProjectionChurnPanel({
     [summary.accounts],
   );
 
-  // High Churn Accounts for quick intervention callouts (excluding any removed accounts)
+  const removedHighChurnAccountNames = useMemo(
+    () =>
+      rawHighChurnAccounts
+        .filter((account) =>
+          closedAccountIds.has(closedBusinessAccountId(account.accountName)),
+        )
+        .map((account) => account.accountName),
+    [rawHighChurnAccounts, closedAccountIds],
+  );
+
+  // High Churn Accounts for quick intervention callouts (excluding closed businesses)
   const imminentChurnAccounts = useMemo(
-    () => rawHighChurnAccounts.filter((a) => !removedAccountNames.includes(a.accountName)),
-    [rawHighChurnAccounts, removedAccountNames],
+    () =>
+      rawHighChurnAccounts.filter(
+        (account) =>
+          !closedAccountIds.has(closedBusinessAccountId(account.accountName)),
+      ),
+    [rawHighChurnAccounts, closedAccountIds],
   );
 
   function handleRemoveAccount(accountName: string) {
-    setRemovedAccountNames((prev) =>
-      prev.includes(accountName) ? prev : [...prev, accountName],
-    );
+    markAccountClosed({ accountName });
     setLastRemovedAccount(accountName);
-    setExportFeedback(`Removed "${accountName}" from the report.`);
+    setExportFeedback(`Removed "${accountName}" (closed business) from lists and this report.`);
     setTimeout(() => {
       setExportFeedback((current) => (current?.includes(`"${accountName}"`) ? null : current));
     }, 4500);
   }
 
   function handleResetRemoved() {
-    setRemovedAccountNames([]);
+    for (const accountName of removedHighChurnAccountNames) {
+      restoreClosedAccount(closedBusinessAccountId(accountName));
+    }
     setLastRemovedAccount(null);
-    setExportFeedback("Restored all removed accounts to the report.");
+    setExportFeedback("Restored removed high-churn accounts to the report.");
     setTimeout(() => setExportFeedback(null), 3500);
   }
 
   function handleUndoLastRemove() {
     if (!lastRemovedAccount) return;
     const restoredName = lastRemovedAccount;
-    setRemovedAccountNames((prev) => prev.filter((name) => name !== restoredName));
+    restoreClosedAccount(closedBusinessAccountId(restoredName));
     setLastRemovedAccount(null);
     setExportFeedback(`Restored "${restoredName}" to the report.`);
     setTimeout(() => setExportFeedback(null), 3500);
@@ -234,6 +252,7 @@ export function VolumeProjectionChurnPanel({
         asOf: asOf ?? todayIso(),
         generatedAt: new Date().toISOString(),
         accounts: imminentChurnAccounts,
+        accountVisitLookup,
       });
       setExportFeedback("Printable Churn Action Plan PDF downloaded.");
       setTimeout(() => setExportFeedback(null), 4500);
@@ -329,7 +348,7 @@ export function VolumeProjectionChurnPanel({
                   <ShieldAlert className="size-5 shrink-0" />
                   <CardTitle className="font-heading text-lg">
                     Imminent Churn Intervention Required ({imminentChurnAccounts.length} accounts
-                    {removedAccountNames.length > 0 ? `, ${removedAccountNames.length} removed` : ""})
+                    {removedHighChurnAccountNames.length > 0 ? `, ${removedHighChurnAccountNames.length} removed` : ""})
                   </CardTitle>
                 </div>
                 <CardDescription className="text-xs text-rose-950/80 dark:text-rose-300/80">
@@ -339,7 +358,7 @@ export function VolumeProjectionChurnPanel({
                 </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {removedAccountNames.length > 0 ? (
+                {removedHighChurnAccountNames.length > 0 ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -349,7 +368,7 @@ export function VolumeProjectionChurnPanel({
                     title="Restore all removed accounts to this report"
                   >
                     <RotateCcw className="size-3.5" data-icon="inline-start" />
-                    <span>Reset Removed ({removedAccountNames.length})</span>
+                    <span>Reset Removed ({removedHighChurnAccountNames.length})</span>
                   </Button>
                 ) : null}
 
@@ -379,7 +398,7 @@ export function VolumeProjectionChurnPanel({
             {exportFeedback ? (
               <div className="mt-2 flex items-center justify-between rounded-md bg-white/90 px-2.5 py-1.5 text-[11px] font-medium text-rose-950 border border-rose-200 shadow-2xs dark:bg-card dark:border-rose-900 dark:text-rose-200">
                 <span>{exportFeedback}</span>
-                {lastRemovedAccount && removedAccountNames.includes(lastRemovedAccount) ? (
+                {lastRemovedAccount && removedHighChurnAccountNames.includes(lastRemovedAccount) ? (
                   <button
                     type="button"
                     onClick={handleUndoLastRemove}

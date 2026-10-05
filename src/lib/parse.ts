@@ -60,6 +60,8 @@ export const ACCOUNT_ALIASES = [
   "shipto",
   "acct",
   "acct name",
+  "account contact name",
+  "contact name",
   "account desc",
   "account description",
   "establishment",
@@ -221,6 +223,9 @@ export const DATE_ALIASES = [
   "call date",
   "activity date",
   "activity_date",
+  "created date",
+  "created at",
+  "created", // Outfield activity export: date of this stop
   "date",
 ];
 
@@ -275,6 +280,7 @@ export const COUNTY_ALIASES = ["county"];
 export const REGION_ALIASES = ["region", "territory", "area", "division"];
 
 export const REP_ALIASES = [
+  "name of team member",
   "lead team member",
   "lead team member name",
   "lead team",
@@ -322,6 +328,19 @@ export const OUTCOME_ALIASES = [
   "rep notes",
 ];
 
+export const VISIT_DURATION_ALIASES = [
+  "duration minutes",
+  "duration (minutes)",
+  "duration mins",
+  "duration",
+  "minutes",
+  "time spent",
+  "time on site",
+  "visit duration",
+  "meeting duration",
+  "call duration",
+];
+
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -344,6 +363,35 @@ function isRepLikeHeader(headerKey: string): boolean {
   );
 }
 
+/** Outfield / CRM exports: "Type (Check In, Meeting, …)" — visit outcome, not account license type. */
+function isCrmActivityTypeHeader(headerKey: string): boolean {
+  return (
+    /^type\b/.test(headerKey) &&
+    /(check in|meeting|phone call|phone|email|text message|note|task)/.test(headerKey)
+  );
+}
+
+function findCrmActivityTypeColumn(headers: (string | undefined | null)[]): string | undefined {
+  for (const header of headers) {
+    if (!header?.trim()) continue;
+    if (isCrmActivityTypeHeader(normalizeHeader(header))) return header;
+  }
+  return undefined;
+}
+
+function headersExcludingCrmActivityType(
+  headers: (string | undefined | null)[],
+): string[] {
+  return headers
+    .filter((h): h is string => Boolean(h && String(h).trim().length > 0))
+    .filter((h) => !isCrmActivityTypeHeader(normalizeHeader(h)));
+}
+
+/** Outfield "Ordered? (Places)" and similar — not order dates or volume. */
+export function isDisregardedUploadHeader(headerKey: string): boolean {
+  return /^ordered\b/.test(headerKey) && /(places|place)/.test(headerKey);
+}
+
 function findHeader(
   headers: (string | undefined | null)[],
   aliases: string[],
@@ -357,12 +405,12 @@ function findHeader(
     .filter((h): h is string => Boolean(h && String(h).trim().length > 0))
     .filter((h) => !excludeSet.has(h));
 
-  const normalized = cleanHeaders.map((header) => ({
-    original: header,
-    key: normalizeHeader(header),
-  }));
-
-  const filteredNormalized = normalized;
+  const filteredNormalized = cleanHeaders
+    .map((header) => ({
+      original: header,
+      key: normalizeHeader(header),
+    }))
+    .filter((item) => !isDisregardedUploadHeader(item.key));
 
   // 1. Exact match (highest priority)
   for (const alias of aliases) {
@@ -502,6 +550,24 @@ export function parseNumber(value: string | number | undefined | null): number {
   return isParenNegative ? -Math.abs(parsed) : parsed;
 }
 
+export function parseDurationMinutes(value: string | undefined | null): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = String(value).trim();
+  if (!trimmed) return undefined;
+  const parsed = parseNumber(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.round(parsed);
+}
+
+function visitDurationFromRow(
+  row: Record<string, string>,
+  mapping: ColumnMapping,
+): number | undefined {
+  const col = mapping.visitDuration;
+  if (!col) return undefined;
+  return parseDurationMinutes(row[col]);
+}
+
 export function parseDate(value: string | undefined | null): string | null {
   if (!value) return null;
   const trimmed = String(value).trim();
@@ -593,6 +659,43 @@ export function isSnapshotShape(
   return lastOrderHits > 0 || lastVisitHits > 0;
 }
 
+export function isActivityLogShape(
+  mapping: ColumnMapping,
+  rows: Record<string, string>[],
+  fileNameLower: string,
+): boolean {
+  if (!mapping.account || !mapping.date) return false;
+  if (mapping.lastOrderDate && !mapping.lastVisitDate && !mapping.visitDuration) {
+    return false;
+  }
+  const productHits = countMappedValues(rows, mapping.product, (v) => v.trim().length > 0);
+  const volumeHits = countMappedValues(rows, mapping.cases, (v) => parseNumber(v) > 0);
+  if (productHits > 0 || volumeHits > 0) return false;
+
+  if (mapping.visitDuration) return true;
+  if (/(activity|visit|call|stop|meeting|interaction|outfield)/i.test(fileNameLower)) {
+    return true;
+  }
+  if (mapping.outcome) {
+    const col = mapping.outcome;
+    const activityHits = rows
+      .slice(0, 80)
+      .filter((row) =>
+        /check in|meeting|phone call|text message|email|note|task/i.test(row[col] ?? ""),
+      ).length;
+    if (activityHits >= 3) return true;
+  }
+  if (
+    mapping.outcome &&
+    !mapping.product &&
+    !mapping.cases &&
+    countMappedValues(rows, mapping.date, (v) => Boolean(parseDate(v))) > 0
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function detectKind(
   fileName: string,
   mapping: ColumnMapping,
@@ -625,12 +728,8 @@ export function detectKind(
     return "snapshot";
   }
 
-  // Visit log / visit history
-  if (
-    /(visit|call|activity|stop|meeting|interaction)/i.test(lower) ||
-    (mapping.lastVisitDate && !mapping.lastOrderDate && !mapping.product) ||
-    (mapping.outcome && !mapping.product && !mapping.cases)
-  ) {
+  // Visit log / visit history (Outfield activity: Created + duration/type, no SKU volume)
+  if (isActivityLogShape(mapping, rows, lower)) {
     return "visits";
   }
 
@@ -662,6 +761,9 @@ export function detectMapping(headers: string[]): ColumnMapping {
   const date = findHeader(headers, DATE_ALIASES, {
     excludeColumns: [lastOrderDate, lastVisitDate],
   });
+  const accountTypeHeaders = headersExcludingCrmActivityType(headers);
+  const outcome =
+    findHeader(headers, OUTCOME_ALIASES) ?? findCrmActivityTypeColumn(headers);
 
   return {
     account,
@@ -670,15 +772,43 @@ export function detectMapping(headers: string[]): ColumnMapping {
     date,
     cases: findHeader(headers, CASES_ALIASES),
     skuCount: findHeader(headers, SKU_ALIASES),
-    type: findHeader(headers, TYPE_ALIASES),
+    type: findHeader(accountTypeHeaders, TYPE_ALIASES),
     licenseNumber: findHeader(headers, LICENSE_ALIASES),
     city: findHeader(headers, CITY_ALIASES),
     county: findHeader(headers, COUNTY_ALIASES),
     region: findHeader(headers, REGION_ALIASES),
     tier: findHeader(headers, TIER_ALIASES),
     salesRep: findHeader(headers, REP_ALIASES),
-    outcome: findHeader(headers, OUTCOME_ALIASES),
+    outcome,
     product: findHeader(headers, PRODUCT_ALIASES),
+    visitDuration: findHeader(headers, VISIT_DURATION_ALIASES),
+  };
+}
+
+/** Outfield / CRM activity logs: `Created` is the date of that stop (not “last visit” summary). */
+function visitStopDateColumn(headers: string[]): string | undefined {
+  for (const header of headers) {
+    if (!header?.trim()) continue;
+    const key = normalizeHeader(header);
+    if (key === "created" || key === "created date" || key === "created at") {
+      return header;
+    }
+  }
+  return undefined;
+}
+
+function applyVisitLogDateMapping(
+  kind: ReportKind,
+  headers: string[],
+  mapping: ColumnMapping,
+): ColumnMapping {
+  if (kind !== "visits") return mapping;
+  const stopDate = visitStopDateColumn(headers) ?? mapping.date;
+  if (!stopDate) return mapping;
+  return {
+    ...mapping,
+    date: stopDate,
+    lastVisitDate: mapping.lastVisitDate === stopDate ? undefined : mapping.lastVisitDate,
   };
 }
 
@@ -687,8 +817,12 @@ export function finalizeParse(
   headers: string[],
   rows: Record<string, string>[],
 ): ParseResult {
-  const mapping = detectMapping(headers);
-  const kind = detectKind(fileName, mapping, rows);
+  const baseMapping = detectMapping(headers);
+  let kind = detectKind(fileName, baseMapping, rows);
+  if (isActivityLogShape(baseMapping, rows, fileName.toLowerCase())) {
+    kind = "visits";
+  }
+  const mapping = applyVisitLogDateMapping(kind, headers, baseMapping);
   const warnings: string[] = [];
 
   if (!mapping.account) {
@@ -703,8 +837,10 @@ export function finalizeParse(
       warnings.push("Map date or last order date for order history.");
     }
   } else if (kind === "visits") {
-    if (!mapping.date && !mapping.lastVisitDate) {
-      warnings.push("Map date or last visit date for visit records.");
+    if (!mapping.date) {
+      warnings.push(
+        "Map visit date — one date per row (Outfield activity exports: use the Created column).",
+      );
     }
   }
 
@@ -779,6 +915,78 @@ function upsertAccount(
   return next;
 }
 
+function pushSnapshotLastVisitFromRow(
+  account: Account,
+  row: Record<string, string>,
+  mapping: ColumnMapping,
+  visits: Visit[],
+  repFromFile?: string,
+): void {
+  const lastVisit = parseDate(
+    row[mapping.lastVisitDate ?? ""] ||
+      (mapping.date && !mapping.lastOrderDate ? row[mapping.date] : ""),
+  );
+  if (!lastVisit) return;
+  visits.push({
+    id: `${account.id}-last-visit`,
+    accountId: account.id,
+    accountName: account.name,
+    date: lastVisit,
+    salesRep: account.salesRep ?? repFromFile,
+    outcome: row[mapping.outcome ?? ""]?.trim() || "Last recorded visit",
+    durationMinutes: visitDurationFromRow(row, mapping),
+  });
+}
+
+/** True when this upload carries per-account last visit dates (snapshot / combined export), not a dense visit log. */
+export function shouldIndexUploadLastVisits(result: ParseResult): boolean {
+  if (result.kind === "snapshot") return true;
+  if (!result.mapping.lastVisitDate) return false;
+  if (isSnapshotShape(result.mapping, result.rows)) return true;
+  if (result.kind === "orders" || result.kind === "accounts") {
+    return (
+      countMappedValues(result.rows, result.mapping.lastVisitDate, (v) => Boolean(parseDate(v))) > 0
+    );
+  }
+  return false;
+}
+
+export function extractUploadLastVisitsFromParseResult(
+  result: ParseResult,
+): Array<{ accountId: string; accountName: string; date: string }> {
+  if (!shouldIndexUploadLastVisits(result)) return [];
+
+  const accounts = new Map<string, Account>();
+  const byAccountId = new Map<string, { accountId: string; accountName: string; date: string }>();
+  const { mapping, rows } = result;
+
+  rows.forEach((row, index) => {
+    const account = upsertAccount(accounts, row, mapping, index);
+    if (!account) return;
+
+    const parsed = parseDate(
+      row[mapping.lastVisitDate ?? ""] ||
+        (result.kind === "visits" && mapping.date && !mapping.lastVisitDate
+          ? row[mapping.date]
+          : "") ||
+        (mapping.date && !mapping.lastOrderDate ? row[mapping.date] : ""),
+    );
+    if (!parsed) return;
+
+    const date = parsed.slice(0, 10);
+    const existing = byAccountId.get(account.id);
+    if (!existing || date > existing.date) {
+      byAccountId.set(account.id, {
+        accountId: account.id,
+        accountName: account.name,
+        date,
+      });
+    }
+  });
+
+  return [...byAccountId.values()];
+}
+
 export function rowsToRecords(
   result: ParseResult,
 ): { accounts: Account[]; orders: Order[]; visits: Visit[] } {
@@ -786,6 +994,9 @@ export function rowsToRecords(
   const orders: Order[] = [];
   const visits: Visit[] = [];
   const { mapping, kind, rows, fileName } = result;
+  const fileLower = fileName.toLowerCase();
+  const effectiveKind =
+    kind === "orders" && isActivityLogShape(mapping, rows, fileLower) ? "visits" : kind;
   const repFromFile = salesRepFromFileName(fileName);
 
   rows.forEach((row, index) => {
@@ -796,7 +1007,7 @@ export function rowsToRecords(
       account.salesRep = repFromFile;
     }
 
-    if (kind === "snapshot") {
+    if (effectiveKind === "snapshot") {
       const lastOrder = parseDate(
         row[mapping.lastOrderDate ?? ""] ||
           (mapping.date && !mapping.lastVisitDate ? row[mapping.date] : ""),
@@ -811,43 +1022,32 @@ export function rowsToRecords(
           product: row[mapping.product ?? ""]?.trim() || undefined,
         });
       }
-      const lastVisit = parseDate(
-        row[mapping.lastVisitDate ?? ""] ||
-          (mapping.date && !mapping.lastOrderDate ? row[mapping.date] : ""),
-      );
-      if (lastVisit) {
-        visits.push({
-          id: `${account.id}-last-visit`,
-          accountId: account.id,
-          accountName: account.name,
-          date: lastVisit,
-          salesRep: account.salesRep ?? repFromFile,
-          outcome: row[mapping.outcome ?? ""]?.trim() || "Last recorded visit",
-        });
-      }
+      pushSnapshotLastVisitFromRow(account, row, mapping, visits, repFromFile);
       return;
     }
 
-    if (kind === "orders") {
+    if (effectiveKind === "orders") {
       const date = parseDate(row[mapping.date ?? ""] || row[mapping.lastOrderDate ?? ""]);
-      if (!date) return;
-      const product = row[mapping.product ?? ""]?.trim() || undefined;
-      const cases = parseNumber(row[mapping.cases ?? ""]);
-      const isSnapshotOrder = !product && cases === 0;
-      orders.push({
-        id: isSnapshotOrder
-          ? `${account.id}-last-order`
-          : `${account.id}-${date}-${index}-${slugify(product ?? "line")}`,
-        accountId: account.id,
-        accountName: account.name,
-        date,
-        cases,
-        skuCount: mapping.skuCount ? parseNumber(row[mapping.skuCount]) : undefined,
-        product,
-      });
+      if (date) {
+        const product = row[mapping.product ?? ""]?.trim() || undefined;
+        const cases = parseNumber(row[mapping.cases ?? ""]);
+        const isSnapshotOrder = !product && cases === 0;
+        orders.push({
+          id: isSnapshotOrder
+            ? `${account.id}-last-order`
+            : `${account.id}-${date}-${index}-${slugify(product ?? "line")}`,
+          accountId: account.id,
+          accountName: account.name,
+          date,
+          cases,
+          skuCount: mapping.skuCount ? parseNumber(row[mapping.skuCount]) : undefined,
+          product,
+        });
+      }
+      pushSnapshotLastVisitFromRow(account, row, mapping, visits, repFromFile);
     }
 
-    if (kind === "visits") {
+    if (effectiveKind === "visits") {
       const date = parseDate(row[mapping.date ?? ""] || row[mapping.lastVisitDate ?? ""]);
       if (!date) return;
       const outcome = row[mapping.outcome ?? ""]?.trim() || undefined;
@@ -859,6 +1059,7 @@ export function rowsToRecords(
         date,
         salesRep: row[mapping.salesRep ?? ""]?.trim() || account.salesRep || repFromFile,
         outcome: outcome || "Recorded visit",
+        durationMinutes: visitDurationFromRow(row, mapping),
       });
     }
   });
@@ -909,19 +1110,35 @@ export function mergeOrders(current: Order[], incoming: Order[]): Order[] {
   return [...byId.values()];
 }
 
+function visitDedupeKey(visit: Visit): string {
+  return `${visit.accountId}|${visit.date}|${visit.outcome ?? ""}`;
+}
+
 export function mergeVisits(current: Visit[], incoming: Visit[]): Visit[] {
   const byId = new Map(current.map((visit) => [visit.id, visit]));
-  const seen = new Set(
-    current.map((visit) => `${visit.accountId}|${visit.date}|${visit.outcome ?? ""}`),
+  const byDedupeKey = new Map(
+    [...byId.values()].map((visit) => [visitDedupeKey(visit), visit.id]),
   );
+
   for (const visit of incoming) {
     if (visit.id.endsWith("-last-visit")) {
       byId.set(visit.id, visit);
       continue;
     }
-    const key = `${visit.accountId}|${visit.date}|${visit.outcome ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const key = visitDedupeKey(visit);
+    const existingId = byDedupeKey.get(key);
+    if (existingId) {
+      const existing = byId.get(existingId);
+      if (existing && (visit.durationMinutes ?? 0) > 0) {
+        byId.set(existingId, {
+          ...existing,
+          durationMinutes: visit.durationMinutes ?? existing.durationMinutes,
+          salesRep: visit.salesRep ?? existing.salesRep,
+        });
+      }
+      continue;
+    }
+    byDedupeKey.set(key, visit.id);
     byId.set(visit.id, visit);
   }
   return [...byId.values()];

@@ -2,6 +2,11 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, formatMoney, formatNumber } from "./format";
 import type { RestaurantOrderFrequency, RestaurantVolumeRow } from "./order-analytics";
+import { buildExportPdfFilename } from "./pdf-filename";
+import {
+  formatPdfLastVisitFromLookup,
+  type PdfAccountVisitLookup,
+} from "./pdf-account-visit";
 
 const MARGIN_X = 12;
 const BURGUNDY: [number, number, number] = [120, 28, 48];
@@ -15,6 +20,7 @@ export type OrderAnalyticsPdfInput = {
   topRestaurants?: RestaurantVolumeRow[];
   totalOrders: number;
   totalBottles: number;
+  accountVisitLookup?: PdfAccountVisitLookup;
 };
 
 function repLabel(repFilter: string): string {
@@ -41,7 +47,10 @@ function frequencyStatus(row: RestaurantOrderFrequency): {
   return { label: "ON TRACK", color: [22, 101, 52] };
 }
 
-function restaurantRow(row: RestaurantOrderFrequency): (string | number)[] {
+function restaurantRow(
+  row: RestaurantOrderFrequency,
+  accountVisitLookup?: PdfAccountVisitLookup,
+): (string | number)[] {
   const status = frequencyStatus(row);
   const typCadence = row.avgDaysBetweenOrders
     ? `${Math.round(row.avgDaysBetweenOrders)}d`
@@ -54,6 +63,7 @@ function restaurantRow(row: RestaurantOrderFrequency): (string | number)[] {
     row.accountName,
     status.label,
     formatDate(row.lastOrderDate),
+    formatPdfLastVisitFromLookup(accountVisitLookup, undefined, row.accountName),
     `${row.daysSinceLastOrder}d`,
     typCadence,
     pace,
@@ -142,7 +152,9 @@ export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
     return b.totalVolume - a.totalVolume;
   });
 
-  const tableBody = sorted.map(restaurantRow);
+  const tableBody = sorted.map((row) =>
+    restaurantRow(row, input.accountVisitLookup),
+  );
 
   autoTable(doc, {
     startY: 38,
@@ -152,6 +164,7 @@ export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
         "Restaurant / Account",
         "Cadence Status",
         "Last Order",
+        "Last Visit",
         "Days Elapsed",
         "Typical Cadence",
         "Order Pace",
@@ -163,7 +176,7 @@ export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
     body:
       tableBody.length > 0
         ? tableBody
-        : [["No restaurant order data available", "", "", "", "", "", "", "", ""]],
+        : [["No restaurant order data available", "", "", "", "", "", "", "", "", ""]],
     theme: "grid",
     headStyles: {
       fillColor: [241, 245, 249],
@@ -182,15 +195,16 @@ export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
       fillColor: [250, 250, 252],
     },
     columnStyles: {
-      0: { cellWidth: 62 },
-      1: { cellWidth: 26, fontStyle: "bold" },
-      2: { cellWidth: 24 },
-      3: { cellWidth: 22, halign: "right" },
-      4: { cellWidth: 25, halign: "right" },
+      0: { cellWidth: 54 },
+      1: { cellWidth: 24, fontStyle: "bold" },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 22 },
+      4: { cellWidth: 20, halign: "right" },
       5: { cellWidth: 22, halign: "right" },
-      6: { cellWidth: 16, halign: "right" },
-      7: { cellWidth: 18, halign: "right" },
-      8: { cellWidth: 28, halign: "right", fontStyle: "bold" },
+      6: { cellWidth: 20, halign: "right" },
+      7: { cellWidth: 14, halign: "right" },
+      8: { cellWidth: 16, halign: "right" },
+      9: { cellWidth: 26, halign: "right", fontStyle: "bold" },
     },
   });
 
@@ -211,10 +225,6 @@ export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
     });
   }
 
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(`cellar-pulse-order-analytics-${repSlug}-${stamp}.pdf`);
+  doc.save(buildExportPdfFilename(input.repFilter, "order-analytics", stamp));
 }

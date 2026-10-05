@@ -2,6 +2,12 @@ import type { AccountHealth, FocusHorizon } from "./types";
 import type { AccountFrequencyAlert } from "./frequency-alerts";
 import type { RestaurantOrderFrequency, RestaurantVolumeRow } from "./order-analytics";
 import type { ProductSummary, ProductSlowingAlert } from "./product-trends";
+import { buildExportPdfFilename } from "./pdf-filename";
+import type { PdfAccountVisitLookup } from "./pdf-account-visit";
+export {
+  buildPdfAccountVisitLookup,
+  type PdfAccountVisitLookup,
+} from "./pdf-account-visit";
 
 export type FocusHealthPdfInput = {
   repFilter: string;
@@ -16,6 +22,7 @@ export type FrequencyAlertsPdfInput = {
   asOf: string;
   generatedAt: string;
   alerts: AccountFrequencyAlert[];
+  accountVisitLookup?: PdfAccountVisitLookup;
 };
 
 export type OrderAnalyticsPdfInput = {
@@ -26,6 +33,7 @@ export type OrderAnalyticsPdfInput = {
   topRestaurants?: RestaurantVolumeRow[];
   totalOrders: number;
   totalBottles: number;
+  accountVisitLookup?: PdfAccountVisitLookup;
 };
 
 export type ProductTrendsPdfInput = {
@@ -35,6 +43,7 @@ export type ProductTrendsPdfInput = {
   products: ProductSummary[];
   slowingAlerts?: ProductSlowingAlert[];
   totalBottles: number;
+  accountVisitLookup?: PdfAccountVisitLookup;
 };
 
 export { downloadFocusHealthPdf } from "./generate-focus-health-pdf";
@@ -60,10 +69,6 @@ export type { RepActionPlan } from "./rep-action-plans";
 export { buildRepActionPlans } from "./rep-action-plans";
 
 export function frequencyAlertsReportFilename(input: FrequencyAlertsPdfInput): string {
-  const repSlug =
-    input.repFilter === "all"
-      ? "all-reps"
-      : input.repFilter.replace(/[^\w.-]+/g, "-").slice(0, 40);
   const stamp = input.generatedAt.slice(0, 10);
-  return `cellar-pulse-frequency-drop-alerts-${repSlug}-${stamp}.pdf`;
+  return buildExportPdfFilename(input.repFilter, "frequency-drop-alerts", stamp);
 }

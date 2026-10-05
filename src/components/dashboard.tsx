@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  CheckCircle2,
   Grape,
   Search,
   Sparkles,
@@ -16,6 +17,7 @@ import {
 import { AccountListDialog } from "@/components/account-list-dialog";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { ClearDataButton } from "@/components/clear-data-button";
+import { HealthScoreExplainer } from "@/components/health-score-explainer";
 import { ExportReportButton } from "@/components/export-report-button";
 import { PrintReportButton } from "@/components/print-report-button";
 import { RepActionPlanExportButton } from "@/components/rep-action-plan-export-button";
@@ -59,6 +61,8 @@ import {
   NEW_ACCOUNT_WINDOW_DAYS,
 } from "@/lib/order-analytics";
 import { RISK_AT_RISK_MIN_DAYS } from "@/lib/order-cadence";
+import { FREQUENCY_DROP_RECENT_CLEARANCE_DAYS } from "@/lib/frequency-drop-roster";
+import { buildPdfAccountVisitLookup } from "@/lib/report-export";
 import {
   focusAccountsByHorizon,
   listAccountsByRecentVolume,
@@ -131,6 +135,8 @@ export function Dashboard() {
     enrichedAccounts,
     productTrends,
     frequencyAlerts,
+    frequencyDropRecentClearances,
+    frequencyDropRecentClearanceCount,
     productAlerts,
     newAccounts,
   } = useFilteredPortfolio();
@@ -158,6 +164,23 @@ export function Dashboard() {
 
   const totalAlertsCount = frequencyAlerts.length + productAlerts.length;
   const totalCriticalAlertsCount = criticalAlertsCount + criticalProductAlertsCount;
+
+  const accountVisitLookup = useMemo(
+    () => buildPdfAccountVisitLookup(enrichedAccounts),
+    [enrichedAccounts],
+  );
+
+  const frequencyDropClearedAccounts = useMemo(() => {
+    if (frequencyDropRecentClearances.length === 0) return [];
+    const clearanceIds = new Set(frequencyDropRecentClearances.map((entry) => entry.id));
+    return enrichedAccounts.filter((health) => {
+      const primaryId = health.account.id || normalizeName(health.account.name);
+      return (
+        clearanceIds.has(primaryId) ||
+        clearanceIds.has(normalizeName(health.account.name))
+      );
+    });
+  }, [enrichedAccounts, frequencyDropRecentClearances]);
 
   const territoryByTier = useMemo(
     () => accountsByTerritoryTier(enrichedAccounts),
@@ -400,6 +423,9 @@ export function Dashboard() {
                     <p className="text-xs text-amber-900/80 dark:text-amber-300/80 mt-0.5">
                       {criticalAlertsCount > 0 ? `${criticalAlertsCount} critical rate drops. ` : ""}
                       Purchasing cadence has stalled or dropped significantly below typical schedule.
+                      {frequencyDropRecentClearanceCount > 0
+                        ? ` ${frequencyDropRecentClearanceCount} account${frequencyDropRecentClearanceCount === 1 ? "" : "s"} recently cleared this report (last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days).`
+                        : ""}
                     </p>
                   </div>
                 </div>
@@ -414,8 +440,23 @@ export function Dashboard() {
               </div>
             ) : null}
 
+            {frequencyAlerts.length === 0 &&
+            frequencyDropRecentClearanceCount > 0 &&
+            state.orders.length > 0 ? (
+              <div className="rounded-xl border border-emerald-300/80 bg-emerald-50/70 p-4 text-emerald-950 dark:border-emerald-800/80 dark:bg-emerald-950/20 dark:text-emerald-100">
+                <p className="font-semibold text-sm">
+                  {frequencyDropRecentClearanceCount} account
+                  {frequencyDropRecentClearanceCount === 1 ? "" : "s"} recently off the frequency drop report
+                </p>
+                <p className="text-xs text-emerald-900/80 dark:text-emerald-200/80 mt-0.5">
+                  Cadence recovered in the last {FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days. See the{" "}
+                  <span className="font-medium">Off frequency report</span> KPI for the list.
+                </p>
+              </div>
+            ) : null}
+
             <section
-              className={`grid gap-3 sm:grid-cols-2 ${state.orders.length > 0 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}
+              className={`grid gap-3 sm:grid-cols-2 ${state.orders.length > 0 ? "xl:grid-cols-6" : "xl:grid-cols-4"}`}
             >
               <Kpi
                 label="Accounts scored"
@@ -441,6 +482,22 @@ export function Dashboard() {
                       description: `First order in the last ${NEW_ACCOUNT_WINDOW_DAYS} days with no order history before that window.`,
                       accounts: newAccountHealthRows,
                       emptyMessage: `No new accounts with orders in the last ${NEW_ACCOUNT_WINDOW_DAYS} days.`,
+                    })
+                  }
+                />
+              ) : null}
+              {state.orders.length > 0 ? (
+                <Kpi
+                  label="Off frequency report"
+                  value={String(frequencyDropRecentClearanceCount)}
+                  hint={`Cadence recovered — left the drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days · Click to view`}
+                  tone="success"
+                  onClick={() =>
+                    openAccountList({
+                      title: "Off order frequency drop report",
+                      description: `These accounts were on the frequency drop report recently and no longer qualify based on the latest order cadence (last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days).`,
+                      accounts: frequencyDropClearedAccounts,
+                      emptyMessage: `No accounts have cleared the frequency drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days yet.`,
                     })
                   }
                 />
@@ -714,6 +771,7 @@ export function Dashboard() {
       <NotificationSidebar
         alerts={frequencyAlerts}
         productAlerts={productAlerts}
+        accountVisitLookup={accountVisitLookup}
         open={notificationSidebarOpen}
         onOpenChange={setNotificationSidebarOpen}
         onSelectAccount={(accountName, accountId) => {
@@ -790,9 +848,12 @@ function RiskAccountsBox({
                   {item.territoryTier ? (
                     <TerritoryValueBadge tier={item.territoryTier} />
                   ) : null}
-                  <span className="text-sm tabular-nums text-muted-foreground">
-                    {item.score}
-                  </span>
+                  <HealthScoreExplainer
+                    score={item.score}
+                    change={item.scoreChange14d}
+                    reasons={item.scoreChange14dReasons}
+                    className="text-sm text-muted-foreground"
+                  />
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -978,7 +1039,7 @@ function Kpi({
   label: string;
   value: string;
   hint: string;
-  tone?: "danger";
+  tone?: "danger" | "success";
   onClick?: () => void;
 }) {
   const body = (
@@ -986,6 +1047,9 @@ function Kpi({
       <CardHeader>
         <CardDescription className="flex items-center gap-1.5">
           {tone === "danger" ? <AlertTriangle className="size-3.5" /> : null}
+          {tone === "success" ? (
+            <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+          ) : null}
           {label}
         </CardDescription>
         <CardTitle className="font-heading text-2xl">{value}</CardTitle>

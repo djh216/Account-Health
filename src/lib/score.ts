@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, parseISO, subDays } from "date-fns";
+import { differenceInCalendarDays, format, parseISO, subDays } from "date-fns";
 import { clamp, normalizeName, todayIso } from "./format";
 import {
   averageOrdersPerMonthFromOrderDates,
@@ -10,7 +10,26 @@ import {
 import { orderCadenceStatus, riskFromOrderCadence, daysPastTypicalFrequency, RISK_AT_RISK_MIN_DAYS, RISK_HEALTHY_GRACE_DAYS } from "./order-cadence";
 import { ANALYTICS_PERIOD_DAYS } from "./order-analytics";
 import { buildOrderIndex, ordersForAccount, type OrderIndex } from "./order-index";
-import { buildVisitIndex, visitsForAccount, type VisitIndex } from "./visit-index";
+import {
+  buildVisitIndex,
+  latestVisitByDate,
+  visitsForAccount,
+  visitsForLastVisitScoring,
+  type VisitIndex,
+} from "./visit-index";
+import {
+  DEFAULT_VISIT_CYCLE_DAYS,
+  typicalVisitIntervalDays,
+  visitCadenceRecencyScore,
+  visitCadenceStatus,
+} from "./visit-cadence";
+import {
+  visitDurationEngagementScore,
+  visitDurationStats,
+} from "./visit-duration";
+import { explainHealthScoreChange } from "./health-score-change";
+
+const OVERDUE_VISIT_DAYS = DEFAULT_VISIT_CYCLE_DAYS;
 import { orderEventCountFromOrders, uniqueOrderWeekAnchorDates } from "./order-weeks";
 import type {
   Account,
@@ -27,8 +46,9 @@ import type {
 } from "./types";
 
 const ORDER_CYCLE_DAYS = 28;
-const VISIT_CYCLE_DAYS = 28;
-export const OVERDUE_VISIT_DAYS = VISIT_CYCLE_DAYS;
+/** Compare current health score to score as of this many days ago (activity + orders). */
+export const HEALTH_SCORE_CHANGE_DAYS = 14;
+export { DEFAULT_VISIT_CYCLE_DAYS as OVERDUE_VISIT_DAYS } from "./visit-cadence"; // re-export for dashboard KPIs
 
 function toDate(iso: string): Date {
   return parseISO(iso.slice(0, 10));
@@ -119,38 +139,35 @@ function trendScore(
   };
 }
 
-function coverageScore(
+function visitCadenceCoverageScore(
   daysSinceVisit: number | null,
+  visitIntervalDays: number,
   visitCount90: number,
   visitsWithoutOrder: number,
   snapshotMode: boolean,
 ): { score: number; detail: string } {
-  if (daysSinceVisit === null) {
-    return {
-      score: 18,
-      detail: "No last visit date. We cannot tell if a rep has been in.",
-    };
+  const cadence = visitCadenceRecencyScore(daysSinceVisit, visitIntervalDays);
+  const expectedVisits90 = Math.max(1, Math.round(90 / visitIntervalDays));
+  let pacePenalty = 0;
+  if (daysSinceVisit !== null && visitCount90 < expectedVisits90 * 0.5) {
+    pacePenalty = visitCount90 === 0 ? 18 : 10;
   }
-  const recency =
-    daysSinceVisit <= VISIT_CYCLE_DAYS
-      ? 94
-      : daysSinceVisit <= 40
-        ? 70
-        : daysSinceVisit <= 56
-          ? 46
-          : daysSinceVisit <= 84
-            ? 24
-            : 8;
   const missRate = visitCount90 === 0 ? 0 : visitsWithoutOrder / visitCount90;
   const conversionPenalty =
     snapshotMode ? 0 : missRate >= 0.67 ? 22 : missRate >= 0.4 ? 12 : 0;
-  const score = clamp(recency - conversionPenalty);
-  const visitNote = `Last sales-rep visit ${daysSinceVisit} days ago.`;
+  const score = clamp(cadence.score - conversionPenalty - pacePenalty);
+  const paceNote =
+    daysSinceVisit !== null
+      ? ` ${visitCount90} visit${visitCount90 === 1 ? "" : "s"} in 90 days (typical cadence ~every ${visitIntervalDays}d, ~${expectedVisits90} stops).`
+      : "";
   const missNote =
     !snapshotMode && visitsWithoutOrder > 0
-      ? ` ${visitsWithoutOrder} visit${visitsWithoutOrder === 1 ? "" : "s"} in the last 90 days did not convert to an order.`
+      ? ` ${visitsWithoutOrder} recent visit${visitsWithoutOrder === 1 ? "" : "s"} did not convert to an order.`
       : "";
-  return { score, detail: `${visitNote}${missNote}` };
+  return {
+    score,
+    detail: `${cadence.detail}${paceNote}${missNote}`.trim(),
+  };
 }
 
 function bottleVolume(order: Order): number {
@@ -252,7 +269,7 @@ function relationshipScore(
       detail: "There is a last order, but no sales-rep visit is recorded.",
     };
   }
-  if (daysSinceOrder <= 21 && daysSinceVisit <= VISIT_CYCLE_DAYS) {
+  if (daysSinceOrder <= 21 && daysSinceVisit <= DEFAULT_VISIT_CYCLE_DAYS) {
     return {
       score: 94,
       detail: "Last order and last visit are both current.",
@@ -288,6 +305,7 @@ function buildFocus(input: {
   mode: ScoreMode;
   daysSinceOrder: number | null;
   interval: number | null;
+  visitInterval: number;
   delta: number | null;
   daysSinceVisit: number | null;
   visitsWithoutOrder: number;
@@ -300,6 +318,7 @@ function buildFocus(input: {
     mode,
     daysSinceOrder,
     interval,
+    visitInterval,
     delta,
     daysSinceVisit,
     visitsWithoutOrder,
@@ -311,7 +330,8 @@ function buildFocus(input: {
 
   const daysPast = daysPastTypicalFrequency(daysSinceOrder, interval);
   const orderStale = daysPast !== null && daysPast >= RISK_AT_RISK_MIN_DAYS;
-  const visitStale = daysSinceVisit !== null && daysSinceVisit >= 40;
+  const visitDaysPast = daysPastTypicalFrequency(daysSinceVisit, visitInterval);
+  const visitStale = visitDaysPast !== null && visitDaysPast >= RISK_AT_RISK_MIN_DAYS;
   const visitedWithoutWrite =
     daysSinceOrder !== null &&
     daysSinceVisit !== null &&
@@ -334,7 +354,7 @@ function buildFocus(input: {
     };
   }
 
-  if (orderStale && daysSinceVisit !== null && daysSinceVisit <= 21) {
+  if (orderStale && visitDaysPast !== null && visitDaysPast <= 0) {
     return {
       title: `Write ${name} this week`,
       reason: `Someone was just in, but the last order is ${daysSinceOrder} days old.`,
@@ -477,13 +497,20 @@ export function assignFocusHorizonByRank(rankIndex: number): FocusHorizon | null
   return null;
 }
 
-export function isOverdueVisit(daysSinceVisit: number | null): boolean {
-  return daysSinceVisit !== null && daysSinceVisit > OVERDUE_VISIT_DAYS;
+export function isOverdueVisit(
+  daysSinceVisit: number | null,
+  visitIntervalDays?: number | null,
+): boolean {
+  const interval = visitIntervalDays ?? OVERDUE_VISIT_DAYS;
+  const daysPast = daysPastTypicalFrequency(daysSinceVisit, interval);
+  return daysPast !== null && daysPast >= RISK_AT_RISK_MIN_DAYS;
 }
 
 export function listOverdueVisitAccounts(accounts: AccountHealth[]): AccountHealth[] {
   return accounts
-    .filter((item) => isOverdueVisit(item.daysSinceVisit))
+    .filter((item) =>
+      isOverdueVisit(item.daysSinceVisit, item.typicalVisitIntervalDays),
+    )
     .sort(
       (a, b) =>
         (b.daysSinceVisit ?? 0) - (a.daysSinceVisit ?? 0) ||
@@ -567,10 +594,17 @@ export function scoreAccount(
   const priorStart = subDays(asOfDate, 180);
 
   const accountOrders = ordersForAccount(orderIndex, account);
-  const accountVisits = visitsForAccount(visitIndex, account.id);
+  const accountVisits = visitsForAccount(visitIndex, account);
+  const scoringVisits = visitsForLastVisitScoring(accountVisits);
+  const ordersThroughAsOf = accountOrders.filter(
+    (order) => toDate(order.date) <= asOfDate,
+  );
+  const visitsThroughAsOf = scoringVisits.filter(
+    (visit) => toDate(visit.date) <= asOfDate,
+  );
 
-  const lastOrder = accountOrders.at(-1) ?? null;
-  const lastVisit = accountVisits.at(-1) ?? null;
+  const lastOrder = ordersThroughAsOf.at(-1) ?? null;
+  const lastVisit = latestVisitByDate(visitsThroughAsOf);
   const daysSinceOrder = lastOrder
     ? differenceInCalendarDays(asOfDate, toDate(lastOrder.date))
     : null;
@@ -578,32 +612,38 @@ export function scoreAccount(
     ? differenceInCalendarDays(asOfDate, toDate(lastVisit.date))
     : null;
 
-  const recentOrders = accountOrders.filter(
+  const recentOrders = ordersThroughAsOf.filter(
     (order) => toDate(order.date) >= windowStart && toDate(order.date) <= asOfDate,
   );
-  const priorOrders = accountOrders.filter((order) => {
+  const priorOrders = ordersThroughAsOf.filter((order) => {
     const date = toDate(order.date);
     return date >= priorStart && date < windowStart;
   });
-  const recentVisits = accountVisits.filter(
+  const recentVisits = visitsThroughAsOf.filter(
     (visit) => toDate(visit.date) >= windowStart && toDate(visit.date) <= asOfDate,
   );
 
   const volume90 = recentOrders.reduce((sum, order) => sum + bottleVolume(order), 0);
   const volumePrior90 = priorOrders.reduce((sum, order) => sum + bottleVolume(order), 0);
   const cases90 = recentOrders.reduce((sum, order) => sum + order.cases, 0);
-  const cadenceOrderDates = accountOrders
+  const cadenceOrderDates = ordersThroughAsOf
     .filter((order) => Boolean(order.product?.trim()))
     .map((order) => order.date);
   const interval = typicalInterval(cadenceOrderDates, asOf);
+  const visitInterval = typicalVisitIntervalDays(
+    visitsThroughAsOf.map((visit) => visit.date),
+    asOf,
+  );
   const snapshotMode =
-    accountOrders.length <= 1 ||
-    !accountOrders.some((order) => bottleVolume(order) > 0 || Boolean(order.product?.trim()));
-  const hasOrderHistory = uniqueOrderWeekAnchorDates(accountOrders).length > 1;
+    ordersThroughAsOf.length <= 1 ||
+    !ordersThroughAsOf.some(
+      (order) => bottleVolume(order) > 0 || Boolean(order.product?.trim()),
+    );
+  const hasOrderHistory = uniqueOrderWeekAnchorDates(ordersThroughAsOf).length > 1;
 
   const visitsWithoutOrder = recentVisits.filter((visit) => {
     const visitDate = toDate(visit.date);
-    return !accountOrders.some((order) => {
+    return !ordersThroughAsOf.some((order) => {
       const orderDate = toDate(order.date);
       const gap = differenceInCalendarDays(orderDate, visitDate);
       return gap >= 0 && gap <= 14;
@@ -612,7 +652,7 @@ export function scoreAccount(
 
   const periodStart = subDays(asOfDate, ANALYTICS_PERIOD_DAYS);
   const priorPeriodStart = subDays(asOfDate, ANALYTICS_PERIOD_DAYS * 2);
-  const historyOrders = accountOrders.filter((order) => Boolean(order.product?.trim()));
+  const historyOrders = ordersThroughAsOf.filter((order) => Boolean(order.product?.trim()));
   const periodOrders = historyOrders.filter((order) => {
     const date = toDate(order.date);
     return date >= periodStart && date <= asOfDate;
@@ -627,12 +667,20 @@ export function scoreAccount(
     0,
   );
   const recency = recencyScore(daysSinceOrder, interval);
-  const coverage = coverageScore(
+  const durationStats = visitDurationStats(recentVisits);
+  const visitCadenceFactor = visitCadenceCoverageScore(
     daysSinceVisit,
+    visitInterval,
     recentVisits.length,
     visitsWithoutOrder,
     snapshotMode,
   );
+  const timeOnSiteFactor = visitDurationEngagementScore(recentVisits);
+  const visitCadence = visitCadenceStatus({
+    daysSinceVisit,
+    lastVisitDate: lastVisit?.date ?? null,
+    visitIntervalDays: visitInterval,
+  });
   const trend = trendScore(volume90, volumePrior90);
   const volumeChange = volumeChangeScore(
     periodVolume,
@@ -660,10 +708,17 @@ export function scoreAccount(
         },
         {
           key: "coverage",
-          label: "Last visit",
-          score: coverage.score,
-          weight: 0.35,
-          detail: coverage.detail,
+          label: "Visit cadence",
+          score: visitCadenceFactor.score,
+          weight: 0.25,
+          detail: visitCadenceFactor.detail,
+        },
+        {
+          key: "consistency",
+          label: "Time on site",
+          score: timeOnSiteFactor.score,
+          weight: 0.1,
+          detail: timeOnSiteFactor.detail,
         },
         {
           key: "relationship",
@@ -699,22 +754,29 @@ export function scoreAccount(
           key: "trend",
           label: "Volume change",
           score: volumeChange.score,
-          weight: 0.15,
+          weight: 0.1,
           detail: volumeChange.detail,
         },
         {
           key: "frequency",
           label: "Order frequency change",
           score: frequencyChange.score,
-          weight: 0.15,
+          weight: 0.12,
           detail: frequencyChange.detail,
         },
         {
           key: "coverage",
-          label: "Visit coverage",
-          score: coverage.score,
+          label: "Visit cadence",
+          score: visitCadenceFactor.score,
           weight: 0.1,
-          detail: coverage.detail,
+          detail: visitCadenceFactor.detail,
+        },
+        {
+          key: "consistency",
+          label: "Time on site",
+          score: timeOnSiteFactor.score,
+          weight: 0.08,
+          detail: timeOnSiteFactor.detail,
         },
       ];
 
@@ -732,12 +794,23 @@ export function scoreAccount(
     lastOrderDate: lastOrder?.date ?? null,
     intervalDays: cadenceInterval,
   });
+  const trailing14Start = subDays(asOfDate, HEALTH_SCORE_CHANGE_DAYS);
+  const recentOrders14d = ordersThroughAsOf.filter((order) => {
+    const date = toDate(order.date);
+    return date > trailing14Start && date <= asOfDate;
+  }).length;
+  const recentVisits14d = visitsThroughAsOf.filter((visit) => {
+    const date = toDate(visit.date);
+    return date > trailing14Start && date <= asOfDate;
+  }).length;
+
   const focus = buildFocus({
     name: account.name,
     risk,
     mode,
     daysSinceOrder,
     interval: cadenceInterval,
+    visitInterval,
     delta: trend.delta,
     daysSinceVisit,
     visitsWithoutOrder,
@@ -765,6 +838,14 @@ export function scoreAccount(
     expectedOrderDate: cadence.expectedOrderDate,
     visitCount90: recentVisits.length,
     visitsWithoutOrder,
+    typicalVisitIntervalDays: visitCadence.typicalVisitIntervalDays,
+    visitCadenceOverdue: visitCadence.visitCadenceOverdue,
+    visitCadenceDaysOverdue: visitCadence.visitCadenceDaysOverdue,
+    expectedVisitDate: visitCadence.expectedVisitDate,
+    avgVisitDurationMinutes90: durationStats.avgMinutes,
+    lastVisitDurationMinutes: durationStats.lastVisitMinutes,
+    recentOrders14d,
+    recentVisits14d,
     cases90,
     factors,
     focus,
@@ -800,10 +881,22 @@ export function buildSnapshot(
   const asOf = asOfOverride ?? todayIso();
   const resolvedOrderIndex = orderIndex ?? buildOrderIndex(orders);
   const resolvedVisitIndex = visitIndex ?? buildVisitIndex(visits);
+  const priorAsOf = format(subDays(toDate(asOf), HEALTH_SCORE_CHANGE_DAYS), "yyyy-MM-dd");
   const scored = accounts
-    .map((account) =>
-      scoreAccount(account, resolvedOrderIndex, resolvedVisitIndex, asOf),
-    )
+    .map((account) => {
+      const health = scoreAccount(account, resolvedOrderIndex, resolvedVisitIndex, asOf);
+      const priorHealth = scoreAccount(
+        account,
+        resolvedOrderIndex,
+        resolvedVisitIndex,
+        priorAsOf,
+      );
+      return {
+        ...health,
+        scoreChange14d: health.score - priorHealth.score,
+        scoreChange14dReasons: explainHealthScoreChange(health, priorHealth),
+      };
+    })
     .sort((a, b) => a.score - b.score || (a.daysSinceOrder ?? 999) - (b.daysSinceOrder ?? 999));
 
   const snapshotCount = scored.filter((item) => item.mode === "snapshot").length;

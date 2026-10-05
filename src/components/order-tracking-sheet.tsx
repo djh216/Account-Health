@@ -505,6 +505,9 @@ export function AccountTrackingSummary({
   function exportProductsPdf() {
     downloadAccountProductsPdf({
       accountName: tracking.accountName,
+      salesRep: accountHealth?.account.salesRep,
+      lastVisitDate: accountHealth?.lastVisitDate,
+      daysSinceVisit: accountHealth?.daysSinceVisit,
       asOf: tracking.analysisAsOf,
       generatedAt: new Date().toISOString(),
       products: purchasedProducts.map((row) => ({
