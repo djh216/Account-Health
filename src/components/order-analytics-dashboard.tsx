@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Grape, Upload } from "lucide-react";
 import { AccountListDialog } from "@/components/account-list-dialog";
 import { ClearDataButton } from "@/components/clear-data-button";
-import { ExportReportButton } from "@/components/export-report-button";
 import { PrintReportButton } from "@/components/print-report-button";
 import { AccountTrackingSheet } from "@/components/order-tracking-sheet";
 import {
@@ -16,6 +15,7 @@ import {
   NotificationSidebar,
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
+import { HealthScoreExplainer } from "@/components/health-score-explainer";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -341,6 +341,7 @@ export function OrderAnalyticsDashboard() {
           return {
             ...row,
             healthScore: health?.score ?? null,
+            healthScoreChange14d: health?.scoreChange14d ?? null,
             territoryRank: health?.territoryRank ?? null,
           };
         }),
@@ -438,7 +439,6 @@ export function OrderAnalyticsDashboard() {
                 onClick={() => setNotificationSidebarOpen(true)}
               />
               <PrintReportButton page="orders" onMessage={flash} />
-              <ExportReportButton page="orders" onMessage={flash} />
               <ClearDataButton
                 onCleared={(message) => {
                   setSelectedAccount(null);
@@ -588,19 +588,6 @@ export function OrderAnalyticsDashboard() {
                 }
               />
               <Kpi
-                label="Off frequency report"
-                value={String(frequencyDropRecentClearanceCount)}
-                hint={`Cadence recovered in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days · Click to view`}
-                onClick={() =>
-                  setAccountListDialog({
-                    title: "Off order frequency drop report",
-                    description: `These accounts were on the frequency drop report recently and no longer qualify based on the latest order cadence (last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days).`,
-                    accounts: frequencyDropClearedAccounts,
-                    emptyMessage: `No accounts have cleared the frequency drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days yet.`,
-                  })
-                }
-              />
-              <Kpi
                 label="Retained customers"
                 value={String(retainedAccounts.length)}
                 hint={`Ordered in the last ${NEW_ACCOUNT_WINDOW_DAYS} days and before that · Click to view`}
@@ -738,7 +725,11 @@ export function OrderAnalyticsDashboard() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {sortedAccounts.map((row) => (
+                          {sortedAccounts.map((row) => {
+                            const health = healthByAccountName.get(
+                              normalizeName(row.accountName),
+                            );
+                            return (
                             <TableRow
                               key={row.accountName}
                               className="cursor-pointer"
@@ -749,7 +740,17 @@ export function OrderAnalyticsDashboard() {
                                 {row.territoryRank != null ? `#${row.territoryRank}` : "—"}
                               </TableCell>
                               <TableCell className="text-right font-semibold tabular-nums">
-                                {row.healthScore ?? "—"}
+                                {health ? (
+                                  <HealthScoreExplainer account={health} />
+                                ) : row.healthScore != null ? (
+                                  <HealthScoreExplainer
+                                    score={row.healthScore}
+                                    change={row.healthScoreChange14d}
+                                    accountName={row.accountName}
+                                  />
+                                ) : (
+                                  "—"
+                                )}
                               </TableCell>
                               <TableCell className="tabular-nums">
                                 {formatIntervalDays(row.frequency.avgDaysBetweenOrders)}
@@ -773,7 +774,8 @@ export function OrderAnalyticsDashboard() {
                               </TableCell>
                               <FrequencyDeltaCell value={row.frequencyDeltaDays} />
                             </TableRow>
-                          ))}
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>
@@ -1064,6 +1066,7 @@ export function OrderAnalyticsDashboard() {
                 : imported.accounts.length;
           flash(`Imported ${count} ${result.kind === "orders" ? "order lines" : "records"}.`);
         }}
+        onUploadCleared={flash}
       />
 
       <NotificationSidebar

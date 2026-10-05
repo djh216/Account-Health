@@ -1,16 +1,21 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { FOCUS_SECTIONS } from "./focus-sections";
-import { formatDate, formatHealthScoreChange } from "./format";
+import { formatHealthScoreChange } from "./format";
 import { buildExportPdfFilename } from "./pdf-filename";
-import { formatPdfLastVisitCell } from "./pdf-account-visit";
+import { formatVisitCadencePdfCompact } from "./visit-cadence";
+import {
+  drawPdfTitleBar,
+  PDF_MARGIN_X,
+  PDF_TABLE_BODY,
+  PDF_TABLE_HEAD,
+  stampPdfFooters,
+} from "./pdf-layout";
 import type { RepActionPlan } from "./rep-action-plans";
 import { totalFocusActions } from "./rep-action-plans";
 import type { AccountHealth, FocusHorizon, RiskLevel } from "./types";
 import { territoryTierLabel } from "./territory-value";
 
-const MARGIN_X = 14;
-const BURGUNDY: [number, number, number] = [120, 28, 48];
+const MARGIN_X = PDF_MARGIN_X;
 const TEXT_DARK: [number, number, number] = [30, 41, 59];
 
 export type RepActionPlansPdfInput = {
@@ -21,9 +26,9 @@ export type RepActionPlansPdfInput = {
 };
 
 const HORIZON_PLAN_LABEL: Record<FocusHorizon, string> = {
-  this_week: "Week 1 · Execute this week (≤ 7 days)",
-  two_weeks: "Week 2 · Schedule & prepare (days 8–14)",
-  three_weeks: "Week 3 · Pipeline touchpoints (days 15–21)",
+  this_week: "Week 1 — this week",
+  two_weeks: "Week 2 — next week",
+  three_weeks: "Week 3 — pipeline",
 };
 
 const RISK_SHORT: Record<RiskLevel, string> = {
@@ -33,61 +38,26 @@ const RISK_SHORT: Record<RiskLevel, string> = {
   healthy: "HEALTHY",
 };
 
-function repScopeLabel(repFilter: string, planCount: number): string {
-  if (repFilter !== "all") return `Rep: ${repFilter}`;
-  return planCount === 1 ? `Rep: ${repFilter}` : `All sales reps (${planCount} books)`;
-}
-
 function actionRow(priority: number, item: AccountHealth): (string | number)[] {
   const focus = item.focus;
   const tier = item.territoryTier ? territoryTierLabel(item.territoryTier) : "—";
-  const lastOrder =
-    item.lastOrderDate && item.daysSinceOrder !== null
-      ? `${formatDate(item.lastOrderDate)} (${item.daysSinceOrder}d ago)`
-      : item.lastOrderDate
-        ? formatDate(item.lastOrderDate)
-        : "—";
-  const cadence = item.typicalIntervalDays ? `Every ${item.typicalIntervalDays}d` : "—";
+  const orderLine =
+    item.daysSinceOrder != null
+      ? `${item.daysSinceOrder}d since order${item.typicalIntervalDays ? ` · typ ${item.typicalIntervalDays}d` : ""}`
+      : "—";
+  const cadenceCol = `${orderLine}\n${formatVisitCadencePdfCompact(item)}`;
+  const nextStep = focus
+    ? `${focus.action}${focus.reason ? `\n${focus.reason}` : ""}`
+    : "Confirm next visit and reorder date.";
 
   return [
     priority,
     item.account.name,
     `${RISK_SHORT[item.risk]} · ${tier}`,
     `${item.score}${formatHealthScoreChange(item.scoreChange14d) ?? ""}`,
-    `${lastOrder}\n${cadence}`,
-    formatPdfLastVisitCell(item.lastVisitDate, item.daysSinceVisit),
-    focus?.title ?? `Work ${item.account.name}`,
-    focus?.reason ?? "Priority account on this rep's ranked call plan.",
-    focus?.action ?? "Confirm next visit and reorder date before leaving.",
+    cadenceCol,
+    nextStep,
   ];
-}
-
-function drawDocumentBanner(
-  doc: jsPDF,
-  input: RepActionPlansPdfInput,
-  subtitle: string,
-): number {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  doc.setFillColor(BURGUNDY[0], BURGUNDY[1], BURGUNDY[2]);
-  doc.rect(0, 0, pageWidth, 20, "F");
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text("CELLAR PULSE · REP ACTION PLAN (1 / 2 / 3 WEEK)", MARGIN_X, 12);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.text(
-    `${repScopeLabel(input.repFilter, input.plans.length)}  ·  As of ${formatDate(input.asOf)}  ·  Exported ${input.generatedAt.slice(0, 10)}`,
-    pageWidth - MARGIN_X,
-    9,
-    { align: "right" },
-  );
-  doc.text(subtitle, pageWidth - MARGIN_X, 15, { align: "right" });
-
-  doc.setTextColor(TEXT_DARK[0], TEXT_DARK[1], TEXT_DARK[2]);
-  return 26;
 }
 
 function drawRepHeader(doc: jsPDF, plan: RepActionPlan, startY: number): number {
@@ -101,10 +71,10 @@ function drawRepHeader(doc: jsPDF, plan: RepActionPlan, startY: number): number 
   doc.text(`${plan.repName}`, MARGIN_X + 4, startY + 7);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   const actions = totalFocusActions(plan);
   doc.text(
-    `${plan.accountCount} accounts  ·  ${actions} prioritized actions across 3 weeks`,
+    `${plan.accountCount} accounts · ${actions} actions`,
     pageWidth - MARGIN_X - 4,
     startY + 7,
     { align: "right" },
@@ -119,80 +89,36 @@ function addHorizonTable(
   accounts: AccountHealth[],
   startY: number,
 ): number {
-  const section = FOCUS_SECTIONS.find((s) => s.horizon === horizon);
-
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.setTextColor(BURGUNDY[0], BURGUNDY[1], BURGUNDY[2]);
+  doc.setFontSize(9);
+  doc.setTextColor(120, 28, 48);
   doc.text(HORIZON_PLAN_LABEL[horizon], MARGIN_X, startY);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(100, 116, 139);
-  doc.text(section?.description ?? "", MARGIN_X, startY + 4.5);
 
   const body =
     accounts.length > 0
       ? accounts.map((item, index) => actionRow(index + 1, item))
-      : [["—", "No accounts in this window", "—", "—", "—", "—", "—", "—", "—"]];
+      : [["—", "No accounts in this window", "—", "—", "—", "—"]];
 
   autoTable(doc, {
-    startY: startY + 7,
-    margin: { left: MARGIN_X, right: MARGIN_X, bottom: 14 },
-    head: [
-      [
-        "#",
-        "Account",
-        "Risk · Tier",
-        "Score",
-        "Last order · Cadence",
-        "Last visit",
-        "Action title",
-        "Why now",
-        "Do this",
-      ],
-    ],
+    startY: startY + 4,
+    margin: { left: MARGIN_X, right: MARGIN_X, bottom: 12 },
+    head: [["#", "Account", "Risk · tier", "Score", "Order · visit cadence", "Next step"]],
     body,
     theme: "grid",
-    headStyles: {
-      fillColor: [241, 245, 249],
-      textColor: TEXT_DARK,
-      fontStyle: "bold",
-      fontSize: 7.5,
-      cellPadding: 2,
-    },
-    bodyStyles: {
-      fontSize: 7,
-      textColor: TEXT_DARK,
-      cellPadding: 2,
-      valign: "top",
-    },
+    headStyles: PDF_TABLE_HEAD,
+    bodyStyles: PDF_TABLE_BODY,
     alternateRowStyles: { fillColor: [250, 250, 252] },
     columnStyles: {
       0: { cellWidth: 8, halign: "center", fontStyle: "bold" },
-      1: { cellWidth: 32 },
-      2: { cellWidth: 26, fontStyle: "bold" },
-      3: { cellWidth: 12, halign: "right" },
-      4: { cellWidth: 26 },
-      5: { cellWidth: 22 },
-      6: { cellWidth: 34, fontStyle: "bold" },
-      7: { cellWidth: 38 },
-      8: { cellWidth: 38 },
+      1: { cellWidth: 40 },
+      2: { cellWidth: 28, fontStyle: "bold" },
+      3: { cellWidth: 14, halign: "right" },
+      4: { cellWidth: 44 },
+      5: { cellWidth: "auto" },
     },
     styles: {
       overflow: "linebreak",
       cellWidth: "wrap",
-    },
-    didDrawPage: () => {
-      const pageHeight = doc.internal.pageSize.getHeight();
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(148, 163, 184);
-      doc.text(
-        "Cellar Pulse · Rep weekly action plan · Print and check off as completed",
-        MARGIN_X,
-        pageHeight - 5,
-      );
     },
   });
 
@@ -208,14 +134,26 @@ export function generateRepActionPlansPdfDocument(input: RepActionPlansPdfInput)
     format: "a4",
   });
 
-  const subtitle =
-    "Ranked by risk, territory value, and health score · Top 10 accounts per week";
-  let y = drawDocumentBanner(doc, input, subtitle);
+  let y = drawPdfTitleBar(
+    doc,
+    "Rep action plan (weeks 1–3)",
+    input.repFilter,
+    input.asOf,
+    input.generatedAt,
+  );
+  y += 4;
 
   input.plans.forEach((plan, planIndex) => {
     if (planIndex > 0) {
       doc.addPage();
-      y = drawDocumentBanner(doc, input, `${plan.repName} · weekly playbook`);
+      y = drawPdfTitleBar(
+        doc,
+        `Rep action plan · ${plan.repName}`,
+        input.repFilter,
+        input.asOf,
+        input.generatedAt,
+      );
+      y += 4;
     }
 
     y = drawRepHeader(doc, plan, y);
@@ -231,18 +169,7 @@ export function generateRepActionPlansPdfDocument(input: RepActionPlansPdfInput)
     }
   });
 
-  const totalPages = doc.getNumberOfPages();
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  for (let p = 1; p <= totalPages; p++) {
-    doc.setPage(p);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Page ${p} of ${totalPages}`, pageWidth - MARGIN_X, pageHeight - 5, {
-      align: "right",
-    });
-  }
+  stampPdfFooters(doc, "Action plan", input.asOf);
 
   return doc;
 }

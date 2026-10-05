@@ -47,8 +47,7 @@ export function useFrequencyDropRoster(
       window.removeEventListener(FREQUENCY_DROP_ROSTER_CHANGE_EVENT, apply);
       window.removeEventListener("storage", apply);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- alertSignature captures membership
-  }, [alertSignature, portfolioKey, repFilter, asOf, enabled]);
+  }, [alertSignature, portfolioKey, repFilter, asOf, enabled, alerts]);
 
   return {
     recentClearances,

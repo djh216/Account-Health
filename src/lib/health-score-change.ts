@@ -22,11 +22,13 @@ export function explainHealthScoreChange(
   const priorFactors = factorMap(prior.factors);
 
   if ((current.recentOrders14d ?? 0) > 0) {
-    pushUniqueReason(
-      reasons,
-      3,
-      `${current.recentOrders14d} order${current.recentOrders14d === 1 ? "" : "s"} in the last 14 days.`,
-    );
+    const events = current.recentOrders14d ?? 0;
+    const lines = current.recentOrderLines14d ?? events;
+    const detail =
+      lines > events
+        ? `${events} order event${events === 1 ? "" : "s"} in the last 14 days (${lines} product lines on those dates).`
+        : `${events} order event${events === 1 ? "" : "s"} in the last 14 days.`;
+    pushUniqueReason(reasons, 3, detail);
   }
   if ((current.recentVisits14d ?? 0) > 0) {
     pushUniqueReason(

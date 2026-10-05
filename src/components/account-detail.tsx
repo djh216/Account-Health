@@ -2,6 +2,7 @@
 
 import { HealthScoreChangeReasons } from "@/components/health-score-change-reasons";
 import { HealthScoreExplainer } from "@/components/health-score-explainer";
+import { HealthScoreFactorBar } from "@/components/health-score-factor-bar";
 import { RiskBadge } from "@/components/risk-badge";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { OrderCadenceAlert } from "@/components/order-cadence-alert";
@@ -31,32 +32,6 @@ function focusHorizonLabel(horizon: FocusHorizon): string {
   return "3 weeks out";
 }
 
-function FactorBar({
-  label,
-  score,
-  detail,
-}: {
-  label: string;
-  score: number;
-  detail: string;
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-medium">{label}</span>
-        <span className="text-sm tabular-nums text-muted-foreground">{score}</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${Math.max(4, score)}%` }}
-        />
-      </div>
-      <p className="text-xs leading-snug text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
-
 export function AccountDetail({
   account,
   orderTracking,
@@ -72,7 +47,7 @@ export function AccountDetail({
 
   return (
     <Dialog open={Boolean(account)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100vh-1.5rem)] w-[min(96rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent className="flex max-h-[calc(100vh-1.5rem)] w-[min(112rem,calc(100vw-1rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none md:max-w-none lg:max-w-none">
         {account ? (
           <>
             <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
@@ -83,12 +58,7 @@ export function AccountDetail({
                 ) : null}
                 <span className="text-sm text-muted-foreground">
                   Score{" "}
-                  <HealthScoreExplainer
-                    score={account.score}
-                    change={account.scoreChange14d}
-                    reasons={account.scoreChange14dReasons}
-                    scrollToReasonsId="health-score-change-reasons"
-                  />
+                  <HealthScoreExplainer account={account} />
                   {account.territoryRank
                     ? ` · Territory rank #${account.territoryRank}`
                     : ""}
@@ -108,8 +78,8 @@ export function AccountDetail({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-6 py-5 xl:grid-cols-2 xl:overflow-hidden">
-              <div className="space-y-4 xl:overflow-y-auto xl:pr-1">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-6 py-5 lg:grid-cols-2 lg:overflow-hidden">
+              <div className="space-y-4 lg:overflow-y-auto lg:pr-1">
                 {account.orderCadenceOverdue ? (
                   <OrderCadenceAlert
                     cadence={{
@@ -152,24 +122,7 @@ export function AccountDetail({
                   <Stat
                     label="Last visit"
                     value={formatDays(account.daysSinceVisit)}
-                    hint={
-                      account.lastVisitDate
-                        ? [
-                            formatDate(account.lastVisitDate),
-                            account.typicalVisitIntervalDays
-                              ? `Typical cadence ~every ${account.typicalVisitIntervalDays}d`
-                              : null,
-                            account.visitCadenceOverdue && account.expectedVisitDate
-                              ? `Due for visit by ${formatDate(account.expectedVisitDate)}`
-                              : null,
-                            account.avgVisitDurationMinutes90 != null
-                              ? `Avg ${Math.round(account.avgVisitDurationMinutes90)} min/stop (90d)`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")
-                        : undefined
-                    }
+                    hint={formatDate(account.lastVisitDate)}
                   />
                   {snapshot ? (
                     <>
@@ -244,7 +197,7 @@ export function AccountDetail({
                   <h3 className="font-heading text-lg">Why this score</h3>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {account.factors.map((factor) => (
-                      <FactorBar
+                      <HealthScoreFactorBar
                         key={factor.key}
                         label={factor.label}
                         score={factor.score}
@@ -256,7 +209,7 @@ export function AccountDetail({
               </div>
 
               {orderTracking ? (
-                <div className="space-y-4 xl:overflow-y-auto xl:pl-1">
+                <div className="space-y-4 lg:overflow-y-auto lg:pl-1">
                   <h3 className="font-heading text-lg">Order tracking</h3>
                   <AccountTrackingSummary
                     tracking={orderTracking}
@@ -296,7 +249,7 @@ export function AccountDetail({
                   ) : null}
                 </div>
               ) : (
-                <div className="flex items-center justify-center rounded-xl border border-dashed p-8 text-sm text-muted-foreground xl:min-h-[12rem]">
+                <div className="flex items-center justify-center rounded-xl border border-dashed p-8 text-sm text-muted-foreground lg:min-h-[12rem]">
                   No order history uploaded for this account yet.
                 </div>
               )}

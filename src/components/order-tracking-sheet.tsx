@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Printer } from "lucide-react";
 import { OrderCadenceAlert } from "@/components/order-cadence-alert";
+import { HealthScoreExplainer } from "@/components/health-score-explainer";
 import { RiskBadge } from "@/components/risk-badge";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { Badge } from "@/components/ui/badge";
@@ -121,7 +122,7 @@ export function AccountTrackingSheet({
                     <TerritoryValueBadge tier={accountHealth.territoryTier} />
                   ) : null}
                   <span className="text-sm text-muted-foreground">
-                    Health score {accountHealth.score}
+                    Health score <HealthScoreExplainer account={accountHealth} />
                     {accountHealth.territoryRank
                       ? ` · Territory rank #${accountHealth.territoryRank}`
                       : ""}

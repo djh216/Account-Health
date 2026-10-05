@@ -18,9 +18,7 @@ import { AccountListDialog } from "@/components/account-list-dialog";
 import { TerritoryValueBadge } from "@/components/territory-value-badge";
 import { ClearDataButton } from "@/components/clear-data-button";
 import { HealthScoreExplainer } from "@/components/health-score-explainer";
-import { ExportReportButton } from "@/components/export-report-button";
 import { PrintReportButton } from "@/components/print-report-button";
-import { RepActionPlanExportButton } from "@/components/rep-action-plan-export-button";
 import { RiskBadge } from "@/components/risk-badge";
 import { RepFilterSelect } from "@/components/rep-filter-select";
 import {
@@ -64,7 +62,6 @@ import { RISK_AT_RISK_MIN_DAYS } from "@/lib/order-cadence";
 import { FREQUENCY_DROP_RECENT_CLEARANCE_DAYS } from "@/lib/frequency-drop-roster";
 import { buildPdfAccountVisitLookup } from "@/lib/report-export";
 import {
-  focusAccountsByHorizon,
   listAccountsByRecentVolume,
   listAllScoredAccounts,
   listNeedAttentionAccounts,
@@ -79,6 +76,7 @@ import {
   territoryTierTitle,
 } from "@/lib/territory-value";
 import { FOCUS_SECTIONS } from "@/lib/focus-sections";
+import { focusAccountsByHorizonForActionPlan } from "@/lib/rep-action-plans";
 import { setPortfolio } from "@/lib/portfolio-store";
 import { generateSampleWinePortfolio } from "@/lib/sample-data";
 import type { AccountHealth, RiskLevel, TerritoryValueTier } from "@/lib/types";
@@ -135,7 +133,6 @@ export function Dashboard() {
     enrichedAccounts,
     productTrends,
     frequencyAlerts,
-    frequencyDropRecentClearances,
     frequencyDropRecentClearanceCount,
     productAlerts,
     newAccounts,
@@ -169,18 +166,6 @@ export function Dashboard() {
     () => buildPdfAccountVisitLookup(enrichedAccounts),
     [enrichedAccounts],
   );
-
-  const frequencyDropClearedAccounts = useMemo(() => {
-    if (frequencyDropRecentClearances.length === 0) return [];
-    const clearanceIds = new Set(frequencyDropRecentClearances.map((entry) => entry.id));
-    return enrichedAccounts.filter((health) => {
-      const primaryId = health.account.id || normalizeName(health.account.name);
-      return (
-        clearanceIds.has(primaryId) ||
-        clearanceIds.has(normalizeName(health.account.name))
-      );
-    });
-  }, [enrichedAccounts, frequencyDropRecentClearances]);
 
   const territoryByTier = useMemo(
     () => accountsByTerritoryTier(enrichedAccounts),
@@ -257,7 +242,7 @@ export function Dashboard() {
   }, [accountsByRisk, riskFilter]);
 
   const focusByHorizon = useMemo(
-    () => focusAccountsByHorizon(enrichedAccounts),
+    () => focusAccountsByHorizonForActionPlan(enrichedAccounts),
     [enrichedAccounts],
   );
 
@@ -359,7 +344,6 @@ export function Dashboard() {
                 onClick={() => setNotificationSidebarOpen(true)}
               />
               <PrintReportButton page="health" onMessage={flash} />
-              <ExportReportButton page="health" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
               <Button onClick={() => setUploadOpen(true)}>
                 <Upload data-icon="inline-start" />
@@ -449,14 +433,14 @@ export function Dashboard() {
                   {frequencyDropRecentClearanceCount === 1 ? "" : "s"} recently off the frequency drop report
                 </p>
                 <p className="text-xs text-emerald-900/80 dark:text-emerald-200/80 mt-0.5">
-                  Cadence recovered in the last {FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days. See the{" "}
-                  <span className="font-medium">Off frequency report</span> KPI for the list.
+                  Cadence recovered in the last {FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days — no longer on
+                  the active drop list.
                 </p>
               </div>
             ) : null}
 
             <section
-              className={`grid gap-3 sm:grid-cols-2 ${state.orders.length > 0 ? "xl:grid-cols-6" : "xl:grid-cols-4"}`}
+              className={`grid gap-3 sm:grid-cols-2 ${state.orders.length > 0 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}
             >
               <Kpi
                 label="Accounts scored"
@@ -482,22 +466,6 @@ export function Dashboard() {
                       description: `First order in the last ${NEW_ACCOUNT_WINDOW_DAYS} days with no order history before that window.`,
                       accounts: newAccountHealthRows,
                       emptyMessage: `No new accounts with orders in the last ${NEW_ACCOUNT_WINDOW_DAYS} days.`,
-                    })
-                  }
-                />
-              ) : null}
-              {state.orders.length > 0 ? (
-                <Kpi
-                  label="Off frequency report"
-                  value={String(frequencyDropRecentClearanceCount)}
-                  hint={`Cadence recovered — left the drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days · Click to view`}
-                  tone="success"
-                  onClick={() =>
-                    openAccountList({
-                      title: "Off order frequency drop report",
-                      description: `These accounts were on the frequency drop report recently and no longer qualify based on the latest order cadence (last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days).`,
-                      accounts: frequencyDropClearedAccounts,
-                      emptyMessage: `No accounts have cleared the frequency drop report in the last ${FREQUENCY_DROP_RECENT_CLEARANCE_DAYS} days yet.`,
                     })
                   }
                 />
@@ -546,14 +514,14 @@ export function Dashboard() {
               ) : (
                 <>
                   <Kpi
-                    label="Volume on a weak house"
+                    label="At-risk account volume"
                     value={formatNumber(snapshot.totals.volumeAtRisk)}
-                    hint="Critical and at-risk account volume · Click to view"
+                    hint="Bottles on critical & at-risk accounts (max of last two 90-day windows) · Click to view"
                     onClick={() =>
                       openAccountList({
-                        title: "Volume on a weak house",
+                        title: "At-risk account volume",
                         description:
-                          "Critical and at-risk accounts ranked by the higher of current or prior 90-day volume.",
+                          "Critical and at-risk accounts, ranked by the higher of current or prior 90-day bottle volume.",
                         accounts: volumeAtRiskAccounts,
                         showHistory: true,
                       })
@@ -611,13 +579,12 @@ export function Dashboard() {
                 <div>
                   <h2 className="font-heading text-xl">Weekly action plans</h2>
                   <p className="text-sm text-muted-foreground max-w-2xl">
-                    Top 10 accounts per rep for week 1, week 2, and week 3 — ranked by risk,
-                    territory value, and health score. Export a print-ready PDF with action
-                    titles, reasons, and next steps
-                    {repFilter === "all" ? " for every rep on the book." : ` for ${repFilter}.`}
+                    Top 10 accounts per rep for weeks 1–3 (risk, visit cadence, tier, score).
+                    Use <span className="font-medium text-foreground">Export PDF</span> → Rep
+                    action plan for a print-ready list
+                    {repFilter === "all" ? "." : ` for ${repFilter}.`}
                   </p>
                 </div>
-                <RepActionPlanExportButton onMessage={flash} />
               </div>
               <div className="grid gap-4 lg:grid-cols-3">
               {FOCUS_SECTIONS.map((section) => (
@@ -729,6 +696,7 @@ export function Dashboard() {
             `Imported ${count} ${reportKindLabel(result.kind)} rows from ${result.fileName}. Scores updated.`,
           );
         }}
+        onUploadCleared={flash}
       />
       <AccountDetail
         account={selected}
@@ -849,9 +817,7 @@ function RiskAccountsBox({
                     <TerritoryValueBadge tier={item.territoryTier} />
                   ) : null}
                   <HealthScoreExplainer
-                    score={item.score}
-                    change={item.scoreChange14d}
-                    reasons={item.scoreChange14dReasons}
+                    account={item}
                     className="text-sm text-muted-foreground"
                   />
                 </div>

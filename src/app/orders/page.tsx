@@ -1,13 +1,4 @@
-import dynamic from "next/dynamic";
-import { DashboardPageLoading } from "@/components/page-loading";
-
-const OrderAnalyticsDashboard = dynamic(
-  () =>
-    import("@/components/order-analytics-dashboard").then(
-      (module) => module.OrderAnalyticsDashboard,
-    ),
-  { loading: () => <DashboardPageLoading label="Order analytics" /> },
-);
+import { OrderAnalyticsDashboard } from "@/components/order-analytics-dashboard";
 
 export default function OrdersPage() {
   return <OrderAnalyticsDashboard />;

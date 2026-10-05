@@ -392,6 +392,26 @@ export function isDisregardedUploadHeader(headerKey: string): boolean {
   return /^ordered\b/.test(headerKey) && /(places|place)/.test(headerKey);
 }
 
+/** Outfield activity: `Ordered?` / `Ordered? (Places)` — yes means the account stays on the book. */
+export function findActivityOrderedColumn(headers: string[]): string | undefined {
+  for (const header of headers) {
+    if (!header?.trim()) continue;
+    const key = normalizeHeader(header);
+    if (isDisregardedUploadHeader(key)) return header;
+    if (key === "ordered" || key === "ordered?" || /^ordered\s*\?/.test(key)) {
+      return header;
+    }
+  }
+  return undefined;
+}
+
+export function isAffirmativeOrderedYes(value: string | undefined | null): boolean {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return normalized === "yes" || normalized === "y";
+}
+
 function findHeader(
   headers: (string | undefined | null)[],
   aliases: string[],

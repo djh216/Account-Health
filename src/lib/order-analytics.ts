@@ -154,6 +154,7 @@ export type AccountOrderTracking = {
     before: number | null;
   };
   healthScore?: number | null;
+  healthScoreChange14d?: number | null;
   /** All-time territory value rank (1 = highest volume). */
   territoryRank?: number | null;
 };

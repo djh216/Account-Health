@@ -52,7 +52,7 @@ Use **Order analytics** (`/orders`) for order frequency, individual product trac
 | Sales Rep | Optional |
 | Outcome | Optional |
 
-**Outfield activity export (all reps):** upload the CSV as a single file. Columns map automatically when possible — `Created` → date, `Account/Contact Name` → account, `Name of Team Member` → sales rep, activity `Type` → outcome, `Duration (Minutes)` → time on site. **`Ordered? (Places)` is ignored** Activity stop dates are stored as **visits only**, never as orders (re-import the activity file to clear mistaken order rows on visit days). (not used for scoring or order matching). Confirm report kind **Visit patterns** before import (~one row per stop). Visit import rules ([`visit-rep-remap.ts`](src/lib/visit-rep-remap.ts)): **Alex Cicchitti** → **Jordan Fuller** (all activities); **Gina Terra** check-ins → **Guido Martelli**; **David Hall** check-ins are omitted. **Last visit date** in health scores and PDFs comes from the activity log (latest stop per account), not older snapshot “last visit” columns when both exist ([`visit-index.ts`](src/lib/visit-index.ts)).
+**Outfield activity export (all reps):** upload the CSV as a single file. Columns map automatically when possible — `Created` → date, `Account/Contact Name` → account, `Name of Team Member` → sales rep, activity `Type` → outcome, `Duration (Minutes)` → time on site. **`Ordered?` / `Ordered? (Places)`:** an account must have at least one row with **yes** in that column or it is removed from the book (accounts, orders, and visits) when the file is imported. Activity stop dates are stored as **visits only**, never as orders (re-import the activity file to clear mistaken order rows on visit days). Confirm report kind **Visit patterns** before import (~one row per stop). Visit import rules ([`visit-rep-remap.ts`](src/lib/visit-rep-remap.ts)): **Alex Cicchitti** → **Jordan Fuller** (all activities); **Gina Terra** → **Guido Martelli** (all activities; stored visits and account reps remapped on load); **David Hall** activity is omitted (all visit types); stored books drop his visits and clear him as account rep on load. **Last visit date** in health scores and PDFs comes from the activity log (latest stop per account), not older snapshot “last visit” columns when both exist ([`visit-index.ts`](src/lib/visit-index.ts)).
 
 ### Account master
 
@@ -74,7 +74,7 @@ When full order history is loaded, each account is scored from four weighted fac
 | --- | --- | --- |
 | Order recency | 35% | Days since last order vs the account’s typical buying cycle |
 | Volume trend | 25% | Bottle volume change (last 90 days vs prior 90) |
-| Visit cadence | 10% | Days since last visit vs typical interval, 90-day visit pace, unconverted stops |
+| Visit cadence | 10% | Last visit + 90-day average spacing vs tier policy (Tier 1–2: 14–21d; Tier 3: 21–28d), visit pace, unconverted stops |
 | Time on site | 8% | Avg and last-stop duration (minutes) from activity log (90d) |
 | Order cadence | 20% | Order frequency decline vs expected interval |
 

@@ -93,11 +93,7 @@ export function AccountListDialog({
                         <RiskBadge risk={item.risk} />
                         <span className="text-sm text-muted-foreground font-medium">
                           Score{" "}
-                          <HealthScoreExplainer
-                            score={item.score}
-                            change={item.scoreChange14d}
-                            reasons={item.scoreChange14dReasons}
-                          />
+                          <HealthScoreExplainer account={item} />
                         </span>
                       </div>
                     </div>

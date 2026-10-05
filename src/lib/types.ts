@@ -113,12 +113,18 @@ export type AccountHealth = {
   visitCount90: number;
   visitsWithoutOrder: number;
   typicalVisitIntervalDays?: number;
+  /** Observed median days between visits in the last 90 days. */
+  averageVisitGapDays90?: number | null;
+  visitCadenceTargetMinDays?: number;
+  visitCadenceTargetMaxDays?: number;
   visitCadenceOverdue?: boolean;
   visitCadenceDaysOverdue?: number | null;
   expectedVisitDate?: string | null;
   avgVisitDurationMinutes90?: number | null;
   lastVisitDurationMinutes?: number | null;
+  /** Weekly order events in the trailing 14 days (not raw CSV line count). */
   recentOrders14d?: number;
+  recentOrderLines14d?: number;
   recentVisits14d?: number;
   cases90: number;
   factors: HealthFactor[];

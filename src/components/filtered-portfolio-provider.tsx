@@ -7,13 +7,12 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { DashboardPageLoading } from "@/components/page-loading";
 import { usePortfolio } from "@/hooks/use-portfolio";
+import { hardResetApp } from "@/lib/portfolio-store";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
 import { useFrequencyDropRoster } from "@/hooks/use-frequency-drop-roster";
@@ -22,13 +21,14 @@ import { excludeClosedBusinessAccounts } from "@/lib/closed-business-accounts";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { excludeOutOfStock } from "@/lib/out-of-stock-products";
 import { detectSlowingProductAlerts } from "@/lib/product-trends";
+import { portfolioRosterScopeKey } from "@/lib/frequency-drop-roster";
 import {
+  getPortfolioAnalyticsSessionCache,
+  isRepAnalyticsWarm,
   mergePortfolioAnalytics,
   portfolioStateCacheKey,
-  readPortfolioCoreForFilteredState,
-  readPortfolioHeavyForFilteredState,
+  warmPortfolioAnalyticsForRep,
   type PortfolioAnalyticsBundle,
-  type PortfolioAnalyticsCacheEntry,
   type PortfolioHeavyAnalytics,
 } from "@/lib/portfolio-analytics-bundle";
 import {
@@ -116,18 +116,74 @@ const FilteredPortfolioContext = createContext<FilteredPortfolioContextValue | n
   null,
 );
 
-function warmCoreForRep(
-  cache: Map<string, PortfolioAnalyticsCacheEntry>,
-  repIndex: ReturnType<typeof createRepPortfolioIndex>,
-  rep: string,
-): void {
-  if (cache.get(rep)?.core) return;
-  const slice = portfolioStateForRep(repIndex, rep);
-  readPortfolioCoreForFilteredState(cache, rep, slice);
+function shellPortfolioContext(input: {
+  filteredState: PortfolioState;
+  fullState: PortfolioState;
+  asOf: string;
+  repFilter: string;
+  repFilterPending: boolean;
+  reps: string[];
+  importParseResult: ReturnType<typeof usePortfolio>["importParseResult"];
+  resetAll: () => void;
+}): FilteredPortfolioContextValue {
+  return {
+    state: input.filteredState,
+    fullState: input.fullState,
+    snapshot: {
+      asOf: input.asOf,
+      mode: "snapshot",
+      accounts: [],
+      totals: {
+        accountCount: 0,
+        critical: 0,
+        atRisk: 0,
+        dormant: 0,
+        healthy: 0,
+        overdueOrders: 0,
+        overdueVisits: 0,
+        volume90: 0,
+        volumeAtRisk: 0,
+      },
+    },
+    repFilter: input.repFilter,
+    repFilterPending: input.repFilterPending,
+    setRepFilter,
+    reps: input.reps,
+    importParseResult: input.importParseResult,
+    reset: input.resetAll,
+    orderAnalytics: emptyOrderAnalytics(input.asOf),
+    enrichedAccounts: [],
+    productTrends: {
+      data: [],
+      productSummaries: [],
+      allProductsSorted: [],
+      totalActiveProducts: 0,
+      totalBottles: 0,
+      topPerformer: null,
+      topGrowing: null,
+      atRiskProduct: null,
+      topGrowingQuarterly: null,
+      coolingQuarterly: null,
+      portfolioPaceLast3Months: 0,
+      portfolioPacePrior3Months: 0,
+      portfolioQuarterlyPaceDeltaPct: null,
+      peakPeriod: null,
+      avgMonthlyBottles: 0,
+    },
+    frequencyAlerts: [],
+    frequencyDropRecentClearances: [],
+    frequencyDropRecentClearanceCount: 0,
+    productAlerts: [],
+    projectionsSummary: emptyProjectionsSummary(),
+    newAccounts: [],
+    retainedAccounts: [],
+    returningCustomers: [],
+    lastOrderGaps: new Map(),
+  };
 }
 
 export function FilteredPortfolioProvider({ children }: { children: ReactNode }) {
-  const { state, importParseResult, reset } = usePortfolio();
+  const { state, importParseResult } = usePortfolio();
   const repFilter = useSyncExternalStore(
     subscribeRepFilter,
     getRepFilterSnapshot,
@@ -135,9 +191,6 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   );
   const { ids: outOfStockIds } = useOutOfStockProducts();
   const { ids: closedAccountIds } = useClosedBusinessAccounts();
-
-  const analyticsCacheRef = useRef<Map<string, PortfolioAnalyticsCacheEntry>>(new Map());
-  const analyticsCacheSourceRef = useRef("");
 
   const visibleState = useMemo(
     () => excludeHomeBaseFromPortfolio(state),
@@ -149,10 +202,12 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     [visibleState],
   );
 
-  if (analyticsCacheSourceRef.current !== visibleStateKey) {
-    analyticsCacheRef.current.clear();
-    analyticsCacheSourceRef.current = visibleStateKey;
-  }
+  const rosterPortfolioKey = useMemo(
+    () => portfolioRosterScopeKey(visibleState),
+    [visibleState.accounts],
+  );
+
+  const analyticsCache = getPortfolioAnalyticsSessionCache(visibleStateKey);
 
   const repIndex = useMemo(
     () => createRepPortfolioIndex(visibleState),
@@ -161,98 +216,62 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
 
   const reps = useMemo(() => listSalesReps(visibleState), [visibleState]);
 
-  const [coreEpoch, setCoreEpoch] = useState(0);
-  const [heavyVersion, setHeavyVersion] = useState(0);
-  const repFilterRef = useRef(repFilter);
-  repFilterRef.current = repFilter;
-
+  const [analyticsEpoch, setAnalyticsEpoch] = useState(0);
   const hasPortfolioData = visibleState.accounts.length > 0;
 
+  /** Warm selected rep before paint so rep switches do not flash an empty shell. */
   useLayoutEffect(() => {
-    if (!hasPortfolioData) {
-      setCoreEpoch((epoch) => epoch + 1);
-      return;
-    }
-    const cache = analyticsCacheRef.current;
-    if (cache.get(repFilter)?.core) return;
-    warmCoreForRep(cache, repIndex, repFilter);
-    setCoreEpoch((epoch) => epoch + 1);
-  }, [visibleStateKey, repFilter, repIndex, hasPortfolioData]);
-
-  useEffect(() => {
     if (!hasPortfolioData) return;
-    const cache = analyticsCacheRef.current;
-    if (cache.get("all")?.core) return;
-    warmCoreForRep(cache, repIndex, "all");
-    setCoreEpoch((epoch) => epoch + 1);
-  }, [visibleStateKey, repIndex, hasPortfolioData]);
+    if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
 
-  useEffect(() => {
-    if (!hasPortfolioData) return;
-    const cache = analyticsCacheRef.current;
-    const keys = listRepIndexKeys(repIndex, reps).filter(
-      (key) => !cache.get(key)?.core,
+    warmPortfolioAnalyticsForRep(
+      analyticsCache,
+      repFilter,
+      portfolioStateForRep(repIndex, repFilter),
     );
-    if (keys.length === 0) return;
+    setAnalyticsEpoch((epoch) => epoch + 1);
+  }, [visibleStateKey, repFilter, repIndex, hasPortfolioData, analyticsCache]);
 
+  /** Preload every rep slice in idle time so switching reps hits the session cache. */
+  useEffect(() => {
+    if (!hasPortfolioData) return;
+
+    const repKeys = listRepIndexKeys(repIndex, reps);
     let cancelled = false;
-    let index = 0;
+    let queueIndex = 0;
 
     const warmNext = () => {
-      if (cancelled || index >= keys.length) return;
-      const key = keys[index]!;
-      index += 1;
-      warmCoreForRep(cache, repIndex, key);
-      if (key === repFilterRef.current) {
-        setCoreEpoch((epoch) => epoch + 1);
+      if (cancelled) return;
+
+      while (queueIndex < repKeys.length) {
+        const rep = repKeys[queueIndex];
+        queueIndex += 1;
+        if (isRepAnalyticsWarm(analyticsCache, rep)) continue;
+
+        warmPortfolioAnalyticsForRep(
+          analyticsCache,
+          rep,
+          portfolioStateForRep(repIndex, rep),
+        );
+        setAnalyticsEpoch((epoch) => epoch + 1);
+        break;
       }
+
+      if (cancelled || queueIndex >= repKeys.length) return;
+
       if (typeof requestIdleCallback !== "undefined") {
         requestIdleCallback(warmNext, { timeout: 2_000 });
       } else {
-        window.setTimeout(warmNext, 0);
+        window.setTimeout(warmNext, 32);
       }
     };
 
-    warmNext();
+    const starter = window.setTimeout(warmNext, 120);
     return () => {
       cancelled = true;
+      window.clearTimeout(starter);
     };
-  }, [visibleStateKey, repIndex, reps, hasPortfolioData]);
-
-  useEffect(() => {
-    if (!hasPortfolioData) return;
-    const cache = analyticsCacheRef.current;
-    let cancelled = false;
-    const keys = listRepIndexKeys(repIndex, reps).sort((a, b) => {
-      if (a === repFilterRef.current) return -1;
-      if (b === repFilterRef.current) return 1;
-      if (a === "all") return -1;
-      if (b === "all") return 1;
-      return a.localeCompare(b);
-    });
-
-    const warmNext = (index: number) => {
-      if (cancelled || index >= keys.length) return;
-      const key = keys[index]!;
-      if (!cache.get(key)?.heavy) {
-        const slice = portfolioStateForRep(repIndex, key);
-        readPortfolioHeavyForFilteredState(cache, key, slice);
-        if (key === repFilterRef.current) {
-          setHeavyVersion((version) => version + 1);
-        }
-      }
-      if (typeof requestIdleCallback !== "undefined") {
-        requestIdleCallback(() => warmNext(index + 1), { timeout: 2_000 });
-      } else {
-        window.setTimeout(() => warmNext(index + 1), 0);
-      }
-    };
-
-    warmNext(0);
-    return () => {
-      cancelled = true;
-    };
-  }, [visibleStateKey, repIndex, reps, hasPortfolioData]);
+  }, [visibleStateKey, repIndex, reps, hasPortfolioData, analyticsCache]);
 
   useEffect(() => {
     if (repFilter !== "all" && reps.length > 0 && !reps.includes(repFilter)) {
@@ -266,15 +285,17 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   );
 
   const activeCore = useMemo(
-    () => analyticsCacheRef.current.get(repFilter)?.core ?? null,
-    [repFilter, visibleStateKey, coreEpoch],
+    () => analyticsCache.get(repFilter)?.core ?? null,
+    [analyticsCache, repFilter, visibleStateKey, analyticsEpoch],
   );
   const activeHeavy = useMemo(
-    () => analyticsCacheRef.current.get(repFilter)?.heavy ?? null,
-    [repFilter, visibleStateKey, heavyVersion],
+    () => analyticsCache.get(repFilter)?.heavy ?? null,
+    [analyticsCache, repFilter, visibleStateKey, analyticsEpoch],
   );
 
-  const repFilterPending = Boolean(hasPortfolioData && !activeHeavy);
+  const repFilterPending = Boolean(
+    hasPortfolioData && (!activeCore || !activeHeavy),
+  );
 
   const bundle = useMemo(() => {
     if (!activeCore) return null;
@@ -308,9 +329,9 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     new Date().toISOString().slice(0, 10);
 
   const { recentClearances: rosterClearances } = useFrequencyDropRoster(
-    visibleStateKey,
+    rosterPortfolioKey,
     repFilter,
-    activeCore?.frequencyAlerts ?? [],
+    frequencyAlerts,
     rosterAsOf,
     hasPortfolioData && Boolean(activeCore),
   );
@@ -323,71 +344,39 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   const frequencyDropRecentClearanceCount = frequencyDropRecentClearances.length;
 
   const resetAll = useCallback(() => {
-    reset();
-    resetRepFilter();
-  }, [reset]);
+    void hardResetApp();
+  }, []);
 
-  const value = useMemo((): FilteredPortfolioContextValue | null => {
+  const analysisAsOf =
+    visibleState.analysisAsOf ?? new Date().toISOString().slice(0, 10);
+
+  const value = useMemo((): FilteredPortfolioContextValue => {
     if (!hasPortfolioData) {
-      return {
-        state: filteredState,
+      return shellPortfolioContext({
+        filteredState,
         fullState: state,
-        snapshot: {
-          asOf: visibleState.analysisAsOf ?? new Date().toISOString().slice(0, 10),
-          mode: "snapshot",
-          accounts: [],
-          totals: {
-            accountCount: 0,
-            critical: 0,
-            atRisk: 0,
-            dormant: 0,
-            healthy: 0,
-            overdueOrders: 0,
-            overdueVisits: 0,
-            volume90: 0,
-            volumeAtRisk: 0,
-          },
-        },
+        asOf: analysisAsOf,
         repFilter,
         repFilterPending: false,
-        setRepFilter,
         reps,
         importParseResult,
-        reset: resetAll,
-        orderAnalytics: emptyOrderAnalytics(
-          visibleState.analysisAsOf ?? new Date().toISOString().slice(0, 10),
-        ),
-        enrichedAccounts: [],
-        productTrends: {
-          data: [],
-          productSummaries: [],
-          allProductsSorted: [],
-          totalActiveProducts: 0,
-          totalBottles: 0,
-          topPerformer: null,
-          topGrowing: null,
-          atRiskProduct: null,
-          topGrowingQuarterly: null,
-          coolingQuarterly: null,
-          portfolioPaceLast3Months: 0,
-          portfolioPacePrior3Months: 0,
-          portfolioQuarterlyPaceDeltaPct: null,
-          peakPeriod: null,
-          avgMonthlyBottles: 0,
-        },
-        frequencyAlerts: [],
-        frequencyDropRecentClearances: [],
-        frequencyDropRecentClearanceCount: 0,
-        productAlerts: [],
-        projectionsSummary: emptyProjectionsSummary(),
-        newAccounts: [],
-        retainedAccounts: [],
-        returningCustomers: [],
-        lastOrderGaps: new Map(),
-      };
+        resetAll,
+      });
     }
 
-    if (!activeCore || !bundle) return null;
+    if (!activeCore || !bundle) {
+      return shellPortfolioContext({
+        filteredState,
+        fullState: state,
+        asOf: analysisAsOf,
+        repFilter,
+        repFilterPending: true,
+        reps,
+        importParseResult,
+        resetAll,
+      });
+    }
+
     return {
       state: filteredState,
       fullState: state,
@@ -427,11 +416,8 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     frequencyAlerts,
     frequencyDropRecentClearances,
     frequencyDropRecentClearanceCount,
+    analysisAsOf,
   ]);
-
-  if (!value) {
-    return <DashboardPageLoading label="portfolio analytics" />;
-  }
 
   return (
     <FilteredPortfolioContext.Provider value={value}>

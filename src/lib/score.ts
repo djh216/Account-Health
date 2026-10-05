@@ -17,19 +17,19 @@ import {
   visitsForLastVisitScoring,
   type VisitIndex,
 } from "./visit-index";
+import { buildTerritoryTierByAccountId } from "./territory-value";
 import {
+  averageVisitGapDaysInWindow,
   DEFAULT_VISIT_CYCLE_DAYS,
   typicalVisitIntervalDays,
-  visitCadenceRecencyScore,
   visitCadenceStatus,
+  visitCadenceTierScore,
 } from "./visit-cadence";
 import {
   visitDurationEngagementScore,
   visitDurationStats,
 } from "./visit-duration";
 import { explainHealthScoreChange } from "./health-score-change";
-
-const OVERDUE_VISIT_DAYS = DEFAULT_VISIT_CYCLE_DAYS;
 import { orderEventCountFromOrders, uniqueOrderWeekAnchorDates } from "./order-weeks";
 import type {
   Account,
@@ -141,13 +141,19 @@ function trendScore(
 
 function visitCadenceCoverageScore(
   daysSinceVisit: number | null,
-  visitIntervalDays: number,
+  averageGapDays90: number | null,
+  territoryTier: TerritoryValueTier | undefined,
   visitCount90: number,
   visitsWithoutOrder: number,
   snapshotMode: boolean,
+  policyMaxDays: number,
 ): { score: number; detail: string } {
-  const cadence = visitCadenceRecencyScore(daysSinceVisit, visitIntervalDays);
-  const expectedVisits90 = Math.max(1, Math.round(90 / visitIntervalDays));
+  const cadence = visitCadenceTierScore({
+    daysSinceVisit,
+    averageGapDays90,
+    territoryTier,
+  });
+  const expectedVisits90 = Math.max(1, Math.round(90 / policyMaxDays));
   let pacePenalty = 0;
   if (daysSinceVisit !== null && visitCount90 < expectedVisits90 * 0.5) {
     pacePenalty = visitCount90 === 0 ? 18 : 10;
@@ -158,7 +164,7 @@ function visitCadenceCoverageScore(
   const score = clamp(cadence.score - conversionPenalty - pacePenalty);
   const paceNote =
     daysSinceVisit !== null
-      ? ` ${visitCount90} visit${visitCount90 === 1 ? "" : "s"} in 90 days (typical cadence ~every ${visitIntervalDays}d, ~${expectedVisits90} stops).`
+      ? ` ${visitCount90} visit${visitCount90 === 1 ? "" : "s"} in 90 days (policy ~every ${cadence.target.minDays}–${cadence.target.maxDays}d, ~${expectedVisits90} stops).`
       : "";
   const missNote =
     !snapshotMode && visitsWithoutOrder > 0
@@ -305,7 +311,10 @@ function buildFocus(input: {
   mode: ScoreMode;
   daysSinceOrder: number | null;
   interval: number | null;
-  visitInterval: number;
+  visitPolicyMin: number;
+  visitPolicyMax: number;
+  averageVisitGap90: number | null;
+  territoryTier?: TerritoryValueTier;
   delta: number | null;
   daysSinceVisit: number | null;
   visitsWithoutOrder: number;
@@ -318,7 +327,10 @@ function buildFocus(input: {
     mode,
     daysSinceOrder,
     interval,
-    visitInterval,
+    visitPolicyMin,
+    visitPolicyMax,
+    averageVisitGap90,
+    territoryTier,
     delta,
     daysSinceVisit,
     visitsWithoutOrder,
@@ -328,9 +340,22 @@ function buildFocus(input: {
 
   if (risk === "healthy") return null;
 
+  const tierLabel = territoryTier
+    ? territoryTier === "anchor"
+      ? "Tier 1"
+      : territoryTier === "core"
+        ? "Tier 2"
+        : "Tier 3"
+    : "Tier 3";
+  const visitPolicyHint = `${tierLabel} visit policy ${visitPolicyMin}–${visitPolicyMax}d`;
+  const avgGapHint =
+    averageVisitGap90 != null && averageVisitGap90 > visitPolicyMax
+      ? ` 90-day avg spacing ~${Math.round(averageVisitGap90)}d (slower than ${visitPolicyMax}d target).`
+      : "";
+
   const daysPast = daysPastTypicalFrequency(daysSinceOrder, interval);
   const orderStale = daysPast !== null && daysPast >= RISK_AT_RISK_MIN_DAYS;
-  const visitDaysPast = daysPastTypicalFrequency(daysSinceVisit, visitInterval);
+  const visitDaysPast = daysPastTypicalFrequency(daysSinceVisit, visitPolicyMax);
   const visitStale = visitDaysPast !== null && visitDaysPast >= RISK_AT_RISK_MIN_DAYS;
   const visitedWithoutWrite =
     daysSinceOrder !== null &&
@@ -365,7 +390,7 @@ function buildFocus(input: {
   if (!orderStale && visitStale) {
     return {
       title: `Get in front of ${name}`,
-      reason: `They ordered ${daysSinceOrder} days ago, but the last recorded visit is ${daysSinceVisit} days old.`,
+      reason: `${visitPolicyHint}: last stop ${daysSinceVisit} days ago${visitDaysPast && visitDaysPast > 0 ? ` (${visitDaysPast}d past max)` : ""}.${avgGapHint} Last order ${daysSinceOrder ?? "—"}d ago.`,
       action: "Book a sales visit before the next buying window closes.",
     };
   }
@@ -501,7 +526,7 @@ export function isOverdueVisit(
   daysSinceVisit: number | null,
   visitIntervalDays?: number | null,
 ): boolean {
-  const interval = visitIntervalDays ?? OVERDUE_VISIT_DAYS;
+  const interval = visitIntervalDays ?? DEFAULT_VISIT_CYCLE_DAYS;
   const daysPast = daysPastTypicalFrequency(daysSinceVisit, interval);
   return daysPast !== null && daysPast >= RISK_AT_RISK_MIN_DAYS;
 }
@@ -588,6 +613,7 @@ export function scoreAccount(
   orderIndex: OrderIndex,
   visitIndex: VisitIndex,
   asOf: string,
+  territoryTier?: TerritoryValueTier,
 ): AccountHealth {
   const asOfDate = toDate(asOf);
   const windowStart = subDays(asOfDate, 90);
@@ -634,6 +660,15 @@ export function scoreAccount(
     visitsThroughAsOf.map((visit) => visit.date),
     asOf,
   );
+  const averageGapDays90 = averageVisitGapDaysInWindow(
+    visitsThroughAsOf.map((visit) => visit.date),
+    asOf,
+  );
+  const visitCadenceTierGrade = visitCadenceTierScore({
+    daysSinceVisit,
+    averageGapDays90,
+    territoryTier,
+  });
   const snapshotMode =
     ordersThroughAsOf.length <= 1 ||
     !ordersThroughAsOf.some(
@@ -641,14 +676,22 @@ export function scoreAccount(
     );
   const hasOrderHistory = uniqueOrderWeekAnchorDates(ordersThroughAsOf).length > 1;
 
-  const visitsWithoutOrder = recentVisits.filter((visit) => {
-    const visitDate = toDate(visit.date);
-    return !ordersThroughAsOf.some((order) => {
-      const orderDate = toDate(order.date);
-      const gap = differenceInCalendarDays(orderDate, visitDate);
-      return gap >= 0 && gap <= 14;
-    });
-  }).length;
+  const orderDatesAsc = ordersThroughAsOf.map((order) => toDate(order.date).getTime());
+  orderDatesAsc.sort((a, b) => a - b);
+  let visitsWithoutOrder = 0;
+  for (const visit of recentVisits) {
+    const visitMs = toDate(visit.date).getTime();
+    const windowEnd = visitMs + HEALTH_SCORE_CHANGE_DAYS * 86_400_000;
+    let matched = false;
+    for (let i = 0; i < orderDatesAsc.length; i += 1) {
+      const orderMs = orderDatesAsc[i]!;
+      if (orderMs < visitMs) continue;
+      if (orderMs > windowEnd) break;
+      matched = true;
+      break;
+    }
+    if (!matched) visitsWithoutOrder += 1;
+  }
 
   const periodStart = subDays(asOfDate, ANALYTICS_PERIOD_DAYS);
   const priorPeriodStart = subDays(asOfDate, ANALYTICS_PERIOD_DAYS * 2);
@@ -670,16 +713,19 @@ export function scoreAccount(
   const durationStats = visitDurationStats(recentVisits);
   const visitCadenceFactor = visitCadenceCoverageScore(
     daysSinceVisit,
-    visitInterval,
+    averageGapDays90,
+    territoryTier,
     recentVisits.length,
     visitsWithoutOrder,
     snapshotMode,
+    visitCadenceTierGrade.target.maxDays,
   );
   const timeOnSiteFactor = visitDurationEngagementScore(recentVisits);
   const visitCadence = visitCadenceStatus({
     daysSinceVisit,
     lastVisitDate: lastVisit?.date ?? null,
     visitIntervalDays: visitInterval,
+    targetMaxDays: visitCadenceTierGrade.target.maxDays,
   });
   const trend = trendScore(volume90, volumePrior90);
   const volumeChange = volumeChangeScore(
@@ -795,10 +841,12 @@ export function scoreAccount(
     intervalDays: cadenceInterval,
   });
   const trailing14Start = subDays(asOfDate, HEALTH_SCORE_CHANGE_DAYS);
-  const recentOrders14d = ordersThroughAsOf.filter((order) => {
+  const recentOrderLines14d = ordersThroughAsOf.filter((order) => {
+    if (!order.product?.trim() && bottleVolume(order) <= 0) return false;
     const date = toDate(order.date);
     return date > trailing14Start && date <= asOfDate;
-  }).length;
+  });
+  const recentOrders14d = orderEventCountFromOrders(recentOrderLines14d);
   const recentVisits14d = visitsThroughAsOf.filter((visit) => {
     const date = toDate(visit.date);
     return date > trailing14Start && date <= asOfDate;
@@ -810,7 +858,10 @@ export function scoreAccount(
     mode,
     daysSinceOrder,
     interval: cadenceInterval,
-    visitInterval,
+    visitPolicyMin: visitCadenceTierGrade.target.minDays,
+    visitPolicyMax: visitCadenceTierGrade.target.maxDays,
+    averageVisitGap90: averageGapDays90,
+    territoryTier,
     delta: trend.delta,
     daysSinceVisit,
     visitsWithoutOrder,
@@ -838,13 +889,17 @@ export function scoreAccount(
     expectedOrderDate: cadence.expectedOrderDate,
     visitCount90: recentVisits.length,
     visitsWithoutOrder,
-    typicalVisitIntervalDays: visitCadence.typicalVisitIntervalDays,
+    typicalVisitIntervalDays: averageGapDays90 ?? visitCadence.typicalVisitIntervalDays,
+    visitCadenceTargetMinDays: visitCadenceTierGrade.target.minDays,
+    visitCadenceTargetMaxDays: visitCadenceTierGrade.target.maxDays,
+    averageVisitGapDays90: averageGapDays90,
     visitCadenceOverdue: visitCadence.visitCadenceOverdue,
     visitCadenceDaysOverdue: visitCadence.visitCadenceDaysOverdue,
     expectedVisitDate: visitCadence.expectedVisitDate,
     avgVisitDurationMinutes90: durationStats.avgMinutes,
     lastVisitDurationMinutes: durationStats.lastVisitMinutes,
     recentOrders14d,
+    recentOrderLines14d: recentOrderLines14d.length,
     recentVisits14d,
     cases90,
     factors,
@@ -881,20 +936,36 @@ export function buildSnapshot(
   const asOf = asOfOverride ?? todayIso();
   const resolvedOrderIndex = orderIndex ?? buildOrderIndex(orders);
   const resolvedVisitIndex = visitIndex ?? buildVisitIndex(visits);
+  const territoryTierByAccountId = buildTerritoryTierByAccountId(
+    accounts,
+    resolvedOrderIndex,
+  );
   const priorAsOf = format(subDays(toDate(asOf), HEALTH_SCORE_CHANGE_DAYS), "yyyy-MM-dd");
   const scored = accounts
     .map((account) => {
-      const health = scoreAccount(account, resolvedOrderIndex, resolvedVisitIndex, asOf);
+      const territoryTier = territoryTierByAccountId.get(account.id);
+      const health = scoreAccount(
+        account,
+        resolvedOrderIndex,
+        resolvedVisitIndex,
+        asOf,
+        territoryTier,
+      );
       const priorHealth = scoreAccount(
         account,
         resolvedOrderIndex,
         resolvedVisitIndex,
         priorAsOf,
+        territoryTier,
       );
+      const scoreChange14d = health.score - priorHealth.score;
       return {
         ...health,
-        scoreChange14d: health.score - priorHealth.score,
-        scoreChange14dReasons: explainHealthScoreChange(health, priorHealth),
+        scoreChange14d,
+        scoreChange14dReasons:
+          scoreChange14d === 0
+            ? []
+            : explainHealthScoreChange(health, priorHealth),
       };
     })
     .sort((a, b) => a.score - b.score || (a.daysSinceOrder ?? 999) - (b.daysSinceOrder ?? 999));

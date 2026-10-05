@@ -150,3 +150,10 @@ export function formatHealthScoreChange(delta: number | null | undefined): strin
   if (delta < 0) return `(${delta})`;
   return `(0)`;
 }
+
+export function formatHealthScoreWithChange(
+  score: number,
+  change?: number | null,
+): string {
+  return `${score}${formatHealthScoreChange(change) ?? ""}`;
+}

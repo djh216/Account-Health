@@ -12,7 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { usePortfolio } from "@/hooks/use-portfolio";
+import { activityVisitCount, type ClearUploadScope } from "@/lib/clear-uploads";
 import { parseFiles } from "@/lib/excel-parser";
+import { formatNumber } from "@/lib/format";
 import { detectKind } from "@/lib/parse";
 import type { ColumnMapping, ParseResult, ReportKind } from "@/lib/types";
 
@@ -95,16 +98,27 @@ export function UploadDialog({
   open,
   onOpenChange,
   onImport,
+  onUploadCleared,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImport: (result: ParseResult) => void;
+  onUploadCleared?: (message: string) => void;
 }) {
+  const { state, clearUpload } = usePortfolio();
   const [busy, setBusy] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParseResult | null>(null);
+  const [confirmClearScope, setConfirmClearScope] = useState<ClearUploadScope | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const orderRowCount = state.orders.length;
+  const activityRowCount = activityVisitCount(state);
+  const latestOrderReport = state.reports.find((report) => report.kind === "orders");
+  const latestActivityReport = state.reports.find((report) => report.kind === "visits");
 
   const requiredMissing = useMemo(() => {
     if (!parsed) return [];
@@ -297,6 +311,36 @@ export function UploadDialog({
           </Button>
         </div>
 
+        {orderRowCount > 0 || activityRowCount > 0 ? (
+          <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+            <div>
+              <h3 className="text-sm font-medium">Stored uploads</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Clear one dataset to replace it with a fresh export without wiping
+                accounts or the other upload type.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <StoredUploadCard
+                title="Order history"
+                rowLabel="order lines"
+                rowCount={orderRowCount}
+                fileName={latestOrderReport?.fileName}
+                disabled={orderRowCount === 0}
+                onClear={() => setConfirmClearScope("orders")}
+              />
+              <StoredUploadCard
+                title="Activity log"
+                rowLabel="visit rows"
+                rowCount={activityRowCount}
+                fileName={latestActivityReport?.fileName}
+                disabled={activityRowCount === 0}
+                onClear={() => setConfirmClearScope("activity")}
+              />
+            </div>
+          </div>
+        ) : null}
+
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -469,6 +513,123 @@ export function UploadDialog({
           >
             <Upload data-icon="inline-start" />
             Import and rescore
+          </Button>
+        </div>
+      </div>
+
+      {confirmClearScope ? (
+        <ClearUploadConfirmDialog
+          scope={confirmClearScope}
+          onCancel={() => setConfirmClearScope(null)}
+          onConfirm={() => {
+            const scope = confirmClearScope;
+            clearUpload(scope);
+            setConfirmClearScope(null);
+            onUploadCleared?.(
+              scope === "orders"
+                ? "Order history cleared. Upload an updated order file when ready."
+                : "Activity log cleared. Upload an updated Outfield or visit export when ready.",
+            );
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function StoredUploadCard({
+  title,
+  rowLabel,
+  rowCount,
+  fileName,
+  disabled,
+  onClear,
+}: {
+  title: string;
+  rowLabel: string;
+  rowCount: number;
+  fileName?: string;
+  disabled?: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-background p-3">
+      <div>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {rowCount > 0
+            ? `${formatNumber(rowCount)} ${rowLabel}${fileName ? ` · last file ${fileName}` : ""}`
+            : `No ${rowLabel} stored`}
+        </p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-fit"
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClear();
+        }}
+      >
+        Clear {title.toLowerCase()}
+      </Button>
+    </div>
+  );
+}
+
+function ClearUploadConfirmDialog({
+  scope,
+  onCancel,
+  onConfirm,
+}: {
+  scope: ClearUploadScope;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isOrders = scope === "orders";
+  const title = isOrders ? "Clear order history?" : "Clear activity log?";
+  const description = isOrders
+    ? "This removes all uploaded order lines and order import history from this browser. Accounts, visit activity, and rep filters are kept. You can import a full replacement order file next."
+    : "This removes visit and Outfield activity rows and activity import history. Snapshot last-visit dates from account sheets are kept, along with orders and accounts. You can import a fresh activity export next.";
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="Cancel"
+        className="absolute inset-0 bg-black/20 supports-backdrop-filter:backdrop-blur-xs"
+        onClick={onCancel}
+      />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        className="relative z-10 w-full max-w-md space-y-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10"
+      >
+        <div className="space-y-2">
+          <h2 className="font-heading text-base font-medium">{title}</h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm}>
+            Clear
           </Button>
         </div>
       </div>

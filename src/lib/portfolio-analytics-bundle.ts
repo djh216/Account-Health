@@ -48,6 +48,38 @@ export type PortfolioAnalyticsCacheEntry = {
   heavy?: PortfolioHeavyAnalytics;
 };
 
+const sessionAnalyticsCache = new Map<string, PortfolioAnalyticsCacheEntry>();
+let sessionAnalyticsSourceKey = "";
+
+/** Rep-level analytics cache survives route changes (module scope). */
+export function getPortfolioAnalyticsSessionCache(
+  visibleStateKey: string,
+): Map<string, PortfolioAnalyticsCacheEntry> {
+  if (sessionAnalyticsSourceKey !== visibleStateKey) {
+    sessionAnalyticsCache.clear();
+    sessionAnalyticsSourceKey = visibleStateKey;
+  }
+  return sessionAnalyticsCache;
+}
+
+export function warmPortfolioAnalyticsForRep(
+  cache: Map<string, PortfolioAnalyticsCacheEntry>,
+  rep: string,
+  filteredState: PortfolioState,
+): PortfolioAnalyticsCacheEntry {
+  readPortfolioCoreForFilteredState(cache, rep, filteredState);
+  readPortfolioHeavyForFilteredState(cache, rep, filteredState);
+  return cache.get(rep) ?? {};
+}
+
+export function isRepAnalyticsWarm(
+  cache: Map<string, PortfolioAnalyticsCacheEntry>,
+  rep: string,
+): boolean {
+  const entry = cache.get(rep);
+  return Boolean(entry?.core && entry.heavy);
+}
+
 export function portfolioStateCacheKey(state: PortfolioState): string {
   return `${state.accounts.length}:${state.orders.length}:${state.visits.length}:${state.analysisAsOf ?? ""}`;
 }

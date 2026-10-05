@@ -59,7 +59,7 @@ export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
-  doc.text("CELLAR PULSE · PRODUCT SALES TRENDS & VELOCITY REPORT", MARGIN_X, 11);
+  doc.text("Product sales trends", MARGIN_X, 11);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);

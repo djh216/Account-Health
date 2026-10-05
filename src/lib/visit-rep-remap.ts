@@ -1,41 +1,34 @@
 import { normalizeName } from "./format";
 import { dropSupersededSnapshotLastVisits } from "./visit-index";
-import type { Account, ReportKind, Visit } from "./types";
+import type { Account, PortfolioState, ReportKind, Visit } from "./types";
 
 /** Rep name corrections on visit / activity imports (all activity types). */
 const VISIT_REP_REMAP: Record<string, string> = {
   [normalizeName("Alex Cicchitti")]: "Jordan Fuller",
+  [normalizeName("Gina Terra")]: "Guido Martelli",
 };
 
-const DAVID_HALL = normalizeName("David Hall");
-const GINA_TERRA = normalizeName("Gina Terra");
+export const DAVID_HALL_REP_NORMALIZED = normalizeName("David Hall");
 
-export function isCheckInOutcome(outcome: string | undefined | null): boolean {
-  const value = (outcome ?? "").trim().toLowerCase();
-  return value === "check in" || value.startsWith("check in ");
+export function isDavidHallRep(name: string | undefined | null): boolean {
+  if (!name?.trim()) return false;
+  return normalizeName(name) === DAVID_HALL_REP_NORMALIZED;
 }
-
 export function normalizeVisitSalesRep(name: string | undefined | null): string | undefined {
   if (!name?.trim()) return undefined;
   const trimmed = name.trim();
   return VISIT_REP_REMAP[normalizeName(trimmed)] ?? trimmed;
 }
 
-/** Outfield rules: drop David Hall check-ins; Gina Terra check-ins → Guido Martelli; then global rep remap. */
+/** Outfield rules: omit David Hall; apply global rep remap (e.g. Gina Terra → Guido Martelli). */
 export function applyVisitImportRules(visit: Visit): Visit | null {
   const repNorm = visit.salesRep ? normalizeName(visit.salesRep) : "";
-  const checkIn = isCheckInOutcome(visit.outcome);
 
-  if (checkIn && repNorm === DAVID_HALL) {
+  if (repNorm === DAVID_HALL_REP_NORMALIZED) {
     return null;
   }
 
-  let salesRep = visit.salesRep;
-  if (checkIn && repNorm === GINA_TERRA) {
-    salesRep = "Guido Martelli";
-  }
-  salesRep = normalizeVisitSalesRep(salesRep);
-
+  const salesRep = normalizeVisitSalesRep(visit.salesRep);
   if (salesRep === visit.salesRep) {
     return visit;
   }
@@ -57,6 +50,39 @@ export function remapVisitImportRecords(
   for (const account of records.accounts) {
     account.salesRep = normalizeVisitSalesRep(account.salesRep);
   }
+}
+
+/** Apply rep remaps to all stored visits and account reps (import + hydration). */
+export function remapPortfolioSalesReps(state: PortfolioState): PortfolioState {
+  let changed = false;
+  const visits = state.visits.map((visit) => {
+    const salesRep = normalizeVisitSalesRep(visit.salesRep);
+    if (salesRep === visit.salesRep) return visit;
+    changed = true;
+    return { ...visit, salesRep };
+  });
+  const accounts = state.accounts.map((account) => {
+    const salesRep = normalizeVisitSalesRep(account.salesRep);
+    if (salesRep === account.salesRep) return account;
+    changed = true;
+    return { ...account, salesRep };
+  });
+  if (!changed) return state;
+  return { ...state, visits, accounts };
+}
+
+/** Remove David Hall visits and clear David Hall as account rep on stored portfolio. */
+export function stripDavidHallFromPortfolio(state: PortfolioState): PortfolioState {
+  const visits = state.visits.filter((visit) => !isDavidHallRep(visit.salesRep));
+  const accounts = state.accounts.map((account) =>
+    isDavidHallRep(account.salesRep) ? { ...account, salesRep: undefined } : account,
+  );
+  const visitsChanged = visits.length !== state.visits.length;
+  const accountsChanged = accounts.some(
+    (account, index) => account.salesRep !== state.accounts[index]?.salesRep,
+  );
+  if (!visitsChanged && !accountsChanged) return state;
+  return { ...state, visits, accounts };
 }
 
 export function remapStoredVisitsForImport(

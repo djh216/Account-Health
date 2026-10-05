@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePortfolio } from "@/hooks/use-portfolio";
-import { resetRepFilter } from "@/lib/rep-filter";
 
 export function ClearDataButton({
   onCleared,
@@ -15,8 +14,9 @@ export function ClearDataButton({
   disabled?: boolean;
   variant?: "outline" | "ghost" | "destructive";
 }) {
-  const { reset, state } = usePortfolio();
+  const { hardReset, state } = usePortfolio();
   const [open, setOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const hasData =
     state.orders.length > 0 ||
@@ -28,11 +28,15 @@ export function ClearDataButton({
     setOpen(false);
   }
 
-  function confirmClear() {
-    reset();
-    resetRepFilter();
-    closeDialog();
-    onCleared?.("All saved accounts, orders, and reports cleared.");
+  async function confirmClear() {
+    setClearing(true);
+    onCleared?.("Resetting app…");
+    try {
+      await hardReset();
+    } catch {
+      setClearing(false);
+      onCleared?.("Reset failed — try again or clear site data in your browser.");
+    }
   }
 
   useEffect(() => {
@@ -58,7 +62,7 @@ export function ClearDataButton({
         onClick={() => setOpen(true)}
       >
         <RotateCcw data-icon="inline-start" />
-        Clear
+        Hard reset
       </Button>
 
       {open ? (
@@ -78,20 +82,25 @@ export function ClearDataButton({
           >
             <div className="space-y-2">
               <h2 id="clear-data-title" className="font-heading text-base font-medium">
-                Clear all saved data?
+                Hard reset this app?
               </h2>
               <p id="clear-data-description" className="text-sm text-muted-foreground">
-                This removes uploaded orders, visit logs, account records, and import
-                history from this browser. Your health scores and analytics will reset.
-                This cannot be undone.
+                This removes all uploaded orders, visit logs, accounts, import history,
+                rep filter, and other saved settings from this browser (including large
+                IndexedDB backups), then reloads the page. This cannot be undone.
               </p>
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="outline" onClick={closeDialog}>
+              <Button type="button" variant="outline" onClick={closeDialog} disabled={clearing}>
                 Cancel
               </Button>
-              <Button type="button" variant="destructive" onClick={confirmClear}>
-                Clear everything
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void confirmClear()}
+                disabled={clearing}
+              >
+                {clearing ? "Resetting…" : "Hard reset"}
               </Button>
             </div>
           </div>

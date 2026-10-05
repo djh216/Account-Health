@@ -1,10 +1,4 @@
-import dynamic from "next/dynamic";
-import { DashboardPageLoading } from "@/components/page-loading";
-
-const Dashboard = dynamic(
-  () => import("@/components/dashboard").then((module) => module.Dashboard),
-  { loading: () => <DashboardPageLoading label="Account health" /> },
-);
+import { Dashboard } from "@/components/dashboard";
 
 export default function Home() {
   return <Dashboard />;

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
@@ -12,6 +13,13 @@ const LINKS = [
 
 export function SiteNav() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    for (const link of LINKS) {
+      router.prefetch(link.href);
+    }
+  }, [router]);
 
   return (
     <nav className="flex flex-wrap gap-1">

@@ -39,6 +39,7 @@ import {
   formatTrendSlope,
   type TrendlineDefinition,
 } from "@/lib/trendline";
+import { HealthScoreExplainer } from "@/components/health-score-explainer";
 import { TrendPointAnalyticsDialog } from "@/components/trend-point-analytics-dialog";
 import {
   ExcludeAccountClosedButton,
@@ -1259,7 +1260,11 @@ export function BottleSalesTrendChart({
                                 {health?.territoryRank != null ? (
                                   <span>#{health.territoryRank}</span>
                                 ) : null}
-                                {health != null ? <span>· {health.score} health</span> : null}
+                                {health != null ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    · <HealthScoreExplainer account={health} /> health
+                                  </span>
+                                ) : null}
                               </div>
                               <ExcludeAccountClosedButton
                                 accountName={summary.accountName}

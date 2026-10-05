@@ -175,6 +175,13 @@ export async function loadPortfolioAsync(): Promise<PortfolioState | null> {
  * 2. Caches in localStorage ONLY if payload is small (<400KB) to prevent QuotaExceededError
  * 3. Never throws unhandled QuotaExceededError or pollutes the browser console
  */
+function portfolioLikelyExceedsLocalStorage(state: PortfolioState): boolean {
+  if (typeof window !== "undefined" && window.localStorage.getItem(IDB_INDICATOR_KEY) === "1") {
+    return true;
+  }
+  return state.visits.length > 1_500 || state.orders.length > 4_000;
+}
+
 export function savePortfolio(state: PortfolioState): void {
   if (typeof window === "undefined") return;
 
@@ -190,6 +197,14 @@ export function savePortfolio(state: PortfolioState): void {
 
   // 1. Asynchronously persist full state into IndexedDB (virtually unlimited quota)
   void idbSavePortfolio(cleaned);
+
+  if (portfolioLikelyExceedsLocalStorage(cleaned)) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.setItem(IDB_INDICATOR_KEY, "1");
+    } catch {}
+    return;
+  }
 
   // 2. Only attempt localStorage caching if payload size is safe (< 400KB)
   try {
@@ -216,12 +231,16 @@ export function savePortfolio(state: PortfolioState): void {
   }
 }
 
-export function clearPortfolio(): void {
+export async function clearPortfolioStorageAsync(): Promise<void> {
   if (typeof window === "undefined") return;
   purgeAllCellarPulseStorage();
   try {
     window.localStorage.setItem(MIGRATION_KEY, "1");
     window.localStorage.removeItem(IDB_INDICATOR_KEY);
   } catch {}
-  void idbClearPortfolio();
+  await idbClearPortfolio();
+}
+
+export function clearPortfolio(): void {
+  void clearPortfolioStorageAsync();
 }

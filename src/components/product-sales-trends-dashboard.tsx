@@ -43,7 +43,6 @@ import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { SiteNav } from "@/components/site-nav";
 import { RepFilterSelect } from "@/components/rep-filter-select";
 import { ClearDataButton } from "@/components/clear-data-button";
-import { ExportReportButton } from "@/components/export-report-button";
 import { PrintReportButton } from "@/components/print-report-button";
 import { UploadDialog } from "@/components/upload-dialog";
 import { TrendPointAnalyticsDialog } from "@/components/trend-point-analytics-dialog";
@@ -575,7 +574,6 @@ export function ProductSalesTrendsDashboard() {
                 onClick={() => setNotificationSidebarOpen(true)}
               />
               <PrintReportButton page="products" onMessage={flash} />
-              <ExportReportButton page="products" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
               <Button onClick={() => setUploadOpen(true)}>
                 <Upload data-icon="inline-start" />
@@ -2250,6 +2248,7 @@ export function ProductSalesTrendsDashboard() {
                 : imported.accounts.length;
           flash(`Imported ${count} ${result.kind === "orders" ? "order lines" : "records"}.`);
         }}
+        onUploadCleared={flash}
       />
       <NotificationSidebar
         open={notificationSidebarOpen}

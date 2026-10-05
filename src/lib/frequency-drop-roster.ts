@@ -1,5 +1,6 @@
 import { differenceInCalendarDays, parseISO, subDays } from "date-fns";
 import type { AccountFrequencyAlert } from "./frequency-alerts";
+import type { PortfolioState } from "./types";
 
 export const FREQUENCY_DROP_ROSTER_CHANGE_EVENT =
   "cellar-pulse-frequency-drop-roster-change";
@@ -24,6 +25,20 @@ type RosterStore = Record<string, RosterBucket>;
 
 function rosterScopeKey(portfolioKey: string, repFilter: string): string {
   return `${portfolioKey}::${repFilter}`;
+}
+
+/** Stable book identity for roster storage (not orders/visits/asOf — those change on every import). */
+export function portfolioRosterScopeKey(state: PortfolioState): string {
+  const ids = state.accounts.map((account) => account.id).sort();
+  if (ids.length === 0) return "empty";
+  let hash = 2166136261;
+  for (const id of ids) {
+    for (let index = 0; index < id.length; index += 1) {
+      hash ^= id.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+  }
+  return `book:${ids.length}:${(hash >>> 0).toString(36)}`;
 }
 
 function readStore(): RosterStore {
