@@ -11,7 +11,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useReportExport, type ReportPageType } from "@/hooks/use-report-export";
+import {
+  useReportExport,
+  type ReportPageType,
+} from "@/components/report-export-provider";
 import { cn } from "@/lib/utils";
 
 export type PrimaryPdfExport = "page" | "alerts" | "action-plan";
@@ -22,7 +25,7 @@ export function PrintReportButton({
   variant = "outline",
   size = "default",
   label = "Export PDF",
-  title = "Download a print-ready PDF",
+  title = "Generate a print-ready PDF preview",
   onMessage,
   primaryExport = "page",
   showMenu = true,
@@ -72,16 +75,16 @@ export function PrintReportButton({
     try {
       if (primaryExport === "alerts") {
         await exportFrequencyAlertsPdf();
-        notify("Frequency alerts PDF downloaded.");
+        notify("Frequency alerts PDF ready — print or save from the preview.");
         return;
       }
       if (primaryExport === "action-plan") {
         await exportRepActionPlansPdf();
-        notify("Rep action plan PDF downloaded.");
+        notify("Action plan PDF ready — print or save from the preview.");
         return;
       }
       await exportCurrentPagePdf(effectivePage);
-      notify(`${pageShortName} PDF downloaded.`);
+      notify(`${pageShortName} PDF ready — print or save from the preview.`);
     } catch (err) {
       notify(err instanceof Error ? err.message : "Could not generate PDF.");
     }
@@ -90,7 +93,7 @@ export function PrintReportButton({
   async function handlePagePdf() {
     try {
       await exportCurrentPagePdf(effectivePage);
-      notify(`${pageShortName} PDF downloaded.`);
+      notify(`${pageShortName} PDF ready — print or save from the preview.`);
     } catch (err) {
       notify(err instanceof Error ? err.message : "Could not generate PDF.");
     }
@@ -99,7 +102,7 @@ export function PrintReportButton({
   async function handleActionPlanPdf() {
     try {
       await exportRepActionPlansPdf();
-      notify("Rep action plan PDF downloaded.");
+      notify("Action plan PDF ready — print or save from the preview.");
     } catch (err) {
       notify(err instanceof Error ? err.message : "Could not generate action plan.");
     }
@@ -108,7 +111,7 @@ export function PrintReportButton({
   async function handleAlertsPdf() {
     try {
       await exportFrequencyAlertsPdf();
-      notify("Frequency alerts PDF downloaded.");
+      notify("Frequency alerts PDF ready — print or save from the preview.");
     } catch (err) {
       notify(err instanceof Error ? err.message : "Could not generate alerts PDF.");
     }

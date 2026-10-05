@@ -3,6 +3,11 @@ import autoTable from "jspdf-autotable";
 import { formatDate, formatMoney, formatNumber } from "./format";
 import type { ProductSummary, ProductSlowingAlert } from "./product-trends";
 import { buildExportPdfFilename } from "./pdf-filename";
+import {
+  artifactFromJsPdf,
+  downloadPdfArtifact,
+  type PdfExportArtifact,
+} from "./pdf-present";
 
 const MARGIN_X = 12;
 const BURGUNDY: [number, number, number] = [120, 28, 48];
@@ -38,11 +43,7 @@ function trajectoryLabel(trajectory: ProductSummary["trajectory"]): string {
   }
 }
 
-export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
-  if (typeof window === "undefined") {
-    throw new Error("PDF export is only available in the browser.");
-  }
-
+export function generateProductTrendsPdfDocument(input: ProductTrendsPdfInput): jsPDF {
   const doc = new jsPDF({
     orientation: "landscape",
     unit: "mm",
@@ -185,6 +186,20 @@ export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
     });
   }
 
+  return doc;
+}
+
+export function buildProductTrendsPdfArtifact(input: ProductTrendsPdfInput): PdfExportArtifact {
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(buildExportPdfFilename(input.repFilter, "product-trends", stamp));
+  return artifactFromJsPdf(
+    generateProductTrendsPdfDocument(input),
+    buildExportPdfFilename(input.repFilter, "product-trends", stamp),
+  );
+}
+
+export function downloadProductTrendsPdf(input: ProductTrendsPdfInput): void {
+  if (typeof window === "undefined") {
+    throw new Error("PDF export is only available in the browser.");
+  }
+  downloadPdfArtifact(buildProductTrendsPdfArtifact(input));
 }

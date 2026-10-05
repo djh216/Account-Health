@@ -2,6 +2,11 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatHealthScoreChange } from "./format";
 import { buildExportPdfFilename } from "./pdf-filename";
+import {
+  artifactFromJsPdf,
+  downloadPdfArtifact,
+  type PdfExportArtifact,
+} from "./pdf-present";
 import { formatVisitCadencePdfCompact } from "./visit-cadence";
 import {
   drawPdfTitleBar,
@@ -39,16 +44,12 @@ const RISK_SHORT: Record<RiskLevel, string> = {
 };
 
 function actionRow(priority: number, item: AccountHealth): (string | number)[] {
-  const focus = item.focus;
   const tier = item.territoryTier ? territoryTierLabel(item.territoryTier) : "—";
   const orderLine =
     item.daysSinceOrder != null
       ? `${item.daysSinceOrder}d since order${item.typicalIntervalDays ? ` · typ ${item.typicalIntervalDays}d` : ""}`
       : "—";
   const cadenceCol = `${orderLine}\n${formatVisitCadencePdfCompact(item)}`;
-  const nextStep = focus
-    ? `${focus.action}${focus.reason ? `\n${focus.reason}` : ""}`
-    : "Confirm next visit and reorder date.";
 
   return [
     priority,
@@ -56,7 +57,6 @@ function actionRow(priority: number, item: AccountHealth): (string | number)[] {
     `${RISK_SHORT[item.risk]} · ${tier}`,
     `${item.score}${formatHealthScoreChange(item.scoreChange14d) ?? ""}`,
     cadenceCol,
-    nextStep,
   ];
 }
 
@@ -97,12 +97,12 @@ function addHorizonTable(
   const body =
     accounts.length > 0
       ? accounts.map((item, index) => actionRow(index + 1, item))
-      : [["—", "No accounts in this window", "—", "—", "—", "—"]];
+      : [["—", "No accounts in this window", "—", "—", "—"]];
 
   autoTable(doc, {
     startY: startY + 4,
     margin: { left: MARGIN_X, right: MARGIN_X, bottom: 12 },
-    head: [["#", "Account", "Risk · tier", "Score", "Order · visit cadence", "Next step"]],
+    head: [["#", "Account", "Risk · tier", "Score", "Order · visit cadence"]],
     body,
     theme: "grid",
     headStyles: PDF_TABLE_HEAD,
@@ -113,8 +113,7 @@ function addHorizonTable(
       1: { cellWidth: 40 },
       2: { cellWidth: 28, fontStyle: "bold" },
       3: { cellWidth: 14, halign: "right" },
-      4: { cellWidth: 44 },
-      5: { cellWidth: "auto" },
+      4: { cellWidth: "auto" },
     },
     styles: {
       overflow: "linebreak",
@@ -174,15 +173,22 @@ export function generateRepActionPlansPdfDocument(input: RepActionPlansPdfInput)
   return doc;
 }
 
+export function buildRepActionPlansPdfArtifact(
+  input: RepActionPlansPdfInput,
+): PdfExportArtifact {
+  if (input.plans.length === 0) {
+    throw new Error("No rep action plans to export.");
+  }
+  const stamp = input.generatedAt.slice(0, 10);
+  return artifactFromJsPdf(
+    generateRepActionPlansPdfDocument(input),
+    buildExportPdfFilename(input.repFilter, "rep-action-plan", stamp),
+  );
+}
+
 export function downloadRepActionPlansPdf(input: RepActionPlansPdfInput): void {
   if (typeof window === "undefined") {
     throw new Error("PDF export is only available in the browser.");
   }
-  if (input.plans.length === 0) {
-    throw new Error("No rep action plans to export.");
-  }
-
-  const doc = generateRepActionPlansPdfDocument(input);
-  const stamp = input.generatedAt.slice(0, 10);
-  doc.save(buildExportPdfFilename(input.repFilter, "rep-action-plan", stamp));
+  downloadPdfArtifact(buildRepActionPlansPdfArtifact(input));
 }

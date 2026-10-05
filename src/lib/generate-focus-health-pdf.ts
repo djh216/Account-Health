@@ -4,6 +4,11 @@ import { FOCUS_SECTIONS } from "./focus-sections";
 import { formatDate, formatHealthScoreChange } from "./format";
 import { buildExportPdfFilename } from "./pdf-filename";
 import {
+  artifactFromJsPdf,
+  downloadPdfArtifact,
+  type PdfExportArtifact,
+} from "./pdf-present";
+import {
   drawPdfKpiRow,
   drawPdfTitleBar,
   PDF_MARGIN_X,
@@ -77,11 +82,7 @@ function focusRow(window: string, item: AccountHealth): (string | number)[] {
   ];
 }
 
-export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
-  if (typeof window === "undefined") {
-    throw new Error("PDF export is only available in the browser.");
-  }
-
+export function generateFocusHealthPdfDocument(input: FocusHealthPdfInput): jsPDF {
   const doc = new jsPDF({
     orientation: "landscape",
     unit: "mm",
@@ -158,6 +159,20 @@ export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
 
   stampPdfFooters(doc, "Account health", input.asOf);
 
+  return doc;
+}
+
+export function buildFocusHealthPdfArtifact(input: FocusHealthPdfInput): PdfExportArtifact {
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(buildExportPdfFilename(input.repFilter, "account-health", stamp));
+  return artifactFromJsPdf(
+    generateFocusHealthPdfDocument(input),
+    buildExportPdfFilename(input.repFilter, "account-health", stamp),
+  );
+}
+
+export function downloadFocusHealthPdf(input: FocusHealthPdfInput): void {
+  if (typeof window === "undefined") {
+    throw new Error("PDF export is only available in the browser.");
+  }
+  downloadPdfArtifact(buildFocusHealthPdfArtifact(input));
 }

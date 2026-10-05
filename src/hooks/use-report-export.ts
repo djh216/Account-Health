@@ -4,181 +4,117 @@ import { useCallback, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
-import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
-import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
-import { excludeOutOfStock, outOfStockProductId } from "@/lib/out-of-stock-products";
-import { excludeClosedBusinessAccounts } from "@/lib/closed-business-accounts";
+import { buildFocusHealthPdfArtifact } from "@/lib/generate-focus-health-pdf";
+import { buildFrequencyAlertsPdfArtifact } from "@/lib/generate-frequency-alerts-pdf";
+import { buildOrderAnalyticsPdfArtifact } from "@/lib/generate-order-analytics-pdf";
+import { buildProductTrendsPdfArtifact } from "@/lib/generate-product-trends-pdf";
+import { buildRepActionPlansPdfArtifact } from "@/lib/generate-rep-action-plan-pdf";
 import {
-  downloadFocusHealthPdf,
-  downloadFrequencyAlertsPdf,
-  downloadOrderAnalyticsPdf,
-  downloadProductTrendsPdf,
-  downloadRepActionPlansPdf,
   buildRepActionPlans,
   buildPdfAccountVisitLookup,
-  type FocusHealthPdfInput,
-  type FrequencyAlertsPdfInput,
-  type OrderAnalyticsPdfInput,
-  type ProductTrendsPdfInput,
-  type RepActionPlansPdfInput,
 } from "@/lib/report-export";
-import { enrichAccountsWithTerritoryValue } from "@/lib/territory-value";
-import { detectOrderFrequencyDrops } from "@/lib/frequency-alerts";
+import { revokePdfArtifact, type PdfExportArtifact } from "@/lib/pdf-present";
+import { outOfStockProductId } from "@/lib/out-of-stock-products";
+import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { focusAccountsByHorizon } from "@/lib/score";
-import { buildOrderAnalytics } from "@/lib/order-analytics";
-import {
-  buildProductTrendData,
-  detectSlowingProductAlerts,
-} from "@/lib/product-trends";
 import { todayIso } from "@/lib/format";
 
 export type ReportPageType = "health" | "orders" | "products";
 
-export function useReportExport() {
+export type PdfPreviewSession = {
+  title: string;
+  artifact: PdfExportArtifact;
+};
+
+/** Single instance — mount via ReportExportProvider only. */
+export function useReportExportController() {
   const pathname = usePathname();
-  const { state, fullState, snapshot, repFilter, reps } = useFilteredPortfolio();
+  const {
+    state,
+    fullState,
+    snapshot,
+    repFilter,
+    reps,
+    enrichedAccounts,
+    frequencyAlerts,
+    orderAnalytics,
+    productTrends,
+    productAlerts,
+  } = useFilteredPortfolio();
   const { ids: outOfStockIds } = useOutOfStockProducts();
-  const { ids: closedAccountIds } = useClosedBusinessAccounts();
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<PdfPreviewSession | null>(null);
 
-  // Determine current active page
+  const openPdfPreview = useCallback((title: string, artifact: PdfExportArtifact) => {
+    setPdfPreview((previous) => {
+      revokePdfArtifact(previous?.artifact);
+      return { title, artifact };
+    });
+  }, []);
+
+  const closePdfPreview = useCallback(() => {
+    setPdfPreview((previous) => {
+      revokePdfArtifact(previous?.artifact);
+      return null;
+    });
+  }, []);
+
   const activePage: ReportPageType = useMemo(() => {
     if (pathname === "/orders") return "orders";
     if (pathname === "/products") return "products";
     return "health";
   }, [pathname]);
 
-  const enrichedAccounts = useMemo(
-    () => enrichAccountsWithTerritoryValue(snapshot.accounts, state.orders),
-    [snapshot.accounts, state.orders],
-  );
-
   const visibleFullState = useMemo(
     () => excludeHomeBaseFromPortfolio(fullState),
     [fullState],
   );
 
-  const alerts = useMemo(
-    () =>
-      excludeClosedBusinessAccounts(
-        detectOrderFrequencyDrops(
-          enrichedAccounts,
-          state.orders,
-          state.analysisAsOf ?? snapshot.asOf,
-        ),
-        closedAccountIds,
-      ),
-    [enrichedAccounts, state.orders, state.analysisAsOf, snapshot.asOf, closedAccountIds],
-  );
-
   const asOf = state.analysisAsOf ?? snapshot.asOf ?? todayIso();
-  const generatedAt = asOf;
 
-  const accountVisitLookup = useMemo(
-    () => buildPdfAccountVisitLookup(enrichedAccounts),
-    [enrichedAccounts],
-  );
-
-  // 1. Focus Health PDF Input
-  const focusHealthInput = useMemo((): FocusHealthPdfInput | null => {
-    if (enrichedAccounts.length === 0) return null;
-    return {
-      repFilter,
-      asOf,
-      generatedAt,
-      focusByHorizon: focusAccountsByHorizon(enrichedAccounts),
-      allAccounts: enrichedAccounts,
-    };
-  }, [enrichedAccounts, repFilter, asOf, generatedAt]);
-
-  const repActionPlansInput = useMemo((): RepActionPlansPdfInput | null => {
-    if (visibleFullState.accounts.length === 0) return null;
-    const plans = buildRepActionPlans(visibleFullState, reps, repFilter);
-    if (plans.length === 0) return null;
-    return {
-      repFilter,
-      asOf,
-      generatedAt,
-      plans,
-    };
-  }, [visibleFullState, reps, repFilter, asOf, generatedAt]);
-
-  // 2. Frequency Alerts PDF Input
-  const frequencyAlertsInput = useMemo((): FrequencyAlertsPdfInput | null => {
-    if (enrichedAccounts.length === 0) return null;
-    return {
-      repFilter,
-      asOf,
-      generatedAt,
-      alerts,
-      accountVisitLookup,
-    };
-  }, [enrichedAccounts.length, repFilter, asOf, generatedAt, alerts, accountVisitLookup]);
-
-  // 3. Order Analytics PDF Input
-  const orderAnalyticsInput = useMemo((): OrderAnalyticsPdfInput | null => {
-    if (state.orders.length === 0 && enrichedAccounts.length === 0) return null;
-    const analytics = buildOrderAnalytics(state.orders);
-    return {
-      repFilter,
-      asOf,
-      generatedAt,
-      restaurantFrequency: analytics.byFrequency,
-      topRestaurants: analytics.byRestaurant,
-      totalOrders: analytics.totals.orderEvents || state.orders.length,
-      totalBottles: analytics.totals.totalVolume,
-      accountVisitLookup,
-    };
-  }, [state.orders, enrichedAccounts.length, repFilter, asOf, generatedAt, accountVisitLookup]);
-
-  // 4. Product Trends PDF Input
-  const productTrendsInput = useMemo((): ProductTrendsPdfInput | null => {
-    if (state.orders.length === 0) return null;
-    const trendData = buildProductTrendData({
-      orders: state.orders,
-      selectedProducts: [],
-      timeframe: "12m",
-      granularity: "monthly",
-      asOf,
-    });
-    const slowingAlerts = excludeOutOfStock(
-      detectSlowingProductAlerts(trendData.productSummaries),
-      outOfStockIds,
-    );
-    const products = trendData.productSummaries.filter(
-      (summary) => !outOfStockIds.has(outOfStockProductId(summary.productName)),
-    );
-    return {
-      repFilter,
-      asOf,
-      generatedAt,
-      products,
-      slowingAlerts,
-      totalBottles: trendData.totalBottles,
-      accountVisitLookup,
-    };
-  }, [state.orders, repFilter, asOf, generatedAt, outOfStockIds, accountVisitLookup]);
+  const hasRepActionPlanData = useMemo(() => {
+    if (visibleFullState.accounts.length === 0) return false;
+    return buildRepActionPlans(visibleFullState, reps, repFilter).length > 0;
+  }, [visibleFullState, reps, repFilter]);
 
   const canExport = snapshot.accounts.length > 0 || state.orders.length > 0;
+  const hasHealthData = enrichedAccounts.length > 0;
+  const hasAlertsData = frequencyAlerts.length > 0;
+  const hasOrderData =
+    orderAnalytics.totals.orderEvents > 0 ||
+    state.orders.length > 0 ||
+    enrichedAccounts.length > 0;
+  const hasProductData = productTrends.productSummaries.length > 0;
 
-  // Dedicated Exporters
   const exportFocusHealthPdf = useCallback(async () => {
-    if (!focusHealthInput) {
-      throw new Error("No account health data available to generate report. Load sample data or upload records first.");
+    if (!hasHealthData) {
+      throw new Error(
+        "No account health data available to generate report. Load sample data or upload records first.",
+      );
     }
     setBusy(true);
     setBusyAction("Generating Account Health PDF…");
     try {
-      downloadFocusHealthPdf(focusHealthInput);
+      openPdfPreview(
+        "Account health",
+        buildFocusHealthPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          focusByHorizon: focusAccountsByHorizon(enrichedAccounts),
+          allAccounts: enrichedAccounts,
+        }),
+      );
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [focusHealthInput]);
+  }, [hasHealthData, openPdfPreview, repFilter, asOf, enrichedAccounts]);
 
   const exportRepActionPlansPdf = useCallback(async () => {
-    if (!repActionPlansInput) {
+    const plans = buildRepActionPlans(visibleFullState, reps, repFilter);
+    if (plans.length === 0) {
       throw new Error(
         "No account data available to build rep action plans. Load sample data or upload records first.",
       );
@@ -186,93 +122,164 @@ export function useReportExport() {
     setBusy(true);
     setBusyAction("Generating Rep Action Plan PDF…");
     try {
-      downloadRepActionPlansPdf(repActionPlansInput);
+      openPdfPreview(
+        "Rep action plan (weeks 1–3)",
+        buildRepActionPlansPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          plans,
+        }),
+      );
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [repActionPlansInput]);
+  }, [visibleFullState, reps, repFilter, asOf, openPdfPreview]);
 
   const exportFrequencyAlertsPdf = useCallback(async () => {
-    if (!frequencyAlertsInput) {
-      throw new Error("No account data available to generate frequency alerts. Load sample data or upload records first.");
+    if (!hasAlertsData) {
+      throw new Error(
+        "No account data available to generate frequency alerts. Load sample data or upload records first.",
+      );
     }
     setBusy(true);
     setBusyAction("Generating Frequency Alerts PDF…");
     try {
-      downloadFrequencyAlertsPdf(frequencyAlertsInput);
+      openPdfPreview(
+        "Frequency drop alerts",
+        buildFrequencyAlertsPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          alerts: frequencyAlerts,
+          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
+        }),
+      );
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [frequencyAlertsInput]);
+  }, [
+    hasAlertsData,
+    openPdfPreview,
+    repFilter,
+    asOf,
+    frequencyAlerts,
+    enrichedAccounts,
+  ]);
 
   const exportOrderAnalyticsPdf = useCallback(async () => {
-    if (!orderAnalyticsInput) {
-      throw new Error("No order analytics data available to generate report. Load sample data or upload orders first.");
+    if (!hasOrderData) {
+      throw new Error(
+        "No order analytics data available to generate report. Load sample data or upload orders first.",
+      );
     }
     setBusy(true);
     setBusyAction("Generating Order Analytics PDF…");
     try {
-      downloadOrderAnalyticsPdf(orderAnalyticsInput);
+      openPdfPreview(
+        "Order analytics",
+        buildOrderAnalyticsPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          restaurantFrequency: orderAnalytics.byFrequency,
+          topRestaurants: orderAnalytics.byRestaurant,
+          totalOrders: orderAnalytics.totals.orderEvents || state.orders.length,
+          totalBottles: orderAnalytics.totals.totalVolume,
+          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
+        }),
+      );
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [orderAnalyticsInput]);
+  }, [
+    hasOrderData,
+    openPdfPreview,
+    repFilter,
+    asOf,
+    orderAnalytics,
+    state.orders.length,
+    enrichedAccounts,
+  ]);
 
   const exportProductTrendsPdf = useCallback(async () => {
-    if (!productTrendsInput) {
-      throw new Error("No product trends data available to generate report. Load sample data or upload orders first.");
+    if (!hasProductData) {
+      throw new Error(
+        "No product trends data available to generate report. Load sample data or upload orders first.",
+      );
     }
     setBusy(true);
     setBusyAction("Generating Product Trends PDF…");
     try {
-      downloadProductTrendsPdf(productTrendsInput);
+      const products = productTrends.productSummaries.filter(
+        (summary) => !outOfStockIds.has(outOfStockProductId(summary.productName)),
+      );
+      openPdfPreview(
+        "Product sales trends",
+        buildProductTrendsPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          products,
+          slowingAlerts: productAlerts,
+          totalBottles: productTrends.totalBottles,
+        }),
+      );
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [productTrendsInput]);
+  }, [
+    hasProductData,
+    openPdfPreview,
+    repFilter,
+    asOf,
+    productTrends,
+    productAlerts,
+    outOfStockIds,
+    enrichedAccounts,
+  ]);
 
   const exportCurrentPagePdf = useCallback(
     async (pageOverride?: ReportPageType) => {
       const page = pageOverride ?? activePage;
       switch (page) {
         case "orders":
-          if (orderAnalyticsInput) {
+          if (hasOrderData) {
             await exportOrderAnalyticsPdf();
-            return "Order Analytics PDF downloaded.";
+            return "Order analytics PDF opened.";
           }
           break;
         case "products":
-          if (productTrendsInput) {
+          if (hasProductData) {
             await exportProductTrendsPdf();
-            return "Product Sales Trends PDF downloaded.";
+            return "Product trends PDF opened.";
           }
           break;
         case "health":
         default:
-          if (focusHealthInput) {
+          if (hasHealthData) {
             await exportFocusHealthPdf();
-            return "Account Health Report PDF downloaded.";
+            return "Account health PDF opened.";
           }
           break;
       }
 
-      // Fallback: If current page input isn't ready but alerts or another report is ready
-      if (frequencyAlertsInput) {
+      if (hasAlertsData) {
         await exportFrequencyAlertsPdf();
-        return "Frequency Alerts PDF downloaded.";
+        return "Frequency alerts PDF opened.";
       }
       throw new Error("No data loaded. Please load sample data or upload accounts/orders first.");
     },
     [
       activePage,
-      orderAnalyticsInput,
-      productTrendsInput,
-      focusHealthInput,
-      frequencyAlertsInput,
+      hasOrderData,
+      hasProductData,
+      hasHealthData,
+      hasAlertsData,
       exportOrderAnalyticsPdf,
       exportProductTrendsPdf,
       exportFocusHealthPdf,
@@ -280,7 +287,6 @@ export function useReportExport() {
     ],
   );
 
-  // Backward-compatible alias for existing exportReport callers
   const exportReport = useCallback(
     async (page?: ReportPageType) => {
       if (page) {
@@ -291,7 +297,6 @@ export function useReportExport() {
     [exportCurrentPagePdf, exportFrequencyAlertsPdf],
   );
 
-  // Safe Print: Handles iframe sandbox constraints gracefully
   const triggerSafePrint = useCallback(
     async (pageOverride?: ReportPageType): Promise<{
       downloaded: boolean;
@@ -305,8 +310,6 @@ export function useReportExport() {
         isEmbedded = true;
       }
 
-      // In an embedded iframe (e.g. AI Studio preview), window.print() is blocked by browser sandbox
-      // without allow-modals. Direct PDF download is 100% reliable and provides the printable document.
       if (isEmbedded) {
         try {
           const downloadMsg = await exportCurrentPagePdf(pageOverride);
@@ -321,7 +324,6 @@ export function useReportExport() {
         }
       }
 
-      // Top-level tab: Try window.print()
       try {
         window.print();
         return {
@@ -330,7 +332,6 @@ export function useReportExport() {
           message: "Print dialog opened. Select 'Save as PDF' or your printer.",
         };
       } catch {
-        // If window.print fails, automatically fallback to direct PDF generation
         const downloadMsg = await exportCurrentPagePdf(pageOverride);
         return {
           downloaded: true,
@@ -346,7 +347,7 @@ export function useReportExport() {
     busy,
     busyAction,
     canExport,
-    alertsCount: alerts.length,
+    alertsCount: frequencyAlerts.length,
     activePage,
     repFilter,
     asOf,
@@ -358,10 +359,14 @@ export function useReportExport() {
     exportOrderAnalyticsPdf,
     exportProductTrendsPdf,
     triggerSafePrint,
-    hasHealthData: Boolean(focusHealthInput),
-    hasRepActionPlanData: Boolean(repActionPlansInput),
-    hasOrderData: Boolean(orderAnalyticsInput),
-    hasProductData: Boolean(productTrendsInput),
-    hasAlertsData: Boolean(frequencyAlertsInput),
+    hasHealthData,
+    hasRepActionPlanData,
+    hasOrderData,
+    hasProductData,
+    hasAlertsData,
+    pdfPreview,
+    closePdfPreview,
   };
 }
+
+export type ReportExportController = ReturnType<typeof useReportExportController>;

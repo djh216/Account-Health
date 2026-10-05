@@ -5,7 +5,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -219,20 +218,29 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   const [analyticsEpoch, setAnalyticsEpoch] = useState(0);
   const hasPortfolioData = visibleState.accounts.length > 0;
 
-  /** Warm selected rep before paint so rep switches do not flash an empty shell. */
-  useLayoutEffect(() => {
+  /** Warm selected rep after paint so we do not block the main thread. */
+  useEffect(() => {
     if (!hasPortfolioData) return;
     if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
 
-    warmPortfolioAnalyticsForRep(
-      analyticsCache,
-      repFilter,
-      portfolioStateForRep(repIndex, repFilter),
-    );
-    setAnalyticsEpoch((epoch) => epoch + 1);
+    let cancelled = false;
+    const frame = requestAnimationFrame(() => {
+      if (cancelled) return;
+      warmPortfolioAnalyticsForRep(
+        analyticsCache,
+        repFilter,
+        portfolioStateForRep(repIndex, repFilter),
+      );
+      setAnalyticsEpoch((epoch) => epoch + 1);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
   }, [visibleStateKey, repFilter, repIndex, hasPortfolioData, analyticsCache]);
 
-  /** Preload every rep slice in idle time so switching reps hits the session cache. */
+  /** Preload other rep slices in idle time — no React updates until the user switches rep. */
   useEffect(() => {
     if (!hasPortfolioData) return;
 
@@ -246,6 +254,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
       while (queueIndex < repKeys.length) {
         const rep = repKeys[queueIndex];
         queueIndex += 1;
+        if (rep === repFilter) continue;
         if (isRepAnalyticsWarm(analyticsCache, rep)) continue;
 
         warmPortfolioAnalyticsForRep(
@@ -253,25 +262,24 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
           rep,
           portfolioStateForRep(repIndex, rep),
         );
-        setAnalyticsEpoch((epoch) => epoch + 1);
         break;
       }
 
       if (cancelled || queueIndex >= repKeys.length) return;
 
       if (typeof requestIdleCallback !== "undefined") {
-        requestIdleCallback(warmNext, { timeout: 2_000 });
+        requestIdleCallback(warmNext, { timeout: 4_000 });
       } else {
-        window.setTimeout(warmNext, 32);
+        window.setTimeout(warmNext, 250);
       }
     };
 
-    const starter = window.setTimeout(warmNext, 120);
+    const starter = window.setTimeout(warmNext, 800);
     return () => {
       cancelled = true;
       window.clearTimeout(starter);
     };
-  }, [visibleStateKey, repIndex, reps, hasPortfolioData, analyticsCache]);
+  }, [visibleStateKey, repIndex, reps, repFilter, hasPortfolioData, analyticsCache]);
 
   useEffect(() => {
     if (repFilter !== "all" && reps.length > 0 && !reps.includes(repFilter)) {

@@ -4,6 +4,11 @@ import { formatDate, formatMoney, formatNumber } from "./format";
 import type { RestaurantOrderFrequency, RestaurantVolumeRow } from "./order-analytics";
 import { buildExportPdfFilename } from "./pdf-filename";
 import {
+  artifactFromJsPdf,
+  downloadPdfArtifact,
+  type PdfExportArtifact,
+} from "./pdf-present";
+import {
   formatPdfLastVisitFromLookup,
   type PdfAccountVisitLookup,
 } from "./pdf-account-visit";
@@ -73,11 +78,9 @@ function restaurantRow(
   ];
 }
 
-export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
-  if (typeof window === "undefined") {
-    throw new Error("PDF export is only available in the browser.");
-  }
-
+export function generateOrderAnalyticsPdfDocument(
+  input: OrderAnalyticsPdfInput,
+): jsPDF {
   const doc = new jsPDF({
     orientation: "landscape",
     unit: "mm",
@@ -225,6 +228,22 @@ export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
     });
   }
 
+  return doc;
+}
+
+export function buildOrderAnalyticsPdfArtifact(
+  input: OrderAnalyticsPdfInput,
+): PdfExportArtifact {
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(buildExportPdfFilename(input.repFilter, "order-analytics", stamp));
+  return artifactFromJsPdf(
+    generateOrderAnalyticsPdfDocument(input),
+    buildExportPdfFilename(input.repFilter, "order-analytics", stamp),
+  );
+}
+
+export function downloadOrderAnalyticsPdf(input: OrderAnalyticsPdfInput): void {
+  if (typeof window === "undefined") {
+    throw new Error("PDF export is only available in the browser.");
+  }
+  downloadPdfArtifact(buildOrderAnalyticsPdfArtifact(input));
 }

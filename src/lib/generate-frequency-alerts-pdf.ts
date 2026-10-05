@@ -3,6 +3,11 @@ import autoTable from "jspdf-autotable";
 import { formatNumber } from "./format";
 import type { AccountFrequencyAlert } from "./frequency-alerts";
 import { buildExportPdfFilename } from "./pdf-filename";
+import {
+  artifactFromJsPdf,
+  downloadPdfArtifact,
+  type PdfExportArtifact,
+} from "./pdf-present";
 import { formatPdfLastVisitFromLookup, type PdfAccountVisitLookup } from "./pdf-account-visit";
 import {
   drawPdfKpiRow,
@@ -72,11 +77,12 @@ function alertRow(
     formatPdfLastVisitFromLookup(accountVisitLookup, alert.id, alert.accountName),
     cadenceCell,
     paceCell,
-    alert.actionRecommendation,
   ];
 }
 
-export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void {
+export function generateFrequencyAlertsPdfDocument(
+  input: FrequencyAlertsPdfInput,
+): jsPDF {
   const doc = new jsPDF({
     orientation: "landscape",
     unit: "mm",
@@ -122,7 +128,7 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
   autoTable(doc, {
     startY,
     margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, bottom: 12 },
-    head: [["Level", "Account", "Last visit", "Order cadence", "Pace · risk", "Next step"]],
+    head: [["Level", "Account", "Last visit", "Order cadence", "Pace · risk"]],
     body: tableBody,
     theme: "grid",
     headStyles: PDF_TABLE_HEAD,
@@ -132,8 +138,7 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
       1: { cellWidth: 52 },
       2: { cellWidth: 22 },
       3: { cellWidth: 38 },
-      4: { cellWidth: 42 },
-      5: { cellWidth: "auto" },
+      4: { cellWidth: "auto" },
     },
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 0) {
@@ -151,6 +156,19 @@ export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void
 
   stampPdfFooters(doc, "Frequency alerts", input.asOf);
 
+  return doc;
+}
+
+export function buildFrequencyAlertsPdfArtifact(
+  input: FrequencyAlertsPdfInput,
+): PdfExportArtifact {
   const stamp = input.generatedAt.slice(0, 10);
-  doc.save(buildExportPdfFilename(input.repFilter, "frequency-drop-alerts", stamp));
+  return artifactFromJsPdf(
+    generateFrequencyAlertsPdfDocument(input),
+    buildExportPdfFilename(input.repFilter, "frequency-drop-alerts", stamp),
+  );
+}
+
+export function downloadFrequencyAlertsPdf(input: FrequencyAlertsPdfInput): void {
+  downloadPdfArtifact(buildFrequencyAlertsPdfArtifact(input));
 }

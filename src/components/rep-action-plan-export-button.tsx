@@ -2,7 +2,7 @@
 
 import { CalendarRange, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useReportExport } from "@/hooks/use-report-export";
+import { useReportExport } from "@/components/report-export-provider";
 
 export function RepActionPlanExportButton({
   onMessage,
@@ -28,8 +28,8 @@ export function RepActionPlanExportButton({
       await exportRepActionPlansPdf();
       onMessage?.(
         repFilter === "all"
-          ? "Rep action plan PDF downloaded (all reps, 1 / 2 / 3 week sections)."
-          : `${repFilter}'s 1 / 2 / 3 week action plan PDF downloaded.`,
+          ? "Rep action plan PDF ready — print or save from the preview."
+          : `${repFilter}'s action plan PDF ready — print or save from the preview.`,
       );
     } catch (error) {
       const text =
