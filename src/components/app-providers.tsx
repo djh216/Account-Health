@@ -6,7 +6,7 @@ import { FilteredPortfolioProvider } from "@/components/filtered-portfolio-provi
 import { ReportExportProvider } from "@/components/report-export-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-const DASHBOARD_ROUTES = ["/", "/orders", "/products"] as const;
+const DASHBOARD_ROUTES = ["/", "/orders", "/products", "/insights"] as const;
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const router = useRouter();

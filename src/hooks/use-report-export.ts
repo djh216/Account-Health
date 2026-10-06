@@ -18,12 +18,18 @@ import {
 import { revokePdfArtifact, type PdfExportArtifact } from "@/lib/pdf-present";
 import { closedBusinessAccountId } from "@/lib/closed-business-accounts";
 import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
-import { outOfStockProductId } from "@/lib/out-of-stock-products";
+import {
+  excludeOutOfStockWinBackSkus,
+  outOfStockProductId,
+} from "@/lib/out-of-stock-products";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { focusAccountsByHorizon } from "@/lib/score";
 import { todayIso } from "@/lib/format";
+import { useSalesInsights } from "@/hooks/use-sales-insights";
+import { buildWeeklyBriefingPdfArtifact } from "@/lib/generate-weekly-briefing-pdf";
+import { buildSalesInsightsPdfArtifact } from "@/lib/generate-sales-insights-pdf";
 
-export type ReportPageType = "health" | "orders" | "products";
+export type ReportPageType = "health" | "orders" | "products" | "insights";
 
 export type PdfPreviewSession = {
   title: string;
@@ -66,9 +72,12 @@ export function useReportExportController() {
     });
   }, []);
 
+  const { insights } = useSalesInsights();
+
   const activePage: ReportPageType = useMemo(() => {
     if (pathname === "/orders") return "orders";
     if (pathname === "/products") return "products";
+    if (pathname === "/insights") return "insights";
     return "health";
   }, [pathname]);
 
@@ -105,6 +114,9 @@ export function useReportExportController() {
   );
 
   const hasImminentChurnData = imminentChurnAccounts.length > 0;
+  const hasInsightsData = insights !== null;
+  const hasWeeklyBriefingData = hasInsightsData;
+  const hasSalesInsightsPackData = hasInsightsData;
 
   const exportFocusHealthPdf = useCallback(async () => {
     if (!hasHealthData) {
@@ -326,10 +338,61 @@ export function useReportExportController() {
     enrichedAccounts,
   ]);
 
+  const exportWeeklyBriefingPdf = useCallback(async () => {
+    if (!insights) {
+      throw new Error("Insights are not ready yet. Wait for analytics to load.");
+    }
+    setBusy(true);
+    setBusyAction("Generating Weekly Briefing PDF…");
+    try {
+      openPdfPreview(
+        "Weekly book briefing",
+        buildWeeklyBriefingPdfArtifact({
+          repFilter,
+          generatedAt: asOf,
+          briefing: insights.weeklyBriefing,
+        }),
+      );
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [insights, openPdfPreview, repFilter, asOf]);
+
+  const exportSalesInsightsPackPdf = useCallback(async () => {
+    if (!insights) {
+      throw new Error("Insights are not ready yet. Wait for analytics to load.");
+    }
+    setBusy(true);
+    setBusyAction("Generating Sales Insights PDF…");
+    try {
+      openPdfPreview(
+        "Sales insights pack",
+        buildSalesInsightsPdfArtifact({
+          repFilter,
+          generatedAt: asOf,
+          insights: {
+            ...insights,
+            winBackSkus: excludeOutOfStockWinBackSkus(insights.winBackSkus, outOfStockIds),
+          },
+        }),
+      );
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [insights, openPdfPreview, repFilter, asOf, outOfStockIds]);
+
   const exportCurrentPagePdf = useCallback(
     async (pageOverride?: ReportPageType) => {
       const page = pageOverride ?? activePage;
       switch (page) {
+        case "insights":
+          if (hasWeeklyBriefingData) {
+            await exportWeeklyBriefingPdf();
+            return "Weekly book briefing PDF opened.";
+          }
+          break;
         case "orders":
           if (hasOrderData) {
             await exportOrderAnalyticsPdf();
@@ -367,6 +430,8 @@ export function useReportExportController() {
       exportProductTrendsPdf,
       exportFocusHealthPdf,
       exportFrequencyAlertsPdf,
+      hasWeeklyBriefingData,
+      exportWeeklyBriefingPdf,
     ],
   );
 
@@ -443,6 +508,8 @@ export function useReportExportController() {
     exportProductTrendsPdf,
     exportProductSlowdownPdf,
     exportImminentChurnPdf,
+    exportWeeklyBriefingPdf,
+    exportSalesInsightsPackPdf,
     triggerSafePrint,
     hasHealthData,
     hasRepActionPlanData,
@@ -451,6 +518,8 @@ export function useReportExportController() {
     hasAlertsData,
     hasProductSlowdownData,
     hasImminentChurnData,
+    hasWeeklyBriefingData,
+    hasSalesInsightsPackData,
     pdfPreview,
     closePdfPreview,
   };

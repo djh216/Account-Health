@@ -1,4 +1,5 @@
 import type { jsPDF } from "jspdf";
+import autoTable, { type UserOptions } from "jspdf-autotable";
 import { formatDate } from "./format";
 
 export const PDF_MARGIN_X = 12;
@@ -102,3 +103,101 @@ export const PDF_TABLE_BODY = {
   cellPadding: 1.5,
   valign: "top" as const,
 };
+
+/** Y position for body content after a manual page break. */
+export const PDF_CONTENT_TOP_Y = 18;
+
+export const PDF_PAGE_BOTTOM_MARGIN = 12;
+
+/** Section title line + gap before the grid (mm). */
+export const PDF_SECTION_TITLE_BLOCK_MM = 8;
+
+/** Table header row + at least one body row (mm). */
+export const PDF_MIN_TABLE_BLOCK_MM = 20;
+
+export function pdfPageContentBottom(doc: jsPDF): number {
+  return doc.internal.pageSize.getHeight() - PDF_PAGE_BOTTOM_MARGIN;
+}
+
+/** Start a new page when fewer than `minBlockHeight` mm remain (keeps table heads with table start). */
+export function ensurePdfVerticalSpace(
+  doc: jsPDF,
+  startY: number,
+  minBlockHeight = PDF_MIN_TABLE_BLOCK_MM,
+): number {
+  if (startY + minBlockHeight > pdfPageContentBottom(doc)) {
+    doc.addPage();
+    return PDF_CONTENT_TOP_Y;
+  }
+  return startY;
+}
+
+export function pdfAutoTableFinalY(doc: jsPDF, fallback: number): number {
+  return (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? fallback;
+}
+
+export type DrawPdfSectionTableInput = {
+  sectionTitle?: string;
+  sectionTitleFontSize?: number;
+  sectionTitleColor?: [number, number, number];
+  /** Gap between section title baseline and table top (mm). */
+  tableStartOffset?: number;
+  head: NonNullable<UserOptions["head"]>;
+  body: NonNullable<UserOptions["body"]>;
+} & Omit<UserOptions, "startY" | "head" | "body">;
+
+/** Draw optional section title + autoTable, avoiding orphaned titles or column headers. */
+export function drawPdfSectionTable(
+  doc: jsPDF,
+  startY: number,
+  input: DrawPdfSectionTableInput,
+): number {
+  const {
+    sectionTitle,
+    sectionTitleFontSize = 9,
+    sectionTitleColor,
+    tableStartOffset = 4,
+    head,
+    body,
+    margin,
+    ...rest
+  } = input;
+
+  const titleBlock = sectionTitle ? PDF_SECTION_TITLE_BLOCK_MM : 0;
+  let y = ensurePdfVerticalSpace(doc, startY, titleBlock + PDF_MIN_TABLE_BLOCK_MM);
+
+  let tableStartY = y;
+  if (sectionTitle) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(sectionTitleFontSize);
+    if (sectionTitleColor) doc.setTextColor(...sectionTitleColor);
+    else doc.setTextColor(...PDF_TEXT);
+    doc.text(sectionTitle, PDF_MARGIN_X, y);
+    doc.setTextColor(...PDF_TEXT);
+    tableStartY = y + tableStartOffset;
+  }
+
+  const marginOverrides =
+    margin && typeof margin === "object" && !Array.isArray(margin) ? margin : {};
+
+  autoTable(doc, {
+    startY: tableStartY,
+    margin: {
+      left: PDF_MARGIN_X,
+      right: PDF_MARGIN_X,
+      bottom: PDF_PAGE_BOTTOM_MARGIN,
+      ...marginOverrides,
+    },
+    head,
+    body,
+    theme: "grid",
+    headStyles: PDF_TABLE_HEAD,
+    bodyStyles: PDF_TABLE_BODY,
+    showHead: "everyPage",
+    rowPageBreak: "auto",
+    styles: { overflow: "linebreak", cellWidth: "wrap" },
+    ...rest,
+  });
+
+  return pdfAutoTableFinalY(doc, tableStartY + 16) + 6;
+}

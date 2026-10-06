@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import { formatDate, formatNumber } from "./format";
 import type { ProductSlowingAlert } from "./product-trends";
 import { buildExportCsvFilename, buildExportPdfFilename } from "./pdf-filename";
+import { ensurePdfVerticalSpace } from "./pdf-layout";
 import {
   artifactFromJsPdf,
   downloadPdfArtifact,
@@ -147,8 +148,11 @@ export function generateProductSlowdownPdfDocument(input: ProductSlowdownPdfInpu
     alertRow(alert, input.accountVisitLookup),
   );
 
+  const tableStartY = ensurePdfVerticalSpace(doc, 40);
+
   autoTable(doc, {
-    startY: 40,
+    startY: tableStartY,
+    showHead: "everyPage",
     head: [
       [
         "SEVERITY",

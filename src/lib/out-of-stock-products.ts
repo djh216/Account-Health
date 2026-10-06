@@ -74,3 +74,18 @@ export function excludeOutOfStock<T extends { id: string }>(
   if (outOfStockIds.size === 0) return alerts;
   return alerts.filter((alert) => !outOfStockIds.has(alert.id));
 }
+
+export function isProductMarkedOutOfStock(
+  productName: string,
+  outOfStockIds: Set<string>,
+): boolean {
+  return outOfStockIds.has(outOfStockProductId(productName));
+}
+
+export function excludeOutOfStockWinBackSkus<T extends { product: string }>(
+  rows: T[],
+  outOfStockIds: Set<string>,
+): T[] {
+  if (outOfStockIds.size === 0) return rows;
+  return rows.filter((row) => !isProductMarkedOutOfStock(row.product, outOfStockIds));
+}

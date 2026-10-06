@@ -12,6 +12,7 @@ import { formatPdfLastVisitFromLookup, type PdfAccountVisitLookup } from "./pdf-
 import {
   drawPdfKpiRow,
   drawPdfTitleBar,
+  ensurePdfVerticalSpace,
   PDF_MARGIN_X,
   PDF_TABLE_BODY,
   PDF_TABLE_HEAD,
@@ -125,9 +126,12 @@ export function generateFrequencyAlertsPdfDocument(
     alertRow(alert, input.accountVisitLookup),
   );
 
+  startY = ensurePdfVerticalSpace(doc, startY);
+
   autoTable(doc, {
     startY,
     margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, bottom: 12 },
+    showHead: "everyPage",
     head: [["Level", "Account", "Last visit", "Order cadence", "Pace · risk"]],
     body: tableBody,
     theme: "grid",

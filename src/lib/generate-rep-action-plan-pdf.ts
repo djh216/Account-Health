@@ -1,5 +1,4 @@
 import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import { formatHealthScoreChange } from "./format";
 import { buildExportPdfFilename } from "./pdf-filename";
 import {
@@ -9,7 +8,9 @@ import {
 } from "./pdf-present";
 import { formatVisitCadencePdfCompact } from "./visit-cadence";
 import {
+  drawPdfSectionTable,
   drawPdfTitleBar,
+  PDF_BURGUNDY,
   PDF_MARGIN_X,
   PDF_TABLE_BODY,
   PDF_TABLE_HEAD,
@@ -89,24 +90,17 @@ function addHorizonTable(
   accounts: AccountHealth[],
   startY: number,
 ): number {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(120, 28, 48);
-  doc.text(HORIZON_PLAN_LABEL[horizon], MARGIN_X, startY);
-
   const body =
     accounts.length > 0
       ? accounts.map((item, index) => actionRow(index + 1, item))
       : [["—", "No accounts in this window", "—", "—", "—"]];
 
-  autoTable(doc, {
-    startY: startY + 4,
+  return drawPdfSectionTable(doc, startY, {
+    sectionTitle: HORIZON_PLAN_LABEL[horizon],
+    sectionTitleColor: PDF_BURGUNDY,
     margin: { left: MARGIN_X, right: MARGIN_X, bottom: 12 },
     head: [["#", "Account", "Risk · tier", "Score", "Order · visit cadence"]],
     body,
-    theme: "grid",
-    headStyles: PDF_TABLE_HEAD,
-    bodyStyles: PDF_TABLE_BODY,
     alternateRowStyles: { fillColor: [250, 250, 252] },
     columnStyles: {
       0: { cellWidth: 8, halign: "center", fontStyle: "bold" },
@@ -115,15 +109,8 @@ function addHorizonTable(
       3: { cellWidth: 14, halign: "right" },
       4: { cellWidth: "auto" },
     },
-    styles: {
-      overflow: "linebreak",
-      cellWidth: "wrap",
-    },
+    bodyStyles: PDF_TABLE_BODY,
   });
-
-  const finalY =
-    (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? startY + 20;
-  return finalY + 6;
 }
 
 export function generateRepActionPlansPdfDocument(input: RepActionPlansPdfInput): jsPDF {
@@ -159,11 +146,6 @@ export function generateRepActionPlansPdfDocument(input: RepActionPlansPdfInput)
 
     const horizons: FocusHorizon[] = ["this_week", "two_weeks", "three_weeks"];
     for (const horizon of horizons) {
-      const pageHeight = doc.internal.pageSize.getHeight();
-      if (y > pageHeight - 40) {
-        doc.addPage();
-        y = MARGIN_X + 4;
-      }
       y = addHorizonTable(doc, horizon, plan.focusByHorizon[horizon], y);
     }
   });

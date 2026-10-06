@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, formatNumber } from "./format";
 import { buildExportPdfFilename } from "./pdf-filename";
+import { ensurePdfVerticalSpace } from "./pdf-layout";
 import { formatPdfLastVisitCell } from "./pdf-account-visit";
 
 const MARGIN_X = 12;
@@ -81,8 +82,11 @@ export function downloadAccountProductsPdf(input: AccountProductsPdfInput): void
     26,
   );
 
+  const tableStartY = ensurePdfVerticalSpace(doc, 30);
+
   autoTable(doc, {
-    startY: 30,
+    startY: tableStartY,
+    showHead: "everyPage",
     head: [["#", "Product", "Bottles", "Share", "Orders", "First ordered", "Last ordered"]],
     body: input.products.map((row, index) => [
       String(index + 1),

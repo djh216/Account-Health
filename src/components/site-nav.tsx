@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/", label: "Account health" },
   { href: "/orders", label: "Order analytics" },
   { href: "/products", label: "Product sales trends" },
+  { href: "/insights", label: "Sales insights" },
 ] as const;
 
 export function SiteNav() {

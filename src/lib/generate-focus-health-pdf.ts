@@ -11,6 +11,7 @@ import {
 import {
   drawPdfKpiRow,
   drawPdfTitleBar,
+  ensurePdfVerticalSpace,
   PDF_MARGIN_X,
   PDF_TABLE_BODY,
   PDF_TABLE_HEAD,
@@ -128,9 +129,12 @@ export function generateFocusHealthPdfDocument(input: FocusHealthPdfInput): jsPD
     return accounts.map((item) => focusRow(label, item));
   });
 
+  startY = ensurePdfVerticalSpace(doc, startY);
+
   autoTable(doc, {
     startY,
     margin: { left: MARGIN_X, right: MARGIN_X, bottom: 12 },
+    showHead: "everyPage",
     head: [
       ["Window", "Account", "Risk", "Tier", "Score", "Last order", "Last visit", "Typ cadence", "Pace"],
     ],

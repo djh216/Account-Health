@@ -12,6 +12,7 @@ import {
   formatPdfLastVisitFromLookup,
   type PdfAccountVisitLookup,
 } from "./pdf-account-visit";
+import { ensurePdfVerticalSpace } from "./pdf-layout";
 
 const MARGIN_X = 12;
 const BURGUNDY: [number, number, number] = [120, 28, 48];
@@ -159,9 +160,12 @@ export function generateOrderAnalyticsPdfDocument(
     restaurantRow(row, input.accountVisitLookup),
   );
 
+  const tableStartY = ensurePdfVerticalSpace(doc, 38);
+
   autoTable(doc, {
-    startY: 38,
+    startY: tableStartY,
     margin: { left: MARGIN_X, right: MARGIN_X, bottom: 14 },
+    showHead: "everyPage",
     head: [
       [
         "Restaurant / Account",

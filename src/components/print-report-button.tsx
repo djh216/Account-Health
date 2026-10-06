@@ -63,6 +63,8 @@ export function PrintReportButton({
     exportFrequencyAlertsPdf,
     exportProductSlowdownPdf,
     exportImminentChurnPdf,
+    exportWeeklyBriefingPdf,
+    exportSalesInsightsPackPdf,
     hasHealthData,
     hasRepActionPlanData,
     hasOrderData,
@@ -70,6 +72,8 @@ export function PrintReportButton({
     hasAlertsData,
     hasProductSlowdownData,
     hasImminentChurnData,
+    hasWeeklyBriefingData,
+    hasSalesInsightsPackData,
   } = useReportExport();
 
   const [localToast, setLocalToast] = useState<string | null>(null);
@@ -81,7 +85,9 @@ export function PrintReportButton({
       ? "Order analytics"
       : effectivePage === "products"
         ? "Product trends"
-        : "Account health";
+        : effectivePage === "insights"
+          ? "Weekly book briefing"
+          : "Account health";
 
   function notify(msg: string) {
     if (onMessage) {
@@ -232,6 +238,23 @@ export function PrintReportButton({
             >
               <AlertTriangle className="size-4 shrink-0 text-rose-600" />
               Imminent churn intervention
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => void runExport(exportWeeklyBriefingPdf, "Weekly book briefing")}
+              disabled={!hasWeeklyBriefingData}
+              className="gap-2"
+            >
+              <FileText className="size-4 shrink-0 text-primary" />
+              Weekly book briefing
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => void runExport(exportSalesInsightsPackPdf, "Sales insights pack")}
+              disabled={!hasSalesInsightsPackData}
+              className="gap-2"
+            >
+              <FileText className="size-4 shrink-0 text-primary" />
+              Sales insights pack (all sections)
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -47,6 +47,11 @@ import type { ProductSlowingAlert } from "@/lib/product-trends";
 import type { AccountHealth, PortfolioSnapshot, PortfolioState } from "@/lib/types";
 import type { OrderAnalyticsSnapshot } from "@/lib/order-analytics";
 import type { PortfolioProjectionSummary } from "@/lib/order-projections";
+import { assembleSalesInsightsInput } from "@/hooks/use-sales-insights";
+import {
+  getCachedSalesInsights,
+  warmSalesInsights,
+} from "@/lib/sales-insights/sales-insights-cache";
 
 const getServerRepFilterSnapshot = () => "all";
 
@@ -354,6 +359,60 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   const resetAll = useCallback(() => {
     void hardResetApp();
   }, []);
+
+  /** Precompute sales insights in idle time so /insights opens instantly when cached. */
+  useEffect(() => {
+    if (!activeCore || !activeHeavy || repFilterPending) return;
+
+    const input = assembleSalesInsightsInput({
+      enrichedAccounts: activeCore.enrichedAccounts,
+      repFilter,
+      frequencyAlerts,
+      productAlerts,
+      newAccounts: activeCore.newAccounts,
+      retainedAccounts: activeCore.retainedAccounts,
+      returningCustomers: activeCore.returningCustomers,
+      projectionsSummary:
+        activeHeavy?.projectionsSummary ?? emptyProjectionsSummary(),
+      state: filteredState,
+      snapshot: activeCore.snapshot,
+      repFilterPending: false,
+    });
+    if (!input) return;
+
+    const portfolioKey = portfolioStateCacheKey(filteredState);
+    if (getCachedSalesInsights(portfolioKey, repFilter)) return;
+
+    let cancelled = false;
+    const warm = () => {
+      if (cancelled) return;
+      warmSalesInsights(input, portfolioKey);
+    };
+
+    if (typeof requestIdleCallback !== "undefined") {
+      const idleId = requestIdleCallback(warm, { timeout: 3_000 });
+      return () => {
+        cancelled = true;
+        cancelIdleCallback(idleId);
+      };
+    }
+
+    const timerId = window.setTimeout(warm, 100);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [
+    activeCore,
+    activeHeavy,
+    repFilterPending,
+    filteredState,
+    repFilter,
+    frequencyAlerts,
+    productAlerts,
+    visibleStateKey,
+    analyticsEpoch,
+  ]);
 
   const analysisAsOf =
     visibleState.analysisAsOf ?? new Date().toISOString().slice(0, 10);

@@ -3,6 +3,7 @@ import autoTable from "jspdf-autotable";
 import { formatDate, formatDays, formatNumber } from "./format";
 import type { AccountProjectionAndChurn } from "./order-projections";
 import { buildExportPdfFilename } from "./pdf-filename";
+import { ensurePdfVerticalSpace } from "./pdf-layout";
 import {
   artifactFromJsPdf,
   downloadPdfArtifact,
@@ -149,9 +150,12 @@ export function generateImminentChurnPdfDocument(input: ImminentChurnPdfInput): 
     churnRow(account, input.accountVisitLookup),
   );
 
+  const tableStartY = ensurePdfVerticalSpace(doc, 38);
+
   autoTable(doc, {
-    startY: 38,
+    startY: tableStartY,
     margin: { left: MARGIN_X, right: MARGIN_X, bottom: 14 },
+    showHead: "everyPage",
     head: [
       [
         "ACCOUNT & REP",
