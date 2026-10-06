@@ -26,3 +26,11 @@ export function buildExportCsvFilename(
 ): string {
   return `${repSlugFromFilter(repFilter)}-cellar-pulse-${reportSlug}-${stamp}.csv`;
 }
+
+export function buildExportXlsxFilename(
+  repFilter: string,
+  reportSlug: string,
+  stamp: string,
+): string {
+  return `${repSlugFromFilter(repFilter)}-cellar-pulse-${reportSlug}-${stamp}.xlsx`;
+}

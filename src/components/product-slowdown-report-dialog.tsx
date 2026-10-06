@@ -33,7 +33,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDate, formatNumber, todayIso } from "@/lib/format";
 import {
-  downloadProductSlowdownCsv,
+  downloadProductSlowdownExcel,
   downloadProductSlowdownPdf,
   type ProductSlowdownPdfInput,
   type PdfAccountVisitLookup,
@@ -124,12 +124,12 @@ export function ProductSlowdownReportDialog({
     }
   }
 
-  function handleDownloadCsv() {
+  async function handleDownloadExcel() {
     try {
-      downloadProductSlowdownCsv(pdfInput);
-      onMessage?.("Monthly Product Slowdown CSV exported.");
+      await downloadProductSlowdownExcel(pdfInput);
+      onMessage?.("Monthly Product Slowdown Excel file downloaded.");
     } catch {
-      onMessage?.("Could not export CSV.");
+      onMessage?.("Could not export Excel file.");
     }
   }
 
@@ -164,7 +164,7 @@ export function ProductSlowdownReportDialog({
         )
       ) : null}
 
-      <DialogContent className="max-h-[92vh] w-[95vw] max-w-6xl overflow-y-auto overflow-x-hidden p-0 sm:max-w-6xl">
+      <DialogContent className="flex max-h-[min(92vh,calc(100vh-2rem))] w-[min(96rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none md:max-w-none">
         {/* Top Action & Export Bar */}
         <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 sm:px-6 sm:py-3.5 pr-12 sm:pr-14 backdrop-blur no-print">
           <div className="min-w-0">
@@ -192,11 +192,11 @@ export function ProductSlowdownReportDialog({
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleDownloadCsv}
+              onClick={() => void handleDownloadExcel()}
               className="gap-1.5 text-xs"
             >
               <FileSpreadsheet className="size-4" />
-              <span>Export CSV</span>
+              <span>Export Excel</span>
             </Button>
             <Button
               type="button"
@@ -211,7 +211,7 @@ export function ProductSlowdownReportDialog({
         </div>
 
         {/* Printable Report Document Body */}
-        <div className="space-y-5 p-4 sm:p-6 w-full max-w-full overflow-hidden box-border">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           {/* Branded Executive Header */}
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-5 text-primary">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -398,17 +398,17 @@ export function ProductSlowdownReportDialog({
           ) : null}
 
           {/* Slowdown Alerts Table */}
-          <div className="w-full overflow-x-auto rounded-xl border bg-card shadow-xs">
-            <Table className="w-full min-w-full text-xs">
+          <div className="w-full max-w-full overflow-x-auto rounded-xl border bg-card shadow-xs">
+            <Table className="min-w-[64rem] text-xs [&_td]:text-left [&_th]:text-left [&_th:not(:first-child)_button]:justify-start">
               <TableHeader className="bg-muted/60">
                 <TableRow>
-                  <TableHead className="w-[85px] px-3 whitespace-nowrap">Severity</TableHead>
-                  <TableHead className="min-w-[150px] max-w-[220px] px-3">Wine Product SKU</TableHead>
-                  <TableHead className="w-[85px] px-2 text-right whitespace-nowrap">Recent Month</TableHead>
-                  <TableHead className="w-[85px] px-2 text-right whitespace-nowrap">Prior Month</TableHead>
-                  <TableHead className="w-[95px] px-2 text-right whitespace-nowrap">Monthly Drop</TableHead>
-                  <TableHead className="min-w-[130px] max-w-[180px] px-3">Top Accounts to Target</TableHead>
-                  <TableHead className="min-w-[190px] px-3">Diagnosis & Action Plan</TableHead>
+                  <TableHead className="min-w-[6.5rem] px-3 whitespace-nowrap">Severity</TableHead>
+                  <TableHead className="min-w-[12rem] px-3 whitespace-normal">Wine Product SKU</TableHead>
+                  <TableHead className="min-w-[6.5rem] px-2 whitespace-nowrap">Recent Month</TableHead>
+                  <TableHead className="min-w-[6.5rem] px-2 whitespace-nowrap">Prior Month</TableHead>
+                  <TableHead className="min-w-[7rem] px-2 whitespace-nowrap">Monthly Drop</TableHead>
+                  <TableHead className="min-w-[11rem] px-3 whitespace-normal">Top Accounts to Target</TableHead>
+                  <TableHead className="min-w-[16rem] px-3 whitespace-normal">Diagnosis & Action Plan</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -441,7 +441,7 @@ export function ProductSlowdownReportDialog({
                         )}
                       </TableCell>
 
-                      <TableCell className="px-3 py-3 align-top whitespace-normal min-w-[150px] max-w-[220px]">
+                      <TableCell className="min-w-[12rem] px-3 py-3 align-top whitespace-normal">
                         <div className="flex items-start gap-2">
                           <Wine className="mt-0.5 size-4 shrink-0 text-primary/70" />
                           <div className="min-w-0 flex-1">
@@ -464,22 +464,22 @@ export function ProductSlowdownReportDialog({
                         </div>
                       </TableCell>
 
-                      <TableCell className="px-2 py-3 text-right font-medium tabular-nums align-top whitespace-nowrap">
+                      <TableCell className="px-2 py-3 font-medium tabular-nums align-top whitespace-nowrap">
                         {formatNumber(alert.recentVolume28d)} btls
                       </TableCell>
 
-                      <TableCell className="px-2 py-3 text-right font-medium tabular-nums text-muted-foreground align-top whitespace-nowrap">
+                      <TableCell className="px-2 py-3 font-medium tabular-nums text-muted-foreground align-top whitespace-nowrap">
                         {formatNumber(alert.priorVolume28d)} btls
                       </TableCell>
 
-                      <TableCell className="px-2 py-3 text-right tabular-nums align-top whitespace-nowrap">
+                      <TableCell className="px-2 py-3 tabular-nums align-top whitespace-nowrap">
                         <span className="font-bold text-rose-600">
                           -{formatNumber(alert.volumeDropBtls)} btls
                         </span>
                         <div className="text-[11px] text-rose-500 font-medium">(-{alert.dropPercentage}%)</div>
                       </TableCell>
 
-                      <TableCell className="px-3 py-3 align-top whitespace-normal min-w-[130px] max-w-[180px]">
+                      <TableCell className="min-w-[11rem] px-3 py-3 align-top whitespace-normal">
                         {alert.topAtRiskAccounts.length > 0 ? (
                           <ul className="space-y-1 text-xs">
                             {alert.topAtRiskAccounts.map((acc) => (
@@ -493,7 +493,7 @@ export function ProductSlowdownReportDialog({
                         )}
                       </TableCell>
 
-                      <TableCell className="px-3 py-3 align-top whitespace-normal min-w-[190px]">
+                      <TableCell className="min-w-[16rem] px-3 py-3 align-top whitespace-normal">
                         <p className="text-xs font-medium text-foreground leading-snug break-words">{alert.message}</p>
                         <div className="mt-1.5 rounded-md bg-muted/60 p-2 text-xs text-muted-foreground leading-snug break-words border border-border/50">
                           <span className="font-semibold text-primary">👉 Action:</span>{" "}

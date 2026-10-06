@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { format, isAfter, parseISO, startOfMonth, startOfWeek } from "date-fns";
+import { format, isAfter, parseISO } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -45,8 +45,12 @@ import {
 } from "lucide-react";
 import { formatMoney, formatNumber, formatDate, normalizeName } from "@/lib/format";
 import type { Order } from "@/lib/types";
-import type { ProductTrendPoint, ProductTrendGranularity } from "@/lib/product-trends";
-import { PRODUCT_PALETTE } from "@/lib/product-trends";
+import {
+  PRODUCT_PALETTE,
+  productTrendBucketKey,
+  type ProductTrendGranularity,
+  type ProductTrendPoint,
+} from "@/lib/product-trends";
 
 type PaceCategory = "all" | "accelerating" | "new" | "returning" | "steady" | "decelerating" | "lapsed";
 
@@ -204,15 +208,8 @@ export function TrendPointAnalyticsDialog({
     if (isNaN(date.getTime())) return false;
     if (asOf && isAfter(date, parseISO(asOf.slice(0, 10)))) return false;
 
-    if (granularity === "weekly") {
-      const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-      const key = format(weekStart, "yyyy-'W'II");
-      return key === targetKey;
-    } else {
-      const monthStart = startOfMonth(date);
-      const key = format(monthStart, "yyyy-MM");
-      return key === targetKey;
-    }
+    const anchor = asOf ? parseISO(asOf.slice(0, 10)) : date;
+    return productTrendBucketKey(date, granularity, anchor) === targetKey;
   };
 
   // Orders for current period
@@ -349,15 +346,8 @@ export function TrendPointAnalyticsDialog({
         return date.getTime() < point.timestamp;
       }
 
-      if (granularity === "weekly") {
-        const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-        const key = format(weekStart, "yyyy-'W'II");
-        return key < point.key;
-      } else {
-        const monthStart = startOfMonth(date);
-        const key = format(monthStart, "yyyy-MM");
-        return key < point.key;
-      }
+      const anchor = asOf ? parseISO(asOf.slice(0, 10)) : date;
+      return productTrendBucketKey(date, granularity, anchor) < point.key;
     };
 
     // Pre-calculate set of accounts that have ordered the product prior to this period

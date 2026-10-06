@@ -1,10 +1,12 @@
 import {
+  addDays,
   differenceInCalendarDays,
   differenceInMonths,
   format,
   isAfter,
   isBefore,
   parseISO,
+  startOfDay,
   startOfMonth,
   startOfWeek,
   subDays,
@@ -14,7 +16,127 @@ import type { Order } from "./types";
 import { normalizeName } from "./format";
 import { rollingPaceWindow } from "./pace-windows";
 
-export type ProductTrendGranularity = "monthly" | "weekly";
+export type ProductTrendGranularity = "monthly" | "weekly" | "30d";
+
+export const PRODUCT_TREND_30D_PERIOD_DAYS = 30;
+
+/** Rolling 30-day windows ending on `asOf` (index 0 = last 30 days inclusive). */
+export function thirtyDayTrendPeriodIndex(orderDate: Date, asOf: Date): number | null {
+  const asOfDay = startOfDay(asOf);
+  const orderDay = startOfDay(orderDate);
+  if (isAfter(orderDay, asOfDay)) return null;
+  return Math.floor(
+    differenceInCalendarDays(asOfDay, orderDay) / PRODUCT_TREND_30D_PERIOD_DAYS,
+  );
+}
+
+export function thirtyDayTrendPeriodBounds(
+  periodIndex: number,
+  asOf: Date,
+): { start: Date; end: Date } {
+  const asOfDay = startOfDay(asOf);
+  const end = subDays(asOfDay, periodIndex * PRODUCT_TREND_30D_PERIOD_DAYS);
+  const start = subDays(end, PRODUCT_TREND_30D_PERIOD_DAYS - 1);
+  return { start, end };
+}
+
+export function thirtyDayTrendPeriodKey(periodIndex: number, asOf: Date): string {
+  const { end } = thirtyDayTrendPeriodBounds(periodIndex, asOf);
+  return `30d:${format(end, "yyyy-MM-dd")}`;
+}
+
+export function thirtyDayTrendPeriodLabel(
+  periodIndex: number,
+  asOf: Date,
+): string {
+  const { start, end } = thirtyDayTrendPeriodBounds(periodIndex, asOf);
+  const range = `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`;
+  return periodIndex === 0 ? `Last 30 days (${range})` : range;
+}
+
+export function productTrendBucketKey(
+  date: Date,
+  granularity: ProductTrendGranularity,
+  asOf?: Date,
+): string {
+  if (granularity === "weekly") {
+    return format(startOfWeek(date, { weekStartsOn: 1 }), "yyyy-'W'II");
+  }
+  if (granularity === "30d") {
+    const anchor = asOf ?? date;
+    const periodIndex = thirtyDayTrendPeriodIndex(date, anchor);
+    if (periodIndex === null) return "";
+    return thirtyDayTrendPeriodKey(periodIndex, anchor);
+  }
+  return format(startOfMonth(date), "yyyy-MM");
+}
+
+export function productTrendBucketLabel(
+  bucketStart: Date,
+  granularity: ProductTrendGranularity,
+  options?: { asOf?: Date; periodIndex?: number },
+): string {
+  if (granularity === "weekly") {
+    return `Wk ${format(bucketStart, "MMM d, yyyy")}`;
+  }
+  if (granularity === "30d" && options?.asOf != null && options.periodIndex != null) {
+    return thirtyDayTrendPeriodLabel(options.periodIndex, options.asOf);
+  }
+  if (granularity === "30d") {
+    const end = addDays(bucketStart, PRODUCT_TREND_30D_PERIOD_DAYS - 1);
+    return `${format(bucketStart, "MMM d")} – ${format(end, "MMM d, yyyy")}`;
+  }
+  return format(bucketStart, "MMM yyyy");
+}
+
+export function productTrendBucketForDate(
+  date: Date,
+  granularity: ProductTrendGranularity,
+  asOf?: Date,
+): { key: string; label: string; timestamp: number } | null {
+  if (granularity === "30d") {
+    const anchor = asOf ?? date;
+    const periodIndex = thirtyDayTrendPeriodIndex(date, anchor);
+    if (periodIndex === null) return null;
+    const { start } = thirtyDayTrendPeriodBounds(periodIndex, anchor);
+    return {
+      key: thirtyDayTrendPeriodKey(periodIndex, anchor),
+      label: thirtyDayTrendPeriodLabel(periodIndex, anchor),
+      timestamp: start.getTime(),
+    };
+  }
+
+  const bucketStart =
+    granularity === "weekly"
+      ? startOfWeek(date, { weekStartsOn: 1 })
+      : startOfMonth(date);
+
+  return {
+    key: productTrendBucketKey(date, granularity, asOf),
+    label: productTrendBucketLabel(bucketStart, granularity),
+    timestamp: bucketStart.getTime(),
+  };
+}
+
+export function snapProductTrendCutoffDate(
+  cutoff: Date,
+  granularity: ProductTrendGranularity,
+  asOf?: Date,
+): Date {
+  if (granularity === "weekly") return startOfWeek(cutoff, { weekStartsOn: 1 });
+  if (granularity === "30d" && asOf) {
+    const periodIndex = thirtyDayTrendPeriodIndex(cutoff, asOf);
+    if (periodIndex === null) return cutoff;
+    return thirtyDayTrendPeriodBounds(periodIndex, asOf).start;
+  }
+  return startOfMonth(cutoff);
+}
+
+export function productTrendGranularityLabel(granularity: ProductTrendGranularity): string {
+  if (granularity === "weekly") return "weekly";
+  if (granularity === "30d") return "rolling 30-day";
+  return "monthly";
+}
 export type ProductTrendTimeframe = "all" | "12m" | "6m" | "90d";
 export type ProductTrendMetric = "bottles" | "accounts";
 export type ProductTrajectory = "accelerating" | "steady" | "decelerating" | "new" | "dormant";
@@ -149,10 +271,7 @@ export function buildProductTrendData({
     cutoffDate = subMonths(asOfDate, 12);
   }
   if (cutoffDate) {
-    cutoffDate =
-      granularity === "weekly"
-        ? startOfWeek(cutoffDate, { weekStartsOn: 1 })
-        : startOfMonth(cutoffDate);
+    cutoffDate = snapProductTrendCutoffDate(cutoffDate, granularity, asOfDate);
   }
 
   // Windows for trajectory:
@@ -395,21 +514,9 @@ export function buildProductTrendData({
     const orderDate = parseISO(order.date);
     const bottles = order.cases > 0 ? order.cases : 1;
 
-    let bucketKey: string;
-    let bucketLabel: string;
-    let bucketTimestamp: number;
-
-    if (granularity === "weekly") {
-      const weekStart = startOfWeek(orderDate, { weekStartsOn: 1 });
-      bucketKey = format(weekStart, "yyyy-'W'II");
-      bucketLabel = `Wk ${format(weekStart, "MMM d, yyyy")}`;
-      bucketTimestamp = weekStart.getTime();
-    } else {
-      const monthStart = startOfMonth(orderDate);
-      bucketKey = format(monthStart, "yyyy-MM");
-      bucketLabel = format(monthStart, "MMM yyyy");
-      bucketTimestamp = monthStart.getTime();
-    }
+    const bucket = productTrendBucketForDate(orderDate, granularity, asOfDate);
+    if (!bucket) continue;
+    const { key: bucketKey, label: bucketLabel, timestamp: bucketTimestamp } = bucket;
 
     let point = buckets.get(bucketKey);
     let accountsSet = bucketAccountsMap.get(bucketKey);

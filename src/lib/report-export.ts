@@ -55,6 +55,7 @@ export {
   downloadProductSlowdownCsv,
   type ProductSlowdownPdfInput,
 } from "./generate-product-slowdown-pdf";
+export { downloadProductSlowdownExcel } from "./generate-product-slowdown-excel";
 export {
   downloadImminentChurnPdf,
   generateImminentChurnPdfDocument,

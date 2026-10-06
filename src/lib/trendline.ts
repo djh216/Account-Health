@@ -202,7 +202,8 @@ export function formatTrendSlope(
   unit: string = "btls",
   granularity: string = "monthly"
 ): string {
-  const periodLabel = granularity === "weekly" ? "wk" : "mo";
+  const periodLabel =
+    granularity === "weekly" ? "wk" : granularity === "30d" ? "30d" : "mo";
   const sign = slope > 0 ? "+" : "";
   if (unit === "$") {
     return `${sign}$${Math.abs(Math.round(slope)).toLocaleString()} / ${periodLabel}`;

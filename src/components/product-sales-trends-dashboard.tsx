@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { parseISO, startOfMonth } from "date-fns";
+import { parseISO, startOfMonth, startOfWeek } from "date-fns";
 import {
   ArrowDownRight,
   ArrowUpDown,
@@ -104,6 +104,8 @@ import {
   type ProductTrendTimeframe,
   type ProductTrendPoint,
   detectSlowingProductAlerts,
+  productTrendGranularityLabel,
+  thirtyDayTrendPeriodBounds,
 } from "@/lib/product-trends";
 import {
   ExcludeProductOutOfStockButton,
@@ -359,9 +361,14 @@ export function ProductSalesTrendsDashboard() {
   const chartSeriesBase = useMemo(() => {
     if (includeCurrentMonth) return trends.data;
     const asOfDate = parseISO((state.analysisAsOf ?? new Date().toISOString()).slice(0, 10));
-    const monthStart = startOfMonth(asOfDate).getTime();
-    return trends.data.filter((point) => point.timestamp < monthStart);
-  }, [includeCurrentMonth, trends.data, state.analysisAsOf]);
+    const currentPeriodStart =
+      granularity === "weekly"
+        ? startOfWeek(asOfDate, { weekStartsOn: 1 }).getTime()
+        : granularity === "30d"
+          ? thirtyDayTrendPeriodBounds(0, asOfDate).start.getTime()
+          : startOfMonth(asOfDate).getTime();
+    return trends.data.filter((point) => point.timestamp < currentPeriodStart);
+  }, [includeCurrentMonth, trends.data, state.analysisAsOf, granularity]);
 
   const chartSeriesDeferred = useDeferredValue(chartSeriesBase);
   const chartSeries = chartSeriesDeferred;
@@ -883,7 +890,7 @@ export function ProductSalesTrendsDashboard() {
                       </span>
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      Tracking {granularity === "monthly" ? "monthly" : "weekly"} sales trajectory curves over{" "}
+                      Tracking {productTrendGranularityLabel(granularity)} sales trajectory curves over{" "}
                       {timeframe === "90d"
                         ? "the last 90 days"
                         : timeframe === "6m"
@@ -893,8 +900,16 @@ export function ProductSalesTrendsDashboard() {
                         : "all recorded order history"}{" "}
                       in {metric === "accounts" ? "active purchasing accounts" : "bottles sold"}.
                       {includeCurrentMonth
-                        ? " The current month is included."
-                        : " The current month is hidden."}{" "}
+                        ? granularity === "monthly"
+                          ? " The current month is included."
+                          : granularity === "weekly"
+                            ? " The current week is included."
+                            : " The current 30-day period is included."
+                        : granularity === "monthly"
+                          ? " The current month is hidden."
+                          : granularity === "weekly"
+                            ? " The current week is hidden."
+                            : " The current 30-day period is hidden."}{" "}
                       Select any wine in the catalog below to plot its sales trajectory curve on the visualizer.
                     </CardDescription>
                   </div>
@@ -943,7 +958,21 @@ export function ProductSalesTrendsDashboard() {
                             : "text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        Monthly
+                        Month
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          runChartFilterUpdate(() => setGranularity("30d"))
+                        }
+                        className={cn(
+                          "rounded-md px-2.5 py-1 font-medium transition-colors",
+                          granularity === "30d"
+                            ? "bg-background text-foreground shadow-xs font-semibold"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        30 Days
                       </button>
                       <button
                         type="button"
@@ -957,7 +986,7 @@ export function ProductSalesTrendsDashboard() {
                             : "text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        Weekly
+                        Week
                       </button>
                     </div>
 
@@ -995,11 +1024,24 @@ export function ProductSalesTrendsDashboard() {
                       )}
                       title={
                         includeCurrentMonth
-                          ? "Hide the current month from the chart"
-                          : "Show the current month on the chart"
+                          ? granularity === "monthly"
+                            ? "Hide the current month from the chart"
+                            : granularity === "weekly"
+                              ? "Hide the current week from the chart"
+                              : "Hide the current 30-day period from the chart"
+                          : granularity === "monthly"
+                            ? "Show the current month on the chart"
+                            : granularity === "weekly"
+                              ? "Show the current week on the chart"
+                              : "Show the current 30-day period on the chart"
                       }
                     >
-                      Current Month {includeCurrentMonth ? "ON" : "OFF"}
+                      {granularity === "monthly"
+                        ? "Current Month"
+                        : granularity === "weekly"
+                          ? "Current Week"
+                          : "Current Period"}{" "}
+                      {includeCurrentMonth ? "ON" : "OFF"}
                     </Button>
 
                     {/* Trendlines Toggle */}
@@ -1689,85 +1731,85 @@ export function ProductSalesTrendsDashboard() {
 
               {/* Integrated Catalog Table */}
                 <div className="w-full border-t border-border bg-card">
-                  <Table className="w-full table-fixed text-xs">
+                  <Table className="w-full table-fixed text-xs [&_td]:align-middle [&_th]:align-middle [&_th]:text-center [&_td]:text-center [&_th:first-child]:text-center [&_td:first-child]:text-center [&_th:nth-child(2)]:text-left [&_td:nth-child(2)]:text-left">
                     <TableHeader>
                       <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
-                        <TableHead className="py-2.5 px-3 w-12 text-center font-semibold text-foreground">
+                        <TableHead className="w-12 px-3 py-3 font-semibold text-foreground">
                           Chart
                         </TableHead>
                         <TableHead
-                          className="py-2.5 px-3 cursor-pointer whitespace-normal hover:bg-muted/40 transition-colors"
+                          className="cursor-pointer whitespace-normal px-3 py-3 hover:bg-muted/40 transition-colors text-left"
                           onClick={() => handleSort("productName")}
                         >
-                          <div className="flex items-center gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-start gap-1 font-semibold text-foreground">
                             <span>Wine Product / SKU</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="w-[9%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[9%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("totalBottles")}
                         >
-                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
                             <span>Total Bottles</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="w-[10%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[10%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("avgBottlesPerOrder")}
                         >
-                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
                             <span>Avg / Order (btls)</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="w-[10%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[10%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("avgBottlesPerMonth")}
                         >
-                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
                             <span>Monthly Velocity</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="w-[8%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[8%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("accountCount")}
                         >
-                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
                             <span>Placements</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="w-[13%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[13%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("velocityDeltaPct")}
                         >
-                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
                             <span>28d Trajectory</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="w-[16%] py-2.5 px-3 text-right whitespace-normal cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[16%] cursor-pointer whitespace-normal px-3 py-3 hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("quarterlyPaceDeltaPct")}
                         >
-                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
                             <span>Last 90-Day Pace vs Prior</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
                         <TableHead
-                          className="w-[9%] py-2.5 px-3 text-right whitespace-nowrap cursor-pointer hover:bg-muted/40 transition-colors"
+                          className="w-[9%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
                           onClick={() => handleSort("lastOrderDate")}
                         >
-                          <div className="flex items-center justify-end gap-1 font-semibold text-foreground">
+                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
                             <span>Last Ordered</span>
                             <ArrowUpDown className="size-3 text-muted-foreground" />
                           </div>
                         </TableHead>
-                        <TableHead className="w-16 py-2.5 px-2 text-right">
+                        <TableHead className="min-w-[8.5rem] px-2 py-3">
                           <span className="font-semibold text-foreground">Details</span>
                         </TableHead>
                       </TableRow>
@@ -1795,7 +1837,7 @@ export function ProductSalesTrendsDashboard() {
                                 handleToggleProduct(summary.productName);
                               }}
                             >
-                              <TableCell className="py-2.5 px-3 w-16 text-center" onClick={(e) => e.stopPropagation()}>
+                              <TableCell className="w-12 px-3 py-3" onClick={(e) => e.stopPropagation()}>
                                 <button
                                   type="button"
                                   onClick={() => handleToggleProduct(summary.productName)}
@@ -1815,11 +1857,11 @@ export function ProductSalesTrendsDashboard() {
                                   <Check className={cn("size-3.5 stroke-[3]", isSelectedInChart ? "opacity-100" : "opacity-0")} />
                                 </button>
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 align-top font-medium whitespace-normal text-foreground">
-                                <div className="flex min-w-0 items-start gap-2">
+                              <TableCell className="px-3 py-3 font-medium whitespace-normal text-foreground text-left">
+                                <div className="flex min-w-0 items-center gap-2">
                                   {isSelectedInChart && (
                                     <span
-                                      className="mt-1 size-2 shrink-0 rounded-full ring-2 ring-primary/20"
+                                      className="size-2 shrink-0 rounded-full ring-2 ring-primary/20"
                                       style={{ backgroundColor: chartColor || "#881337" }}
                                     />
                                   )}
@@ -1841,17 +1883,17 @@ export function ProductSalesTrendsDashboard() {
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 text-right font-semibold tabular-nums text-foreground whitespace-nowrap">
+                              <TableCell className="px-3 py-3 font-semibold tabular-nums text-foreground whitespace-nowrap">
                                 {formatNumber(summary.totalBottles)} btls
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+                              <TableCell className="px-3 py-3 tabular-nums text-muted-foreground whitespace-nowrap">
                                 {summary.avgBottlesPerOrder} btls/order
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 text-right font-medium tabular-nums text-foreground whitespace-nowrap">
+                              <TableCell className="px-3 py-3 font-medium tabular-nums text-foreground whitespace-nowrap">
                                 {formatNumber(summary.avgBottlesPerMonth)} btls/mo
                               </TableCell>
                               <TableCell
-                                className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap"
+                                className="px-3 py-3 tabular-nums whitespace-nowrap"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
@@ -1866,8 +1908,8 @@ export function ProductSalesTrendsDashboard() {
                                   {summary.accountCount} acc{summary.accountCount === 1 ? "" : "s"}
                                 </button>
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-1.5">
+                              <TableCell className="px-3 py-3 tabular-nums whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
                                   <TrajectoryPill trajectory={summary.trajectory} />
                                   {summary.velocityDeltaPct !== null && (
                                     <span
@@ -1887,9 +1929,9 @@ export function ProductSalesTrendsDashboard() {
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
-                                <div className="flex flex-col items-end gap-0.5">
-                                  <div className="flex items-center justify-end gap-1.5">
+                              <TableCell className="px-3 py-3 tabular-nums whitespace-nowrap">
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                     <TrajectoryPill trajectory={summary.quarterlyTrajectory} windowLabel="90d" />
                                     {summary.quarterlyPaceDeltaPct !== null ? (
                                       <span
@@ -1915,15 +1957,18 @@ export function ProductSalesTrendsDashboard() {
                                   </span>
                                 </div>
                               </TableCell>
-                              <TableCell className="py-2.5 px-3 text-right tabular-nums text-muted-foreground text-xs whitespace-nowrap">
+                              <TableCell className="px-3 py-3 tabular-nums text-muted-foreground text-xs whitespace-nowrap">
                                 {formatDate(summary.lastOrderDate)}
                               </TableCell>
-                              <TableCell className="py-2.5 px-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex flex-col items-end gap-1">
+                              <TableCell
+                                className="px-2 py-3 whitespace-nowrap"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="flex items-center justify-center gap-1.5">
                                   <Button
                                     size="xs"
                                     variant="ghost"
-                                    className="h-6 px-2 text-xs text-primary font-medium hover:bg-primary/10"
+                                    className="h-7 px-2.5 text-xs text-primary font-medium hover:bg-primary/10"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedDetailProduct(summary);
@@ -1933,6 +1978,7 @@ export function ProductSalesTrendsDashboard() {
                                   </Button>
                                   <ExcludeProductOutOfStockButton
                                     productName={summary.productName}
+                                    className="h-7 shrink-0"
                                     onExcluded={handleProductExcludedFromLists}
                                   />
                                 </div>

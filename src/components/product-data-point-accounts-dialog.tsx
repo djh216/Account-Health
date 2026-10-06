@@ -39,8 +39,26 @@ import {
 } from "@/components/ui/select";
 import { formatDate, formatMoney, formatNumber, normalizeName } from "@/lib/format";
 import type { Order } from "@/lib/types";
-import type { ProductTrendGranularity, ProductTrendPoint } from "@/lib/product-trends";
-import { parseISO, format, startOfMonth, startOfWeek, subMonths, subWeeks } from "date-fns";
+import {
+  PRODUCT_TREND_30D_PERIOD_DAYS,
+  productTrendBucketKey,
+  productTrendBucketLabel,
+  thirtyDayTrendPeriodKey,
+  thirtyDayTrendPeriodLabel,
+  type ProductTrendGranularity,
+  type ProductTrendPoint,
+} from "@/lib/product-trends";
+import {
+  differenceInCalendarDays,
+  parseISO,
+  format,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+  subWeeks,
+} from "date-fns";
+import { todayIso } from "@/lib/format";
 
 export interface DataPointClickPayload {
   productName: string; // Specific product name or "All Products"
@@ -57,13 +75,16 @@ export function ProductDataPointAccountsDialog({
   clickedPoint,
   orders,
   granularity = "monthly",
+  asOf,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clickedPoint: DataPointClickPayload | null;
   orders: Order[];
   granularity?: ProductTrendGranularity;
+  asOf?: string;
 }) {
+  const trendAsOf = parseISO((asOf ?? todayIso()).slice(0, 10));
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProductOverride, setSelectedProductOverride] = useState<string | null>(null);
   const [showDroppedAccounts, setShowDroppedAccounts] = useState(false);
@@ -88,13 +109,7 @@ export function ProductDataPointAccountsDialog({
     const getBucketKey = (dateStr: string) => {
       const parsed = parseISO(dateStr.slice(0, 10));
       if (isNaN(parsed.getTime())) return "";
-      if (granularity === "weekly") {
-        const wStart = startOfWeek(parsed, { weekStartsOn: 1 });
-        return format(wStart, "yyyy-'W'II");
-      } else {
-        const mStart = startOfMonth(parsed);
-        return format(mStart, "yyyy-MM");
-      }
+      return productTrendBucketKey(parsed, granularity, trendAsOf);
     };
 
     // Build all unique bucket keys sorted
@@ -126,6 +141,16 @@ export function ProductDataPointAccountsDialog({
           const refDate = parseISO(clickedPoint.allPoints?.find(p => p.key === currentKey)?.date || new Date().toISOString());
           const priorW = subWeeks(refDate, 1);
           priorKey = format(startOfWeek(priorW, { weekStartsOn: 1 }), "yyyy-'W'II");
+        } else if (granularity === "30d" && currentKey.startsWith("30d:")) {
+          const endStr = currentKey.slice(4);
+          const endDate = parseISO(endStr);
+          if (!isNaN(endDate.getTime())) {
+            const daysFromAsOf = differenceInCalendarDays(startOfDay(trendAsOf), endDate);
+            const periodIndex = Math.floor(
+              daysFromAsOf / PRODUCT_TREND_30D_PERIOD_DAYS,
+            );
+            priorKey = thirtyDayTrendPeriodKey(periodIndex + 1, trendAsOf);
+          }
         } else {
           const parts = currentKey.split("-");
           if (parts.length === 2) {
@@ -145,6 +170,17 @@ export function ProductDataPointAccountsDialog({
     if (priorKey) {
       if (granularity === "weekly") {
         priorLabel = `Prior Week (${priorKey})`;
+      } else if (granularity === "30d" && priorKey.startsWith("30d:")) {
+        const endDate = parseISO(priorKey.slice(4));
+        if (!isNaN(endDate.getTime())) {
+          const daysFromAsOf = differenceInCalendarDays(startOfDay(trendAsOf), endDate);
+          const periodIndex = Math.floor(
+            daysFromAsOf / PRODUCT_TREND_30D_PERIOD_DAYS,
+          );
+          priorLabel = thirtyDayTrendPeriodLabel(periodIndex, trendAsOf);
+        } else {
+          priorLabel = priorKey;
+        }
       } else {
         const parts = priorKey.split("-");
         if (parts.length === 2) {
