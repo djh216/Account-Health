@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import type { BuildSalesInsightsInput } from "@/lib/sales-insights/build-sales-insights";
 import {
   getCachedSalesInsights,
   getOrBuildSalesInsights,
+  subscribeSalesInsights,
 } from "@/lib/sales-insights/sales-insights-cache";
 import type { SalesInsightsBundle } from "@/lib/sales-insights/types";
 import { todayIso } from "@/lib/format";
@@ -57,6 +58,16 @@ export function assembleSalesInsightsInput(
     returningCount: returningCustomers.length,
     highChurnCount: projectionsSummary.highChurnCount,
   };
+}
+
+function insightsInputKey(input: BuildSalesInsightsInput, portfolioKey: string): string {
+  return [
+    portfolioKey,
+    input.repFilter,
+    input.enrichedAccounts.length,
+    input.portfolioState.orders.length,
+    input.asOf,
+  ].join("|");
 }
 
 export function useSalesInsights(): {
@@ -115,39 +126,39 @@ export function useSalesInsights(): {
     [input],
   );
 
-  const [insights, setInsights] = useState<SalesInsightsBundle | null>(() => {
-    if (!input || !portfolioKey) return null;
-    return getCachedSalesInsights(portfolioKey, input.repFilter) ?? null;
-  });
+  const inputKey = useMemo(
+    () => (input && portfolioKey ? insightsInputKey(input, portfolioKey) : ""),
+    [input, portfolioKey],
+  );
 
-  const [insightsPending, setInsightsPending] = useState(() => {
-    if (!input || !portfolioKey) return false;
-    return !getCachedSalesInsights(portfolioKey, input.repFilter);
-  });
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const portfolioKeyRef = useRef(portfolioKey);
+  portfolioKeyRef.current = portfolioKey;
+
+  const insights = useSyncExternalStore(
+    subscribeSalesInsights,
+    (): SalesInsightsBundle | null => {
+      const currentInput = inputRef.current;
+      const key = portfolioKeyRef.current;
+      if (!currentInput || !key) return null;
+      return getCachedSalesInsights(key, currentInput.repFilter, currentInput) ?? null;
+    },
+    (): SalesInsightsBundle | null => null,
+  );
 
   useEffect(() => {
-    if (!input || !portfolioKey) {
-      setInsights(null);
-      setInsightsPending(false);
+    if (!input || !portfolioKey || !inputKey) return;
+
+    if (getCachedSalesInsights(portfolioKey, input.repFilter, input)) {
       return;
     }
 
-    const cached = getCachedSalesInsights(portfolioKey, input.repFilter);
-    if (cached) {
-      setInsights(cached);
-      setInsightsPending(false);
-      return;
-    }
-
-    setInsightsPending(true);
     let cancelled = false;
 
     const compute = () => {
       if (cancelled) return;
-      const built = getOrBuildSalesInsights(portfolioKey, input);
-      if (cancelled) return;
-      setInsights(built);
-      setInsightsPending(false);
+      getOrBuildSalesInsights(portfolioKey, input);
     };
 
     if (typeof requestIdleCallback !== "undefined") {
@@ -163,7 +174,9 @@ export function useSalesInsights(): {
       cancelled = true;
       window.clearTimeout(timerId);
     };
-  }, [input, portfolioKey]);
+  }, [inputKey, input, portfolioKey]);
+
+  const insightsPending = Boolean(input && portfolioKey && !insights);
 
   return { insights, insightsPending };
 }

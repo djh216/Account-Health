@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronDown,
   Grape,
   LineChart,
   RotateCcw,
@@ -190,20 +191,21 @@ function InsightKpiDialog({
   );
 }
 
-function LazyTabPanel({
+function ActiveInsightsTabPanel({
   activeTab,
-  value,
   children,
   className,
 }: {
   activeTab: string;
-  value: string;
   children: ReactNode;
   className?: string;
 }) {
   return (
-    <TabsContent value={value} className={`min-h-0 overflow-visible ${className ?? ""}`}>
-      {activeTab === value ? children : null}
+    <TabsContent
+      value={activeTab}
+      className={`flex-none overflow-visible ${className ?? ""}`}
+    >
+      {children}
     </TabsContent>
   );
 }
@@ -301,6 +303,7 @@ function WinBackSkusPanel({
   onMessage?: (message: string) => void;
 }) {
   const { ids: outOfStockIds, restore } = useOutOfStockProducts();
+  const [excludedListOpen, setExcludedListOpen] = useState(false);
   const [sort, setSort] = useState<{
     column: WinBackSortKey;
     direction: SortDirection;
@@ -353,39 +356,54 @@ function WinBackSkusPanel({
       </CardHeader>
       <CardContent className="min-w-0 space-y-4 pt-4">
         {excludedProducts.length > 0 ? (
-          <div className="rounded-lg border border-dashed bg-muted/30 px-3 py-2.5 text-xs">
-            <p className="font-medium text-foreground">
-              Out of stock — removed from this report ({excludedProducts.length})
-            </p>
-            <ul className="mt-2 space-y-1.5">
-              {excludedProducts.map((product) => (
-                <li key={product.id} className="flex items-center justify-between gap-3">
-                  <span className="min-w-0 break-words text-muted-foreground">
-                    {product.productName}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    className="shrink-0"
-                    onClick={() => {
-                      restore(product.id);
-                      onMessage?.(`Restored "${product.productName}" to win-back report.`);
-                    }}
-                  >
-                    <RotateCcw className="size-3" />
-                    Restore
-                  </Button>
-                </li>
-              ))}
-            </ul>
+          <div className="rounded-lg border border-dashed bg-muted/30 text-xs">
+            <button
+              type="button"
+              aria-expanded={excludedListOpen}
+              onClick={() => setExcludedListOpen((open) => !open)}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left font-medium text-foreground hover:bg-muted/40"
+            >
+              <span>
+                Out of stock — removed from this report ({excludedProducts.length})
+              </span>
+              <ChevronDown
+                className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                  excludedListOpen ? "rotate-180" : ""
+                }`}
+                aria-hidden
+              />
+            </button>
+            {excludedListOpen ? (
+              <ul className="space-y-1.5 border-t border-dashed px-3 py-2.5">
+                {excludedProducts.map((product) => (
+                  <li key={product.id} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 break-words text-muted-foreground">
+                      {product.productName}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="shrink-0"
+                      onClick={() => {
+                        restore(product.id);
+                        onMessage?.(`Restored "${product.productName}" to win-back report.`);
+                      }}
+                    >
+                      <RotateCcw className="size-3" />
+                      Restore
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : null}
 
         {visibleRows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {excludedProducts.length > 0
-              ? "No win-back rows left in this view. Out-of-stock products are listed above."
+              ? "No win-back rows left in this view. Expand out-of-stock products above to restore any."
               : "No win-back SKU opportunities."}
           </p>
         ) : (
@@ -752,7 +770,20 @@ export function SalesInsightsDashboard() {
                 </TabsList>
               </div>
 
-              <LazyTabPanel activeTab={activeInsightsTab} value="briefing" className="space-y-4">
+              <ActiveInsightsTabPanel
+                activeTab={activeInsightsTab}
+                className={
+                  activeInsightsTab === "momentum"
+                    ? "grid gap-4 lg:grid-cols-2"
+                    : activeInsightsTab === "briefing" ||
+                        activeInsightsTab === "visits" ||
+                        activeInsightsTab === "volume"
+                      ? "space-y-4"
+                      : undefined
+                }
+              >
+              {activeInsightsTab === "briefing" ? (
+              <>
                 <Card className="overflow-hidden">
                   <CardHeader className="border-b">
                     <CardTitle className="font-heading text-xl">Weekly book snapshot</CardTitle>
@@ -888,9 +919,10 @@ export function SalesInsightsDashboard() {
                     </SnapshotBox>
                   </CardContent>
                 </Card>
-              </LazyTabPanel>
+              </>
+              ) : null}
 
-              <LazyTabPanel activeTab={activeInsightsTab} value="reorder">
+              {activeInsightsTab === "reorder" ? (
                 <InsightTable
                   title="Proactive reorder window"
                   description="Accounts expected to reorder within the next 14 days (not yet overdue)."
@@ -905,9 +937,10 @@ export function SalesInsightsDashboard() {
                     r.risk,
                   ])}
                 />
-              </LazyTabPanel>
+              ) : null}
 
-              <LazyTabPanel activeTab={activeInsightsTab} value="visits" className="space-y-4">
+              {activeInsightsTab === "visits" ? (
+                <>
                 <InsightTable
                   title="Visit coverage by rep"
                   description="Visit volume and overdue account counts for the filtered book."
@@ -933,9 +966,10 @@ export function SalesInsightsDashboard() {
                     r.lastVisitDate ? formatDate(r.lastVisitDate) : "—",
                   ])}
                 />
-              </LazyTabPanel>
+                </>
+              ) : null}
 
-              <LazyTabPanel activeTab={activeInsightsTab} value="strike">
+              {activeInsightsTab === "strike" ? (
                 <InsightTable
                   title="Visit → order conversion"
                   description="Share of visits followed by an order within 7 days (last 90 days)."
@@ -948,9 +982,9 @@ export function SalesInsightsDashboard() {
                     `${r.strikeRatePct}%`,
                   ])}
                 />
-              </LazyTabPanel>
+              ) : null}
 
-              <LazyTabPanel activeTab={activeInsightsTab} value="assortment">
+              {activeInsightsTab === "assortment" ? (
                 <InsightTable
                   title="SKU breadth"
                   description="Distinct products ordered in the last 90 days vs the prior 90 days."
@@ -965,23 +999,21 @@ export function SalesInsightsDashboard() {
                     r.territoryTier ? territoryTierLabel(r.territoryTier) : "—",
                   ])}
                 />
-              </LazyTabPanel>
+              ) : null}
 
-              <LazyTabPanel activeTab={activeInsightsTab} value="winback">
+              {activeInsightsTab === "winback" ? (
                 <WinBackSkusPanel
+                  key={`${repFilter}-${insights.winBackSkus.length}`}
                   rows={insights.winBackSkus}
                   onMessage={flash}
                   onProductExcluded={(productName) =>
                     flash(`Marked "${productName}" out of stock — removed from win-back report.`)
                   }
                 />
-              </LazyTabPanel>
+              ) : null}
 
-              <LazyTabPanel
-                activeTab={activeInsightsTab}
-                value="momentum"
-                className="grid gap-4 lg:grid-cols-2"
-              >
+              {activeInsightsTab === "momentum" ? (
+                <>
                 <InsightTable
                   title="Improving accounts"
                   description="Largest 14-day health score gains."
@@ -1004,9 +1036,11 @@ export function SalesInsightsDashboard() {
                     r.scoreChange14d,
                   ])}
                 />
-              </LazyTabPanel>
+                </>
+              ) : null}
 
-              <LazyTabPanel activeTab={activeInsightsTab} value="volume" className="space-y-4">
+              {activeInsightsTab === "volume" ? (
+                <>
                 <InsightTable
                   title="Volume by territory tier"
                   headers={["Tier", "Accounts", "Btl 90d", "At-risk btl", "Critical"]}
@@ -1043,7 +1077,10 @@ export function SalesInsightsDashboard() {
                     r.criticalCount,
                   ])}
                 />
-              </LazyTabPanel>
+                </>
+              ) : null}
+
+              </ActiveInsightsTabPanel>
 
             </Tabs>
           </>

@@ -381,7 +381,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     if (!input) return;
 
     const portfolioKey = portfolioStateCacheKey(filteredState);
-    if (getCachedSalesInsights(portfolioKey, repFilter)) return;
+    if (getCachedSalesInsights(portfolioKey, repFilter, input)) return;
 
     let cancelled = false;
     const warm = () => {
