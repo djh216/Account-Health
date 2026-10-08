@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import type { BuildSalesInsightsInput } from "@/lib/sales-insights/build-sales-insights";
 import {
@@ -106,18 +106,18 @@ export function useSalesInsights(): {
         repFilterPending,
       }),
     [
-      repFilterPending,
       enrichedAccounts,
       repFilter,
       frequencyAlerts,
       productAlerts,
-      newAccounts.length,
-      retainedAccounts.length,
-      returningCustomers.length,
-      projectionsSummary.highChurnCount,
+      newAccounts,
+      retainedAccounts,
+      returningCustomers,
+      projectionsSummary,
+      state,
+      snapshot,
+      repFilterPending,
       portfolioScopeKey,
-      snapshot.asOf,
-      state.analysisAsOf,
     ],
   );
 
@@ -131,19 +131,14 @@ export function useSalesInsights(): {
     [input, portfolioKey],
   );
 
-  const inputRef = useRef(input);
-  inputRef.current = input;
-  const portfolioKeyRef = useRef(portfolioKey);
-  portfolioKeyRef.current = portfolioKey;
+  const getInsightsSnapshot = useCallback((): SalesInsightsBundle | null => {
+    if (!input || !portfolioKey) return null;
+    return getCachedSalesInsights(portfolioKey, input.repFilter, input) ?? null;
+  }, [input, portfolioKey]);
 
   const insights = useSyncExternalStore(
     subscribeSalesInsights,
-    (): SalesInsightsBundle | null => {
-      const currentInput = inputRef.current;
-      const key = portfolioKeyRef.current;
-      if (!currentInput || !key) return null;
-      return getCachedSalesInsights(key, currentInput.repFilter, currentInput) ?? null;
-    },
+    getInsightsSnapshot,
     (): SalesInsightsBundle | null => null,
   );
 

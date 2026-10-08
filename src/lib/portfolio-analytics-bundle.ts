@@ -72,6 +72,13 @@ export function warmPortfolioAnalyticsForRep(
   return cache.get(rep) ?? {};
 }
 
+export function isRepCoreWarm(
+  cache: Map<string, PortfolioAnalyticsCacheEntry>,
+  rep: string,
+): boolean {
+  return Boolean(cache.get(rep)?.core);
+}
+
 export function isRepAnalyticsWarm(
   cache: Map<string, PortfolioAnalyticsCacheEntry>,
   rep: string,

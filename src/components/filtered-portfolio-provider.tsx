@@ -24,8 +24,11 @@ import { portfolioRosterScopeKey } from "@/lib/frequency-drop-roster";
 import {
   getPortfolioAnalyticsSessionCache,
   isRepAnalyticsWarm,
+  isRepCoreWarm,
   mergePortfolioAnalytics,
   portfolioStateCacheKey,
+  readPortfolioCoreForFilteredState,
+  readPortfolioHeavyForFilteredState,
   warmPortfolioAnalyticsForRep,
   type PortfolioAnalyticsBundle,
   type PortfolioHeavyAnalytics,
@@ -223,27 +226,64 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   const [analyticsEpoch, setAnalyticsEpoch] = useState(0);
   const hasPortfolioData = visibleState.accounts.length > 0;
 
-  /** Warm selected rep after paint so we do not block the main thread. */
+  /** Core analytics (scores, trends) — sync so the UI never spins waiting on rAF. */
   useEffect(() => {
     if (!hasPortfolioData) return;
-    if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
+    if (isRepCoreWarm(analyticsCache, repFilter)) return;
 
-    let cancelled = false;
-    const frame = requestAnimationFrame(() => {
-      if (cancelled) return;
-      warmPortfolioAnalyticsForRep(
+    try {
+      readPortfolioCoreForFilteredState(
         analyticsCache,
         repFilter,
         portfolioStateForRep(repIndex, repFilter),
       );
       setAnalyticsEpoch((epoch) => epoch + 1);
-    });
+    } catch (error) {
+      console.error("Failed to warm portfolio analytics core", error);
+    }
+  }, [visibleStateKey, repFilter, repIndex, hasPortfolioData, analyticsCache]);
 
+  /** Heavy analytics (order tracking, projections) — idle when possible. */
+  useEffect(() => {
+    if (!hasPortfolioData) return;
+    if (!isRepCoreWarm(analyticsCache, repFilter)) return;
+    if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
+
+    let cancelled = false;
+    const filtered = portfolioStateForRep(repIndex, repFilter);
+
+    const ensureHeavy = () => {
+      if (cancelled) return;
+      if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
+      try {
+        readPortfolioHeavyForFilteredState(analyticsCache, repFilter, filtered);
+        setAnalyticsEpoch((epoch) => epoch + 1);
+      } catch (error) {
+        console.error("Failed to warm portfolio analytics heavy", error);
+      }
+    };
+
+    if (typeof requestIdleCallback !== "undefined") {
+      const idleId = requestIdleCallback(ensureHeavy, { timeout: 1_500 });
+      return () => {
+        cancelled = true;
+        cancelIdleCallback(idleId);
+      };
+    }
+
+    const timerId = window.setTimeout(ensureHeavy, 0);
     return () => {
       cancelled = true;
-      cancelAnimationFrame(frame);
+      window.clearTimeout(timerId);
     };
-  }, [visibleStateKey, repFilter, repIndex, hasPortfolioData, analyticsCache]);
+  }, [
+    visibleStateKey,
+    repFilter,
+    repIndex,
+    hasPortfolioData,
+    analyticsCache,
+    analyticsEpoch,
+  ]);
 
   /** Preload other rep slices in idle time — no React updates until the user switches rep. */
   useEffect(() => {
@@ -306,9 +346,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     [analyticsCache, repFilter, visibleStateKey, analyticsEpoch],
   );
 
-  const repFilterPending = Boolean(
-    hasPortfolioData && (!activeCore || !activeHeavy),
-  );
+  const repFilterPending = Boolean(hasPortfolioData && !activeCore);
 
   const bundle = useMemo(() => {
     if (!activeCore) return null;

@@ -3,6 +3,7 @@ import { stripPaDemoPortfolio } from "./pa-demo";
 import { ensureUploadLastVisitIndex } from "./upload-last-visits";
 import { getRepFilterSnapshot, resetRepFilter, setRepFilter } from "./rep-filter";
 import {
+  assignAccountRepsFromRecentVisits,
   isDavidHallRep,
   normalizeVisitSalesRep,
   remapPortfolioSalesReps,
@@ -44,8 +45,8 @@ export function subscribePortfolio(listener: () => void): () => void {
 }
 
 function cleanPortfolioState(state: PortfolioState): PortfolioState {
-  return stripDavidHallFromPortfolio(
-    remapPortfolioSalesReps(stripPaDemoPortfolio(state)),
+  return assignAccountRepsFromRecentVisits(
+    stripDavidHallFromPortfolio(remapPortfolioSalesReps(stripPaDemoPortfolio(state))),
   );
 }
 
