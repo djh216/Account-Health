@@ -5,7 +5,6 @@ import {
   useDeferredValue,
   useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { parseISO, startOfMonth, startOfWeek } from "date-fns";
@@ -97,6 +96,7 @@ import {
   buildProductTrendData,
   deriveProductTrendHighlights,
   PRODUCT_PALETTE,
+  type ProductTrendDataResult,
   type ProductSummary,
   type ProductTrajectory,
   type ProductTrendGranularity,
@@ -104,6 +104,7 @@ import {
   type ProductTrendTimeframe,
   type ProductTrendPoint,
   detectSlowingProductAlerts,
+  formatProductTrendChartAxisTick,
   productTrendGranularityLabel,
   thirtyDayTrendPeriodBounds,
 } from "@/lib/product-trends";
@@ -133,56 +134,195 @@ type SortField =
   | "accountCount"
   | "velocityDeltaPct"
   | "quarterlyPaceDeltaPct"
+  | "paceDelta30dPct"
   | "paceLast3Months"
   | "lastOrderDate";
 
+type TrajectoryScope = "28d" | "30d" | "90d";
+
 type TrajectoryFilter = "all" | ProductTrajectory;
+
+function trajectoryForScope(summary: ProductSummary, scope: TrajectoryScope): ProductTrajectory {
+  if (scope === "90d") return summary.quarterlyTrajectory;
+  if (scope === "30d") return summary.pace30dTrajectory;
+  return summary.trajectory;
+}
+
+function trajectoryScopeWindowLabel(scope: TrajectoryScope): string {
+  if (scope === "90d") return "90d";
+  if (scope === "30d") return "30d";
+  return "28d";
+}
 
 function TrajectoryPill({
   trajectory,
   showWindow = false,
   windowLabel,
+  compact = false,
 }: {
   trajectory: ProductTrajectory;
   showWindow?: boolean;
   windowLabel?: string;
+  compact?: boolean;
 }) {
   const windowText = windowLabel ?? (showWindow ? "28d" : "");
+  const suffix = windowText && !compact ? ` (${windowText})` : "";
+  const base = compact
+    ? "inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold leading-tight"
+    : "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold";
+
   switch (trajectory) {
     case "accelerating":
       return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-          <ArrowUpRight className="size-3" />
-          Accelerating{windowText ? ` (${windowText})` : ""}
+        <span
+          className={cn(
+            base,
+            "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400",
+          )}
+        >
+          {!compact && <ArrowUpRight className="size-3" />}
+          {compact ? "Accel" : `Accelerating${suffix}`}
         </span>
       );
     case "steady":
       return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          Steady{windowText ? ` (${windowText})` : ""}
+        <span
+          className={cn(
+            base,
+            compact ? "font-medium" : "",
+            "bg-muted text-muted-foreground",
+          )}
+        >
+          {compact ? "Steady" : `Steady${suffix}`}
         </span>
       );
     case "decelerating":
       return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">
-          <ArrowDownRight className="size-3" />
-          Decelerating{windowText ? ` (${windowText})` : ""}
+        <span
+          className={cn(
+            base,
+            "bg-rose-50 text-rose-800 dark:bg-rose-950/50 dark:text-rose-400",
+          )}
+        >
+          {!compact && <ArrowDownRight className="size-3" />}
+          {compact ? "Decel" : `Decelerating${suffix}`}
         </span>
       );
     case "new":
       return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-400">
-          <Sparkles className="size-3" />
-          New Wine{windowText ? ` (${windowText})` : ""}
+        <span
+          className={cn(
+            base,
+            "bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-400",
+          )}
+        >
+          {!compact && <Sparkles className="size-3" />}
+          {compact ? "New" : `New Wine${suffix}`}
         </span>
       );
     case "dormant":
       return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-          Dormant{windowText ? ` (${windowText})` : ""}
+        <span
+          className={cn(
+            base,
+            compact ? "font-medium" : "",
+            "bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-400",
+          )}
+        >
+          {compact ? "Dormant" : `Dormant${suffix}`}
         </span>
       );
   }
+}
+
+function catalogDeltaClass(delta: number): string {
+  if (delta > 0) return "text-emerald-700 dark:text-emerald-400";
+  if (delta < 0) return "text-rose-700 dark:text-rose-400";
+  return "text-muted-foreground";
+}
+
+function catalogTrajectorySortField(scope: TrajectoryScope): SortField {
+  if (scope === "90d") return "quarterlyPaceDeltaPct";
+  if (scope === "30d") return "paceDelta30dPct";
+  return "velocityDeltaPct";
+}
+
+function catalogTrajectoryHeader(scope: TrajectoryScope): string {
+  if (scope === "90d") return "90d pace vs prior";
+  if (scope === "30d") return "30d pace vs prior";
+  return "28d velocity";
+}
+
+function CatalogTrajectoryCell({
+  summary,
+  scope,
+}: {
+  summary: ProductSummary;
+  scope: TrajectoryScope;
+}) {
+  const trajectory = trajectoryForScope(summary, scope);
+  const delta =
+    scope === "90d"
+      ? summary.quarterlyPaceDeltaPct
+      : scope === "30d"
+        ? summary.paceDelta30dPct
+        : summary.velocityDeltaPct;
+  const paceDetail =
+    scope === "90d"
+      ? `${formatNumber(summary.paceLast3Months)} vs ${formatNumber(summary.pacePrior3Months)} btls in prior 90d`
+      : scope === "30d"
+        ? `${formatNumber(summary.paceLast30Days)} vs ${formatNumber(summary.pacePrior30Days)} btls in prior 30d`
+        : "Change vs prior 28-day window";
+
+  return (
+    <div className="space-y-0.5" title={paceDetail}>
+      <TrajectoryPill trajectory={trajectory} compact />
+      {delta !== null ? (
+        <div className={cn("text-[11px] tabular-nums font-medium", catalogDeltaClass(delta))}>
+          {delta > 0 ? "+" : ""}
+          {scope === "28d" ? delta.toFixed(0) : delta}%
+        </div>
+      ) : (
+        <div className="text-[11px] text-muted-foreground">—</div>
+      )}
+    </div>
+  );
+}
+
+function CatalogSortHead({
+  label,
+  active,
+  align = "center",
+  className,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  align?: "left" | "center";
+  className?: string;
+  onClick: () => void;
+}) {
+  return (
+    <TableHead
+      className={cn(
+        "h-auto min-h-9 cursor-pointer whitespace-normal break-words px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground",
+        align === "left" ? "text-left" : "text-center",
+        className,
+      )}
+      onClick={onClick}
+    >
+      <span
+        className={cn(
+          "inline-flex max-w-full flex-wrap items-center gap-1 leading-snug",
+          align === "center" ? "mx-auto justify-center" : "justify-start",
+          active && "text-foreground",
+        )}
+      >
+        <span>{label}</span>
+        <ArrowUpDown className={cn("size-3 shrink-0 opacity-60", active && "opacity-100")} />
+      </span>
+    </TableHead>
+  );
 }
 
 export function ProductSalesTrendsDashboard() {
@@ -209,7 +349,7 @@ export function ProductSalesTrendsDashboard() {
   const [timeframe, setTimeframe] = useState<ProductTrendTimeframe>("all");
   const [metric, setMetric] = useState<ProductTrendMetric>("bottles");
   const [trajectoryFilter, setTrajectoryFilter] = useState<TrajectoryFilter>("all");
-  const [trajectoryScope, setTrajectoryScope] = useState<"28d" | "3m">("28d");
+  const [trajectoryScope, setTrajectoryScope] = useState<TrajectoryScope>("28d");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDetailProduct, setSelectedDetailProduct] = useState<ProductSummary | null>(null);
   const [placementProduct, setPlacementProduct] = useState<ProductSummary | null>(null);
@@ -263,39 +403,27 @@ export function ProductSalesTrendsDashboard() {
     granularity === "monthly" &&
     timeframe === "all";
 
-  const trendsRef = useRef(cachedProductTrends);
-
-  // Compute trend metrics (28-day trajectory window)
-  const trends = useMemo(
-    () => {
-      if (useCachedProductTrends) {
-        trendsRef.current = cachedProductTrends;
-        return cachedProductTrends;
-      }
-      if (repFilterPending) {
-        return trendsRef.current;
-      }
-      const next = buildProductTrendData({
-        orders: state.orders,
-        selectedProducts,
-        granularity,
-        timeframe,
-        asOf: state.analysisAsOf,
-      });
-      trendsRef.current = next;
-      return next;
-    },
-    [
-      useCachedProductTrends,
-      cachedProductTrends,
-      repFilterPending,
-      state.orders,
+  const trends = useMemo((): ProductTrendDataResult => {
+    if (useCachedProductTrends || repFilterPending) {
+      return cachedProductTrends;
+    }
+    return buildProductTrendData({
+      orders: state.orders,
       selectedProducts,
       granularity,
       timeframe,
-      state.analysisAsOf,
-    ],
-  );
+      asOf: state.analysisAsOf,
+    });
+  }, [
+    useCachedProductTrends,
+    cachedProductTrends,
+    repFilterPending,
+    state.orders,
+    selectedProducts,
+    granularity,
+    timeframe,
+    state.analysisAsOf,
+  ]);
 
   // Alerts for slowing wine products over the last 28 days.
   // Out-of-stock marks stay on the full list so the report can restore them.
@@ -412,6 +540,10 @@ export function ProductSalesTrendsDashboard() {
     return { data, statsMap: augmented.statsMap };
   }, [chartSeries, productTrendlineDefs, selectedProducts, metric, showTrendlines]);
 
+  const chartXAxisDense =
+    chartDataWithTrendlines.length > (granularity === "monthly" ? 14 : 8);
+  const chartXAxisTilt = granularity === "30d" || (granularity === "weekly" && chartXAxisDense);
+
   function runChartFilterUpdate(update: () => void) {
     startTransition(update);
   }
@@ -465,7 +597,7 @@ export function ProductSalesTrendsDashboard() {
   const displayedSummaries = useMemo(() => {
     return visibleProductSummaries
       .filter((s) => {
-        const activeTrajectory = trajectoryScope === "3m" ? s.quarterlyTrajectory : s.trajectory;
+        const activeTrajectory = trajectoryForScope(s, trajectoryScope);
         if (trajectoryFilter !== "all" && activeTrajectory !== trajectoryFilter) return false;
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
@@ -1274,13 +1406,32 @@ export function ProductSalesTrendsDashboard() {
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
                           data={chartDataWithTrendlines}
-                          margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
+                          margin={{
+                            top: 10,
+                            right: 30,
+                            left: 10,
+                            bottom: chartXAxisTilt ? 48 : 24,
+                          }}
                           onClick={(state) => {
                             const index = typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : -1;
+                            const activeLabel = state?.activeLabel;
                             const point =
                               index >= 0
                                 ? chartDataWithTrendlines[index]
-                                : chartDataWithTrendlines.find((d) => d.label === state?.activeLabel);
+                                : chartDataWithTrendlines.find((d) => {
+                                    if (activeLabel != null && d.label === activeLabel) return true;
+                                    const axisTs =
+                                      typeof activeLabel === "number"
+                                        ? activeLabel
+                                        : typeof activeLabel === "string" && /^\d+$/.test(activeLabel)
+                                          ? Number(activeLabel)
+                                          : null;
+                                    if (axisTs == null) return false;
+                                    return (
+                                      d.timestamp === axisTs ||
+                                      Math.abs(d.timestamp - axisTs) < 12 * 60 * 60 * 1000
+                                    );
+                                  });
                             if (point) {
                               const chartPayload = (state as unknown as {
                                 activePayload?: Array<{ name?: string }>;
@@ -1302,12 +1453,29 @@ export function ProductSalesTrendsDashboard() {
                             vertical={false}
                           />
                           <XAxis
-                            dataKey="label"
+                            dataKey="timestamp"
+                            type="number"
+                            scale="time"
+                            domain={["dataMin", "dataMax"]}
                             tickLine={false}
                             axisLine={{ stroke: "rgba(156, 163, 175, 0.3)" }}
-                            tick={{ fill: "currentColor", fontSize: 11 }}
+                            tick={{
+                              fill: "currentColor",
+                              fontSize: 10,
+                            }}
                             className="text-muted-foreground"
-                            dy={10}
+                            dy={chartXAxisTilt ? 4 : 8}
+                            minTickGap={granularity === "monthly" ? 40 : 28}
+                            angle={chartXAxisTilt ? -38 : 0}
+                            textAnchor={chartXAxisTilt ? "end" : "middle"}
+                            height={chartXAxisTilt ? 56 : 36}
+                            tickFormatter={(value: number) =>
+                              formatProductTrendChartAxisTick(
+                                value,
+                                chartDataWithTrendlines,
+                                granularity,
+                              )
+                            }
                           />
                           <YAxis
                             tickLine={false}
@@ -1321,15 +1489,15 @@ export function ProductSalesTrendsDashboard() {
                             width={65}
                           />
                           <Tooltip
-                            content={({ active, payload, label }) => {
+                            content={({ active, payload }) => {
                               if (!active || !payload || !payload.length) return null;
-                              const point = payload[0]?.payload;
+                              const point = payload[0]?.payload as ProductTrendPoint | undefined;
                               if (!point) return null;
 
                               return (
                                 <div className="rounded-lg border bg-popover/95 p-3 text-popover-foreground shadow-md backdrop-blur-sm max-w-xs text-xs space-y-2">
                                   <div className="border-b pb-1">
-                                    <p className="font-semibold text-foreground">{label}</p>
+                                    <p className="font-semibold text-foreground">{point.label}</p>
                                     <p className="text-muted-foreground">
                                       Total: {formatNumber(point.totalBottles)} btls · {point.activeAccountsCount} accounts
                                     </p>
@@ -1635,20 +1803,37 @@ export function ProductSalesTrendsDashboard() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setTrajectoryScope("3m")}
+                          onClick={() => setTrajectoryScope("30d")}
                           className={cn(
                             "px-2.5 py-1 rounded-md transition text-xs",
-                            trajectoryScope === "3m"
+                            trajectoryScope === "30d"
                               ? "bg-background text-foreground shadow-2xs font-semibold"
                               : "text-muted-foreground hover:text-foreground",
                           )}
                         >
-                          Last 90-Day Pace vs Prior
+                          30-Day Pace
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTrajectoryScope("90d")}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md transition text-xs",
+                            trajectoryScope === "90d"
+                              ? "bg-background text-foreground shadow-2xs font-semibold"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          90-Day Pace
                         </button>
                       </div>
                     </div>
                     <span className="text-[11px] text-muted-foreground">
-                      Filtering by {trajectoryScope === "3m" ? "Last 90 days vs the prior 90 days" : "28-Day Rolling Velocity"}
+                      Filtering by{" "}
+                      {trajectoryScope === "90d"
+                        ? "last 90 days vs the prior 90 days"
+                        : trajectoryScope === "30d"
+                          ? "last 30 days vs the prior 30 days"
+                          : "28-day rolling velocity"}
                     </span>
                   </div>
 
@@ -1658,51 +1843,45 @@ export function ProductSalesTrendsDashboard() {
                         { id: "all", label: `All Wines (${visibleTrends.totalActiveProducts})` },
                         {
                           id: "accelerating",
-                          label: `🚀 Accelerating (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
-                            visibleProductSummaries.filter((s) =>
-                              trajectoryScope === "3m"
-                                ? s.quarterlyTrajectory === "accelerating"
-                                : s.trajectory === "accelerating",
+                          label: `🚀 Accelerating (${trajectoryScopeWindowLabel(trajectoryScope)}: ${
+                            visibleProductSummaries.filter(
+                              (s) => trajectoryForScope(s, trajectoryScope) === "accelerating",
                             ).length
                           })`,
                         },
                         {
                           id: "steady",
-                          label: `Steady (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
-                            visibleProductSummaries.filter((s) =>
-                              trajectoryScope === "3m"
-                                ? s.quarterlyTrajectory === "steady"
-                                : s.trajectory === "steady",
+                          label: `Steady (${trajectoryScopeWindowLabel(trajectoryScope)}: ${
+                            visibleProductSummaries.filter(
+                              (s) => trajectoryForScope(s, trajectoryScope) === "steady",
                             ).length
                           })`,
                         },
                         {
                           id: "decelerating",
-                          label: `📉 Decelerating (${trajectoryScope === "3m" ? "90d" : "28d"}: ${
-                            visibleProductSummaries.filter((s) =>
-                              trajectoryScope === "3m"
-                                ? s.quarterlyTrajectory === "decelerating"
-                                : s.trajectory === "decelerating",
+                          label: `📉 Decelerating (${trajectoryScopeWindowLabel(trajectoryScope)}: ${
+                            visibleProductSummaries.filter(
+                              (s) => trajectoryForScope(s, trajectoryScope) === "decelerating",
                             ).length
                           })`,
                         },
                         {
                           id: "new",
-                          label: `🆕 New Wines (<${trajectoryScope === "3m" ? "90d" : "60d"}: ${
-                            visibleProductSummaries.filter((s) =>
-                              trajectoryScope === "3m"
-                                ? s.quarterlyTrajectory === "new"
-                                : s.trajectory === "new",
+                          label: `🆕 New Wines (<${
+                            trajectoryScope === "28d" ? "60d" : trajectoryScopeWindowLabel(trajectoryScope)
+                          }: ${
+                            visibleProductSummaries.filter(
+                              (s) => trajectoryForScope(s, trajectoryScope) === "new",
                             ).length
                           })`,
                         },
                         {
                           id: "dormant",
-                          label: `⏸️ Dormant (>${trajectoryScope === "3m" ? "90d" : "60d"}: ${
-                            visibleProductSummaries.filter((s) =>
-                              trajectoryScope === "3m"
-                                ? s.quarterlyTrajectory === "dormant"
-                                : s.trajectory === "dormant",
+                          label: `⏸️ Dormant (>${
+                            trajectoryScope === "28d" ? "60d" : trajectoryScopeWindowLabel(trajectoryScope)
+                          }: ${
+                            visibleProductSummaries.filter(
+                              (s) => trajectoryForScope(s, trajectoryScope) === "dormant",
                             ).length
                           })`,
                         },
@@ -1731,93 +1910,67 @@ export function ProductSalesTrendsDashboard() {
 
               {/* Integrated Catalog Table */}
                 <div className="w-full border-t border-border bg-card">
-                  <Table className="w-full table-fixed text-xs [&_td]:align-middle [&_th]:align-middle [&_th]:text-center [&_td]:text-center [&_th:first-child]:text-center [&_td:first-child]:text-center [&_th:nth-child(2)]:text-left [&_td:nth-child(2)]:text-left">
+                  <Table className="w-full table-fixed text-xs [&_[data-slot=table-cell]]:whitespace-normal [&_[data-slot=table-head]]:whitespace-normal [&_td]:align-middle [&_th]:align-middle [&_th]:text-center [&_td]:text-center [&_th:first-child]:text-center [&_td:first-child]:text-center [&_th:nth-child(2)]:text-left [&_td:nth-child(2)]:text-left">
                     <TableHeader>
-                      <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
-                        <TableHead className="w-12 px-3 py-3 font-semibold text-foreground">
-                          Chart
+                      <TableRow className="border-b bg-muted/20 hover:bg-muted/20">
+                        <TableHead className="h-auto w-10 whitespace-normal px-1 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Plot
                         </TableHead>
-                        <TableHead
-                          className="cursor-pointer whitespace-normal px-3 py-3 hover:bg-muted/40 transition-colors text-left"
+                        <CatalogSortHead
+                          label="Wine / SKU"
+                          align="left"
+                          className="w-[22%] min-w-[8rem]"
+                          active={sortField === "productName"}
                           onClick={() => handleSort("productName")}
-                        >
-                          <div className="flex items-center justify-start gap-1 font-semibold text-foreground">
-                            <span>Wine Product / SKU</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="w-[9%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
+                        />
+                        <CatalogSortHead
+                          label="Total btls"
+                          className="w-[9%]"
+                          active={sortField === "totalBottles"}
                           onClick={() => handleSort("totalBottles")}
-                        >
-                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
-                            <span>Total Bottles</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="w-[10%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
+                        />
+                        <CatalogSortHead
+                          label="Avg / order"
+                          className="w-[9%]"
+                          active={sortField === "avgBottlesPerOrder"}
                           onClick={() => handleSort("avgBottlesPerOrder")}
-                        >
-                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
-                            <span>Avg / Order (btls)</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="w-[10%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
+                        />
+                        <CatalogSortHead
+                          label="Btls / mo"
+                          className="w-[9%]"
+                          active={sortField === "avgBottlesPerMonth"}
                           onClick={() => handleSort("avgBottlesPerMonth")}
-                        >
-                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
-                            <span>Monthly Velocity</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="w-[8%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
+                        />
+                        <CatalogSortHead
+                          label="Accounts"
+                          className="w-[8%]"
+                          active={sortField === "accountCount"}
                           onClick={() => handleSort("accountCount")}
-                        >
-                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
-                            <span>Placements</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="w-[13%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
-                          onClick={() => handleSort("velocityDeltaPct")}
-                        >
-                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
-                            <span>28d Trajectory</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="w-[16%] cursor-pointer whitespace-normal px-3 py-3 hover:bg-muted/40 transition-colors"
-                          onClick={() => handleSort("quarterlyPaceDeltaPct")}
-                        >
-                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
-                            <span>Last 90-Day Pace vs Prior</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead
-                          className="w-[9%] cursor-pointer whitespace-nowrap px-3 py-3 hover:bg-muted/40 transition-colors"
+                        />
+                        <CatalogSortHead
+                          label={catalogTrajectoryHeader(trajectoryScope)}
+                          className="w-[14%]"
+                          active={sortField === catalogTrajectorySortField(trajectoryScope)}
+                          onClick={() => handleSort(catalogTrajectorySortField(trajectoryScope))}
+                        />
+                        <CatalogSortHead
+                          label="Last order"
+                          className="w-[10%]"
+                          active={sortField === "lastOrderDate"}
                           onClick={() => handleSort("lastOrderDate")}
-                        >
-                          <div className="flex items-center justify-center gap-1 font-semibold text-foreground">
-                            <span>Last Ordered</span>
-                            <ArrowUpDown className="size-3 text-muted-foreground" />
-                          </div>
-                        </TableHead>
-                        <TableHead className="min-w-[8.5rem] px-2 py-3">
-                          <span className="font-semibold text-foreground">Details</span>
+                        />
+                        <TableHead className="h-auto w-[11%] min-w-[7rem] whitespace-normal px-2 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Actions
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {displayedSummaries.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                          <TableCell
+                            colSpan={9}
+                            className="h-28 whitespace-normal py-8 text-center text-sm text-muted-foreground"
+                          >
                             No wines match the selected filters or search query.
                           </TableCell>
                         </TableRow>
@@ -1830,155 +1983,109 @@ export function ProductSalesTrendsDashboard() {
                             <TableRow
                               key={summary.productName}
                               className={cn(
-                                "cursor-pointer transition-colors group border-b last:border-0",
-                                isSelectedInChart ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/40"
+                                "group cursor-pointer border-b border-border/60 transition-colors last:border-0",
+                                isSelectedInChart
+                                  ? "bg-primary/[0.04] hover:bg-primary/[0.07]"
+                                  : "hover:bg-muted/30",
                               )}
                               onClick={() => {
                                 handleToggleProduct(summary.productName);
                               }}
                             >
-                              <TableCell className="w-12 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                              <TableCell
+                                className="w-10 whitespace-normal px-1 py-2"
+                                onClick={(e) => e.stopPropagation()}
+                              >
                                 <button
                                   type="button"
                                   onClick={() => handleToggleProduct(summary.productName)}
                                   className={cn(
-                                    "size-5 rounded-md border flex items-center justify-center transition-all mx-auto",
+                                    "mx-auto flex size-4 items-center justify-center rounded border transition-colors",
                                     isSelectedInChart
-                                      ? "border-transparent text-white shadow-xs"
-                                      : "border-input hover:border-primary/60 bg-background text-transparent hover:text-muted-foreground/40"
+                                      ? "border-transparent text-white"
+                                      : "border-border bg-background text-transparent hover:border-primary/50",
                                   )}
-                                  style={isSelectedInChart ? { backgroundColor: chartColor || "#881337" } : undefined}
+                                  style={
+                                    isSelectedInChart
+                                      ? { backgroundColor: chartColor || "#881337" }
+                                      : undefined
+                                  }
                                   title={
                                     isSelectedInChart
                                       ? `Remove ${summary.productName} from chart`
-                                      : `Plot ${summary.productName} curve on chart`
+                                      : `Plot ${summary.productName} on chart`
                                   }
                                 >
-                                  <Check className={cn("size-3.5 stroke-[3]", isSelectedInChart ? "opacity-100" : "opacity-0")} />
+                                  <Check
+                                    className={cn(
+                                      "size-3 stroke-[3]",
+                                      isSelectedInChart ? "opacity-100" : "opacity-0",
+                                    )}
+                                  />
                                 </button>
                               </TableCell>
-                              <TableCell className="px-3 py-3 font-medium whitespace-normal text-foreground text-left">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  {isSelectedInChart && (
-                                    <span
-                                      className="size-2 shrink-0 rounded-full ring-2 ring-primary/20"
-                                      style={{ backgroundColor: chartColor || "#881337" }}
-                                    />
+                              <TableCell
+                                className={cn(
+                                  "w-[22%] min-w-[8rem] whitespace-normal px-2 py-2 text-left",
+                                  isSelectedInChart && "border-l-2 border-l-primary/70",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "line-clamp-2 break-words text-[13px] leading-snug",
+                                    isSelectedInChart
+                                      ? "font-semibold text-foreground"
+                                      : "font-medium text-foreground group-hover:text-primary",
                                   )}
-                                  <span
-                                    className={cn(
-                                      "min-w-0 break-words transition-colors",
-                                      isSelectedInChart ? "font-bold text-foreground" : "font-medium group-hover:text-primary"
-                                    )}
-                                  >
-                                    {summary.productName}
-                                  </span>
-                                  {isSelectedInChart && (
-                                    <span
-                                      className="text-[10px] font-bold px-1.5 py-0.2 rounded-full text-white shrink-0"
-                                      style={{ backgroundColor: chartColor || "#881337" }}
-                                    >
-                                      Plotted
-                                    </span>
-                                  )}
-                                </div>
+                                  title={summary.productName}
+                                >
+                                  {summary.productName}
+                                </span>
                               </TableCell>
-                              <TableCell className="px-3 py-3 font-semibold tabular-nums text-foreground whitespace-nowrap">
-                                {formatNumber(summary.totalBottles)} btls
+                              <TableCell className="whitespace-normal px-2 py-2 tabular-nums text-foreground">
+                                {formatNumber(summary.totalBottles)}
                               </TableCell>
-                              <TableCell className="px-3 py-3 tabular-nums text-muted-foreground whitespace-nowrap">
-                                {summary.avgBottlesPerOrder} btls/order
+                              <TableCell className="whitespace-normal px-2 py-2 tabular-nums text-muted-foreground">
+                                {summary.avgBottlesPerOrder}
                               </TableCell>
-                              <TableCell className="px-3 py-3 font-medium tabular-nums text-foreground whitespace-nowrap">
-                                {formatNumber(summary.avgBottlesPerMonth)} btls/mo
+                              <TableCell className="whitespace-normal px-2 py-2 tabular-nums text-foreground">
+                                {formatNumber(summary.avgBottlesPerMonth)}
                               </TableCell>
                               <TableCell
-                                className="px-3 py-3 tabular-nums whitespace-nowrap"
+                                className="whitespace-normal px-2 py-2 tabular-nums"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <button
                                   type="button"
-                                  className="font-medium text-primary underline-offset-2 hover:underline"
-                                  title={`View accounts that purchased ${summary.productName}, sorted by volume`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPlacementProduct(summary);
-                                  }}
+                                  className="text-primary underline-offset-2 hover:underline"
+                                  title={`Accounts that purchased ${summary.productName}`}
+                                  onClick={() => setPlacementProduct(summary)}
                                 >
-                                  {summary.accountCount} acc{summary.accountCount === 1 ? "" : "s"}
+                                  {summary.accountCount}
                                 </button>
                               </TableCell>
-                              <TableCell className="px-3 py-3 tabular-nums whitespace-nowrap">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <TrajectoryPill trajectory={summary.trajectory} />
-                                  {summary.velocityDeltaPct !== null && (
-                                    <span
-                                      className={cn(
-                                        "text-xs font-semibold tabular-nums",
-                                        summary.velocityDeltaPct > 0
-                                          ? "text-emerald-600 dark:text-emerald-400"
-                                          : summary.velocityDeltaPct < 0
-                                          ? "text-rose-600 dark:text-rose-400"
-                                          : "text-muted-foreground",
-                                      )}
-                                      title="Velocity change over the last 28 days compared to prior 28 days"
-                                    >
-                                      {summary.velocityDeltaPct > 0 ? "+" : ""}
-                                      {summary.velocityDeltaPct.toFixed(0)}% (28d)
-                                    </span>
-                                  )}
-                                </div>
+                              <TableCell className="whitespace-normal px-2 py-2">
+                                <CatalogTrajectoryCell summary={summary} scope={trajectoryScope} />
                               </TableCell>
-                              <TableCell className="px-3 py-3 tabular-nums whitespace-nowrap">
-                                <div className="flex flex-col items-center gap-0.5">
-                                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                                    <TrajectoryPill trajectory={summary.quarterlyTrajectory} windowLabel="90d" />
-                                    {summary.quarterlyPaceDeltaPct !== null ? (
-                                      <span
-                                        className={cn(
-                                          "text-xs font-semibold tabular-nums",
-                                          summary.quarterlyPaceDeltaPct > 0
-                                            ? "text-emerald-600 dark:text-emerald-400"
-                                            : summary.quarterlyPaceDeltaPct < 0
-                                            ? "text-rose-600 dark:text-rose-400"
-                                            : "text-muted-foreground",
-                                        )}
-                                        title={`Last 90 days: ${formatNumber(summary.paceLast3Months)} btls vs ${formatNumber(summary.pacePrior3Months)} btls in the prior 90 days`}
-                                      >
-                                        {summary.quarterlyPaceDeltaPct > 0 ? "+" : ""}
-                                        {summary.quarterlyPaceDeltaPct}%
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">—</span>
-                                    )}
-                                  </div>
-                                  <span className="text-[10px] text-muted-foreground tabular-nums">
-                                    {formatNumber(summary.paceLast3Months)} vs {formatNumber(summary.pacePrior3Months)} btls
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="px-3 py-3 tabular-nums text-muted-foreground text-xs whitespace-nowrap">
+                              <TableCell className="whitespace-normal px-2 py-2 tabular-nums text-[11px] text-muted-foreground">
                                 {formatDate(summary.lastOrderDate)}
                               </TableCell>
                               <TableCell
-                                className="px-2 py-3 whitespace-nowrap"
+                                className="whitespace-normal px-2 py-2"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <div className="flex items-center justify-center gap-1.5">
+                                <div className="flex flex-wrap items-center justify-center gap-1">
                                   <Button
                                     size="xs"
-                                    variant="ghost"
-                                    className="h-7 px-2.5 text-xs text-primary font-medium hover:bg-primary/10"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedDetailProduct(summary);
-                                    }}
+                                    variant="outline"
+                                    className="h-7 px-2 text-[11px]"
+                                    onClick={() => setSelectedDetailProduct(summary)}
                                   >
                                     View
                                   </Button>
                                   <ExcludeProductOutOfStockButton
                                     productName={summary.productName}
-                                    className="h-7 shrink-0"
+                                    className="h-7 shrink-0 text-[11px]"
                                     onExcluded={handleProductExcludedFromLists}
                                   />
                                 </div>
@@ -2122,6 +2229,28 @@ export function ProductSalesTrendsDashboard() {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 sm:border-l sm:pl-3">
+                      <span className="text-xs text-muted-foreground font-medium">30-Day Pace:</span>
+                      <TrajectoryPill
+                        trajectory={selectedDetailProduct.pace30dTrajectory}
+                        windowLabel="30d"
+                      />
+                      {selectedDetailProduct.paceDelta30dPct !== null && (
+                        <span
+                          className={cn(
+                            "text-xs font-semibold tabular-nums px-2 py-0.5 rounded-md",
+                            selectedDetailProduct.paceDelta30dPct > 0
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                              : selectedDetailProduct.paceDelta30dPct < 0
+                              ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {selectedDetailProduct.paceDelta30dPct > 0 ? "+" : ""}
+                          {selectedDetailProduct.paceDelta30dPct}% vs prior 30 days
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 sm:border-l sm:pl-3">
                       <span className="text-xs text-muted-foreground font-medium">90-Day Pace:</span>
                       <TrajectoryPill trajectory={selectedDetailProduct.quarterlyTrajectory} windowLabel="90d" />
                       {selectedDetailProduct.quarterlyPaceDeltaPct !== null && (
@@ -2146,7 +2275,7 @@ export function ProductSalesTrendsDashboard() {
 
               <div className="flex-1 overflow-y-auto space-y-5 pt-4 pr-1">
                 {/* Product Stats Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-3">
                   <div className="rounded-lg border p-3.5 bg-muted/20">
                     <p className="text-xs text-muted-foreground font-medium">Total Volume (All-Time)</p>
                     <p className="font-heading text-xl font-bold mt-1 text-foreground">
@@ -2172,6 +2301,20 @@ export function ProductSalesTrendsDashboard() {
                     <p className="text-xs text-muted-foreground font-medium">Avg per Order</p>
                     <p className="font-heading text-xl font-bold mt-1 text-foreground">
                       {selectedDetailProduct.avgBottlesPerOrder}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">btls</span>
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3.5 bg-sky-50/50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900/50">
+                    <p className="text-xs text-sky-800 dark:text-sky-300 font-medium">Last 30 Days</p>
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
+                      {formatNumber(selectedDetailProduct.paceLast30Days)}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">btls</span>
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3.5 bg-muted/20">
+                    <p className="text-xs text-muted-foreground font-medium">Prior 30 Days</p>
+                    <p className="font-heading text-xl font-bold mt-1 text-foreground">
+                      {formatNumber(selectedDetailProduct.pacePrior30Days)}{" "}
                       <span className="text-xs font-normal text-muted-foreground">btls</span>
                     </p>
                   </div>
@@ -2210,7 +2353,12 @@ export function ProductSalesTrendsDashboard() {
                           <TableHead className="py-2.5 px-3 font-semibold text-foreground">Account Name</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Bottles Purchased</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Share of SKU Volume</TableHead>
-                          <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Last 90-Day Pace vs Prior</TableHead>
+                          <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">
+                            Last 30-Day Pace vs Prior
+                          </TableHead>
+                          <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">
+                            Last 90-Day Pace vs Prior
+                          </TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Total Orders</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">First Order</TableHead>
                           <TableHead className="py-2.5 px-3 text-right font-semibold text-foreground whitespace-nowrap">Last Order</TableHead>
@@ -2235,6 +2383,27 @@ export function ProductSalesTrendsDashboard() {
                                 </div>
                                 <span className="font-medium text-foreground tabular-nums">
                                   {formatPct(acc.shareOfProductPct)}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
+                              <div className="flex flex-col items-end">
+                                <span
+                                  className={cn(
+                                    "font-semibold text-xs",
+                                    acc.paceDelta30dPct !== null && acc.paceDelta30dPct > 0
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : acc.paceDelta30dPct !== null && acc.paceDelta30dPct < 0
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : "text-muted-foreground",
+                                  )}
+                                >
+                                  {acc.paceDelta30dPct !== null
+                                    ? `${acc.paceDelta30dPct > 0 ? "+" : ""}${acc.paceDelta30dPct}%`
+                                    : "—"}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {formatNumber(acc.paceLast30Days)} vs {formatNumber(acc.pacePrior30Days)} btls
                                 </span>
                               </div>
                             </TableCell>

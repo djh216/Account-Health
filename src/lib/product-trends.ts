@@ -51,7 +51,7 @@ export function thirtyDayTrendPeriodLabel(
 ): string {
   const { start, end } = thirtyDayTrendPeriodBounds(periodIndex, asOf);
   const range = `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`;
-  return periodIndex === 0 ? `Last 30 days (${range})` : range;
+  return periodIndex === 0 ? `Last 30 days · ${range}` : range;
 }
 
 export function productTrendBucketKey(
@@ -137,6 +137,59 @@ export function productTrendGranularityLabel(granularity: ProductTrendGranularit
   if (granularity === "30d") return "rolling 30-day";
   return "monthly";
 }
+
+/** Short label for chart X-axis ticks; keep full `point.label` for tooltips. */
+export function productTrendChartAxisTickLabel(
+  point: Pick<ProductTrendPoint, "key" | "label" | "timestamp">,
+  granularity: ProductTrendGranularity,
+): string {
+  const start = new Date(point.timestamp);
+  if (granularity === "monthly") {
+    return format(start, "MMM ''yy");
+  }
+  if (granularity === "weekly") {
+    return format(start, "MMM d");
+  }
+  if (granularity === "30d") {
+    if (/^Last 30 days\b/i.test(point.label)) {
+      return "Last 30d";
+    }
+    const endStr = point.key.match(/^30d:(\d{4}-\d{2}-\d{2})$/)?.[1];
+    const end = endStr
+      ? parseISO(endStr)
+      : addDays(start, PRODUCT_TREND_30D_PERIOD_DAYS - 1);
+    const sameYear = start.getFullYear() === end.getFullYear();
+    const sameMonth = sameYear && start.getMonth() === end.getMonth();
+    if (sameMonth) {
+      return `${format(start, "M/d")}–${format(end, "d")}`;
+    }
+    if (sameYear) {
+      return `${format(start, "M/d")}–${format(end, "M/d")}`;
+    }
+    return `${format(start, "M/d/yy")}–${format(end, "M/d/yy")}`;
+  }
+  return point.label;
+}
+
+function findProductTrendPointByAxisValue(
+  points: ProductTrendPoint[],
+  axisValue: number,
+): ProductTrendPoint | undefined {
+  const direct = points.find((point) => point.timestamp === axisValue);
+  if (direct) return direct;
+  return points.find((point) => Math.abs(point.timestamp - axisValue) < 12 * 60 * 60 * 1000);
+}
+
+/** Recharts X-axis tick formatter for product trend charts. */
+export function formatProductTrendChartAxisTick(
+  axisValue: number,
+  points: ProductTrendPoint[],
+  granularity: ProductTrendGranularity,
+): string {
+  const point = findProductTrendPointByAxisValue(points, axisValue);
+  if (!point) return "";
+  return productTrendChartAxisTickLabel(point, granularity);
+}
 export type ProductTrendTimeframe = "all" | "12m" | "6m" | "90d";
 export type ProductTrendMetric = "bottles" | "accounts";
 export type ProductTrajectory = "accelerating" | "steady" | "decelerating" | "new" | "dormant";
@@ -151,6 +204,9 @@ export type ProductAccountPlacement = {
   paceLast3Months: number;
   pacePrior3Months: number;
   quarterlyPaceDeltaPct: number | null;
+  paceLast30Days: number;
+  pacePrior30Days: number;
+  paceDelta30dPct: number | null;
 };
 
 export type ProductSlowingAlert = {
@@ -187,6 +243,10 @@ export type ProductSummary = {
   quarterlyPaceDeltaPct: number | null;
   quarterlyPaceDeltaBtls: number;
   quarterlyTrajectory: ProductTrajectory;
+  paceLast30Days: number;
+  pacePrior30Days: number;
+  paceDelta30dPct: number | null;
+  pace30dTrajectory: ProductTrajectory;
   topAccounts: ProductAccountPlacement[];
 };
 
@@ -221,6 +281,43 @@ export const PRODUCT_PALETTE = [
 ];
 
 const PERIOD_DAYS = 28;
+
+/** Rolling pace windows for product detail (last N days vs prior N days). */
+export const PRODUCT_PACE_WINDOW_DAYS = 30;
+
+function paceChangePct(current: number, prior: number): number | null {
+  if (prior > 0) {
+    return Math.round(((current - prior) / prior) * 100);
+  }
+  if (current > 0 && prior === 0) {
+    return 100;
+  }
+  return null;
+}
+
+function trajectoryFromPaceDelta(
+  deltaPct: number | null,
+  asOfDate: Date,
+  firstOrderDate: string,
+  lastOrderDate: string,
+  newWithinDays: number,
+  dormantAfterDays: number,
+): ProductTrajectory {
+  const firstDateObj = firstOrderDate ? parseISO(firstOrderDate) : null;
+  const lastDateObj = lastOrderDate ? parseISO(lastOrderDate) : null;
+  const isNew = firstDateObj
+    ? differenceInCalendarDays(asOfDate, firstDateObj) <= newWithinDays
+    : false;
+  const isDormant = lastDateObj
+    ? differenceInCalendarDays(asOfDate, lastDateObj) > dormantAfterDays
+    : true;
+
+  if (isNew) return "new";
+  if (isDormant) return "dormant";
+  if (deltaPct !== null && deltaPct >= 15) return "accelerating";
+  if (deltaPct !== null && deltaPct <= -15) return "decelerating";
+  return "steady";
+}
 
 /**
  * Calculates time-series trend data and analytics summaries for all individual products.
@@ -279,6 +376,9 @@ export function buildProductTrendData({
   const recentStart = subDays(asOfDate, PERIOD_DAYS);
   const priorStart = subDays(asOfDate, PERIOD_DAYS * 2);
 
+  const recent30Start = subDays(asOfDate, PRODUCT_PACE_WINDOW_DAYS - 1);
+  const prior30Start = subDays(asOfDate, PRODUCT_PACE_WINDOW_DAYS * 2 - 1);
+
   // Last 90 days vs the 90 days immediately before that.
   const quarterWindow = rollingPaceWindow(asOfDate, 90);
 
@@ -303,6 +403,8 @@ export function buildProductTrendData({
     let priorVolume = 0;
     let paceLast3Months = 0;
     let pacePrior3Months = 0;
+    let paceLast30Days = 0;
+    let pacePrior30Days = 0;
 
     const accountMap = new Map<
       string,
@@ -312,6 +414,8 @@ export function buildProductTrendData({
         dates: string[];
         paceLast3Months: number;
         pacePrior3Months: number;
+        paceLast30Days: number;
+        pacePrior30Days: number;
       }
     >();
 
@@ -337,6 +441,12 @@ export function buildProductTrendData({
         } else if (orderDate >= quarterWindow.priorStart && orderDate < quarterWindow.currentStart) {
           pacePrior3Months += btls;
         }
+
+        if (orderDate >= recent30Start && orderDate <= asOfDate) {
+          paceLast30Days += btls;
+        } else if (orderDate >= prior30Start && orderDate < recent30Start) {
+          pacePrior30Days += btls;
+        }
       }
 
       const accName = order.accountName || "Unknown Account";
@@ -348,6 +458,14 @@ export function buildProductTrendData({
         !isNaN(orderDate.getTime()) &&
         orderDate >= quarterWindow.priorStart &&
         orderDate < quarterWindow.currentStart;
+      const isRecent30 =
+        !isNaN(orderDate.getTime()) &&
+        orderDate >= recent30Start &&
+        orderDate <= asOfDate;
+      const isPrior30 =
+        !isNaN(orderDate.getTime()) &&
+        orderDate >= prior30Start &&
+        orderDate < recent30Start;
 
       const accExisting = accountMap.get(accName);
       if (accExisting) {
@@ -356,6 +474,8 @@ export function buildProductTrendData({
         accExisting.dates.push(order.date);
         if (isRecent3M) accExisting.paceLast3Months += btls;
         if (isPrior3M) accExisting.pacePrior3Months += btls;
+        if (isRecent30) accExisting.paceLast30Days += btls;
+        if (isPrior30) accExisting.pacePrior30Days += btls;
       } else {
         accountMap.set(accName, {
           bottles: btls,
@@ -363,6 +483,8 @@ export function buildProductTrendData({
           dates: [order.date],
           paceLast3Months: isRecent3M ? btls : 0,
           pacePrior3Months: isPrior3M ? btls : 0,
+          paceLast30Days: isRecent30 ? btls : 0,
+          pacePrior30Days: isPrior30 ? btls : 0,
         });
       }
     }
@@ -371,14 +493,11 @@ export function buildProductTrendData({
     const topAccounts: ProductAccountPlacement[] = Array.from(accountMap.entries())
       .map(([accName, info]) => {
         info.dates.sort();
-        let quarterlyPaceDeltaPct: number | null = null;
-        if (info.pacePrior3Months > 0) {
-          quarterlyPaceDeltaPct = Math.round(
-            ((info.paceLast3Months - info.pacePrior3Months) / info.pacePrior3Months) * 100,
-          );
-        } else if (info.paceLast3Months > 0 && info.pacePrior3Months === 0) {
-          quarterlyPaceDeltaPct = 100;
-        }
+        const quarterlyPaceDeltaPct = paceChangePct(
+          info.paceLast3Months,
+          info.pacePrior3Months,
+        );
+        const paceDelta30dPct = paceChangePct(info.paceLast30Days, info.pacePrior30Days);
 
         return {
           accountName: accName,
@@ -390,6 +509,9 @@ export function buildProductTrendData({
           paceLast3Months: info.paceLast3Months,
           pacePrior3Months: info.pacePrior3Months,
           quarterlyPaceDeltaPct,
+          paceLast30Days: info.paceLast30Days,
+          pacePrior30Days: info.pacePrior30Days,
+          paceDelta30dPct,
         };
       })
       .sort((a, b) => b.bottles - a.bottles);
@@ -404,62 +526,36 @@ export function buildProductTrendData({
       avgBottlesPerMonth = Math.round(totalBottles / monthsSpan);
     }
 
-    // 28-day Trajectory calculation
-    let velocityDeltaPct: number | null = null;
-    if (priorVolume > 0) {
-      velocityDeltaPct = ((recentVolume - priorVolume) / priorVolume) * 100;
-    } else if (recentVolume > 0 && priorVolume === 0) {
-      velocityDeltaPct = 100;
-    }
+    const velocityDeltaPct = paceChangePct(recentVolume, priorVolume);
+    const trajectory = trajectoryFromPaceDelta(
+      velocityDeltaPct,
+      asOfDate,
+      firstOrderDate,
+      lastOrderDate,
+      60,
+      60,
+    );
 
-    const firstDateObj = firstOrderDate ? parseISO(firstOrderDate) : null;
-    const lastDateObj = lastOrderDate ? parseISO(lastOrderDate) : null;
-    const isNew = firstDateObj ? differenceInCalendarDays(asOfDate, firstDateObj) <= 60 : false;
-    const isDormant = lastDateObj ? differenceInCalendarDays(asOfDate, lastDateObj) > 60 : true;
-
-    let trajectory: ProductTrajectory = "steady";
-    if (isNew) {
-      trajectory = "new";
-    } else if (isDormant) {
-      trajectory = "dormant";
-    } else if (velocityDeltaPct !== null && velocityDeltaPct >= 15) {
-      trajectory = "accelerating";
-    } else if (velocityDeltaPct !== null && velocityDeltaPct <= -15) {
-      trajectory = "decelerating";
-    } else {
-      trajectory = "steady";
-    }
-
-    // 3-Month Macro Pace calculation
-    let quarterlyPaceDeltaPct: number | null = null;
-    if (pacePrior3Months > 0) {
-      quarterlyPaceDeltaPct = Math.round(
-        ((paceLast3Months - pacePrior3Months) / pacePrior3Months) * 100,
-      );
-    } else if (paceLast3Months > 0 && pacePrior3Months === 0) {
-      quarterlyPaceDeltaPct = 100;
-    }
+    const quarterlyPaceDeltaPct = paceChangePct(paceLast3Months, pacePrior3Months);
     const quarterlyPaceDeltaBtls = paceLast3Months - pacePrior3Months;
+    const quarterlyTrajectory = trajectoryFromPaceDelta(
+      quarterlyPaceDeltaPct,
+      asOfDate,
+      firstOrderDate,
+      lastOrderDate,
+      90,
+      90,
+    );
 
-    const isNewQuarterly = firstDateObj
-      ? differenceInCalendarDays(asOfDate, firstDateObj) <= 90
-      : false;
-    const isDormantQuarterly = lastDateObj
-      ? differenceInCalendarDays(asOfDate, lastDateObj) > 90
-      : true;
-
-    let quarterlyTrajectory: ProductTrajectory = "steady";
-    if (isNewQuarterly) {
-      quarterlyTrajectory = "new";
-    } else if (isDormantQuarterly) {
-      quarterlyTrajectory = "dormant";
-    } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct >= 15) {
-      quarterlyTrajectory = "accelerating";
-    } else if (quarterlyPaceDeltaPct !== null && quarterlyPaceDeltaPct <= -15) {
-      quarterlyTrajectory = "decelerating";
-    } else {
-      quarterlyTrajectory = "steady";
-    }
+    const paceDelta30dPct = paceChangePct(paceLast30Days, pacePrior30Days);
+    const pace30dTrajectory = trajectoryFromPaceDelta(
+      paceDelta30dPct,
+      asOfDate,
+      firstOrderDate,
+      lastOrderDate,
+      PRODUCT_PACE_WINDOW_DAYS,
+      PRODUCT_PACE_WINDOW_DAYS,
+    );
 
     allSummaries.push({
       productName: pName,
@@ -480,6 +576,10 @@ export function buildProductTrendData({
       quarterlyPaceDeltaPct,
       quarterlyPaceDeltaBtls,
       quarterlyTrajectory,
+      paceLast30Days,
+      pacePrior30Days,
+      paceDelta30dPct,
+      pace30dTrajectory,
       topAccounts,
     });
   }

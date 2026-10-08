@@ -47,7 +47,10 @@ import {
 } from "@/components/analytics-exclusion-controls";
 import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
 import { isAccountClosedBusiness } from "@/lib/closed-business-accounts";
-import type { ProductTrendPoint } from "@/lib/product-trends";
+import {
+  thirtyDayTrendPeriodBounds,
+  type ProductTrendPoint,
+} from "@/lib/product-trends";
 import {
   Card,
   CardContent,
@@ -335,9 +338,11 @@ export function BottleSalesTrendChart({
     if (includeCurrentMonth) return data;
     const asOfDate = parseISO((asOf ?? new Date().toISOString()).slice(0, 10));
     const periodStart =
-      granularity === "weekly"
-        ? startOfWeek(asOfDate, { weekStartsOn: 1 }).getTime()
-        : startOfMonth(asOfDate).getTime();
+      granularity === "30d"
+        ? thirtyDayTrendPeriodBounds(0, asOfDate).start.getTime()
+        : granularity === "weekly"
+          ? startOfWeek(asOfDate, { weekStartsOn: 1 }).getTime()
+          : startOfMonth(asOfDate).getTime();
     return data.filter((point) => point.timestamp < periodStart);
   }, [includeCurrentMonth, data, asOf, granularity]);
 
@@ -561,10 +566,14 @@ export function BottleSalesTrendChart({
                 {includeCurrentMonth
                   ? granularity === "monthly"
                     ? " The current month is included."
-                    : " The current week is included."
+                    : granularity === "30d"
+                      ? " The current 30-day period is included."
+                      : " The current week is included."
                   : granularity === "monthly"
                     ? " The current month is hidden."
-                    : " The current week is hidden."}
+                    : granularity === "30d"
+                      ? " The current 30-day period is hidden."
+                      : " The current week is hidden."}
               </CardDescription>
             </div>
 
@@ -583,6 +592,18 @@ export function BottleSalesTrendChart({
                   )}
                 >
                   Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runChartFilterUpdate(() => setGranularity("30d"))}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 font-medium transition",
+                    granularity === "30d"
+                      ? "bg-card text-foreground shadow-2xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  30 Days
                 </button>
                 <button
                   type="button"
@@ -641,13 +662,21 @@ export function BottleSalesTrendChart({
                   includeCurrentMonth
                     ? granularity === "monthly"
                       ? "Hide the current month from the chart"
-                      : "Hide the current week from the chart"
+                      : granularity === "30d"
+                        ? "Hide the current 30-day period from the chart"
+                        : "Hide the current week from the chart"
                     : granularity === "monthly"
                       ? "Show the current month on the chart"
-                      : "Show the current week on the chart"
+                      : granularity === "30d"
+                        ? "Show the current 30-day period on the chart"
+                        : "Show the current week on the chart"
                 }
               >
-                {granularity === "monthly" ? "Current Month" : "Current Week"}{" "}
+                {granularity === "monthly"
+                  ? "Current Month"
+                  : granularity === "30d"
+                    ? "Current 30 Days"
+                    : "Current Week"}{" "}
                 {includeCurrentMonth ? "ON" : "OFF"}
               </Button>
 

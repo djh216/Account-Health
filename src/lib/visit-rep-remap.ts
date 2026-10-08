@@ -1,6 +1,77 @@
 import { normalizeName } from "./format";
-import { dropSupersededSnapshotLastVisits } from "./visit-index";
+import {
+  dropSupersededSnapshotLastVisits,
+  isSnapshotLastVisitRecord,
+} from "./visit-index";
 import type { Account, PortfolioState, ReportKind, Visit } from "./types";
+
+type RepAtDate = { date: string; rep: string };
+
+function repFromMostRecentVisit(
+  byId: RepAtDate | undefined,
+  byName: RepAtDate | undefined,
+): string | undefined {
+  if (!byId && !byName) return undefined;
+  if (!byId) return byName!.rep;
+  if (!byName) return byId.rep;
+  return byId.date >= byName.date ? byId.rep : byName.rep;
+}
+
+/** Latest activity visit rep per account id or normalized account name. */
+export function latestActivityRepByAccountKeys(
+  visits: Visit[],
+): { byAccountId: Map<string, RepAtDate>; byAccountName: Map<string, RepAtDate> } {
+  const byAccountId = new Map<string, RepAtDate>();
+  const byAccountName = new Map<string, RepAtDate>();
+
+  for (const visit of visits) {
+    if (isSnapshotLastVisitRecord(visit)) continue;
+    const rep = normalizeVisitSalesRep(visit.salesRep);
+    if (!rep) continue;
+    const day = visit.date.slice(0, 10);
+    if (!day) continue;
+
+    const upsert = (map: Map<string, RepAtDate>, key: string) => {
+      const prev = map.get(key);
+      if (!prev || day > prev.date) {
+        map.set(key, { date: day, rep });
+      }
+    };
+
+    if (visit.accountId) upsert(byAccountId, visit.accountId);
+    upsert(byAccountName, normalizeName(visit.accountName));
+  }
+
+  return { byAccountId, byAccountName };
+}
+
+/**
+ * When an account has no assigned rep, set it from the rep on the most recent
+ * activity visit (Outfield / visit upload), not snapshot last-visit placeholders.
+ */
+export function assignAccountRepsFromRecentVisits(state: PortfolioState): PortfolioState {
+  if (state.accounts.length === 0 || state.visits.length === 0) return state;
+
+  const { byAccountId, byAccountName } = latestActivityRepByAccountKeys(state.visits);
+  if (byAccountId.size === 0 && byAccountName.size === 0) return state;
+
+  let changed = false;
+  const accounts = state.accounts.map((account) => {
+    if (account.salesRepFromRoster && account.salesRep?.trim()) return account;
+
+    const byId = account.id ? byAccountId.get(account.id) : undefined;
+    const byName = byAccountName.get(normalizeName(account.name));
+    const rep = repFromMostRecentVisit(byId, byName);
+    if (!rep) return account;
+    if (account.salesRep === rep) return account;
+
+    changed = true;
+    return { ...account, salesRep: rep, salesRepFromRoster: false };
+  });
+
+  if (!changed) return state;
+  return { ...state, accounts };
+}
 
 /** Rep name corrections on visit / activity imports (all activity types). */
 const VISIT_REP_REMAP: Record<string, string> = {
@@ -75,7 +146,9 @@ export function remapPortfolioSalesReps(state: PortfolioState): PortfolioState {
 export function stripDavidHallFromPortfolio(state: PortfolioState): PortfolioState {
   const visits = state.visits.filter((visit) => !isDavidHallRep(visit.salesRep));
   const accounts = state.accounts.map((account) =>
-    isDavidHallRep(account.salesRep) ? { ...account, salesRep: undefined } : account,
+    isDavidHallRep(account.salesRep)
+      ? { ...account, salesRep: undefined, salesRepFromRoster: false }
+      : account,
   );
   const visitsChanged = visits.length !== state.visits.length;
   const accountsChanged = accounts.some(

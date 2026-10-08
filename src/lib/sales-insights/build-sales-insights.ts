@@ -1,6 +1,9 @@
 import { addDays, differenceInCalendarDays, parseISO, subDays } from "date-fns";
 import { normalizeName } from "@/lib/format";
-import { buildVisitIndex, visitsForAccount, type VisitIndex } from "@/lib/visit-index";
+import {
+  isSnapshotLastVisitRecord,
+  strikeRateVisitDedupeKey,
+} from "@/lib/visit-index";
 import { buildOrderIndex, ordersForAccount, type OrderIndex } from "@/lib/order-index";
 import { RISK_AT_RISK_MIN_DAYS, daysPastTypicalFrequency } from "@/lib/order-cadence";
 import { territoryTierLabel } from "@/lib/territory-value";
@@ -155,11 +158,33 @@ function enrichVisitCoverageReps(
   const asOfDate = toDay(asOf);
   const start30 = subDays(asOfDate, 30).toISOString().slice(0, 10);
 
+  const accountsByName = new Map(
+    accounts.map((item) => [normalizeName(item.account.name), item]),
+  );
   const visitsByRep = new Map<string, number>();
+  const seenStops = new Set<string>();
+  const asOfDay = asOf.slice(0, 10);
   for (const visit of visits) {
-    if (visit.date < start30 || visit.date > asOf) continue;
-    const rep = visit.salesRep?.trim() || "Unassigned";
-    if (repFilter !== "all" && rep !== repFilter) continue;
+    if (isSnapshotLastVisitRecord(visit)) continue;
+    const day = visit.date.slice(0, 10);
+    if (day < start30 || day > asOfDay) continue;
+
+    const visitRep = visit.salesRep?.trim();
+    if (repFilter !== "all") {
+      if (visitRep !== repFilter) continue;
+    }
+
+    const dedupeKey = strikeRateVisitDedupeKey(visit);
+    if (seenStops.has(dedupeKey)) continue;
+    seenStops.add(dedupeKey);
+
+    const item = accountsByName.get(normalizeName(visit.accountName));
+    const rep =
+      repFilter !== "all"
+        ? repFilter
+        : visitRep || item?.account.salesRep?.trim() || "Unassigned";
+    if (repFilter === "all" && !item && !visitRep) continue;
+
     visitsByRep.set(rep, (visitsByRep.get(rep) ?? 0) + 1);
   }
 
@@ -190,6 +215,10 @@ function enrichVisitCoverageReps(
   return enriched.filter((row) => row.repName === repFilter);
 }
 
+function orderCountsAsVisitConversion(order: Order): boolean {
+  return order.cases > 0 || Boolean(order.product?.trim());
+}
+
 function visitConvertedWithinDays(
   visitDate: string,
   orders: Order[],
@@ -200,15 +229,17 @@ function visitConvertedWithinDays(
   const windowEndStr = addDays(visitDay, windowDays).toISOString().slice(0, 10);
 
   for (const order of orders) {
-    if (order.date < visitDayStr) continue;
-    if (order.date > windowEndStr) break;
+    if (!orderCountsAsVisitConversion(order)) continue;
+    const orderDayStr = order.date.slice(0, 10);
+    if (orderDayStr < visitDayStr) continue;
+    if (orderDayStr > windowEndStr) break;
     return true;
   }
   return false;
 }
 
 function buildVisitConversion(
-  visitIndex: VisitIndex,
+  portfolioVisits: Visit[],
   orderIndex: OrderIndex,
   accounts: AccountHealth[],
   asOf: string,
@@ -216,35 +247,74 @@ function buildVisitConversion(
 ): VisitConversionRepRow[] {
   const asOfDate = toDay(asOf);
   const start90 = subDays(asOfDate, 90).toISOString().slice(0, 10);
+  const asOfDay = asOf.slice(0, 10);
+
+  const accountsById = new Map<string, AccountHealth>();
+  const accountsByName = new Map<string, AccountHealth>();
+  for (const item of accounts) {
+    if (item.account.id) accountsById.set(item.account.id, item);
+    accountsByName.set(normalizeName(item.account.name), item);
+  }
+
+  function healthForVisit(visit: Visit): AccountHealth | undefined {
+    return (
+      accountsById.get(visit.accountId) ??
+      accountsByName.get(normalizeName(visit.accountName))
+    );
+  }
 
   const byRep = new Map<
     string,
     { visits: number; converted: number; orders: number }
   >();
 
-  const ordersByAccount = new Map<string, Order[]>();
-  for (const item of accounts) {
-    const visits = visitsForAccount(visitIndex, item.account).filter(
-      (v) => v.date >= start90 && v.date <= asOf,
-    );
-    if (visits.length === 0) continue;
-    const accountKey = item.account.id || normalizeName(item.account.name);
-    let orders = ordersByAccount.get(accountKey);
+  const ordersByAccountKey = new Map<string, Order[]>();
+  const countedStops = new Set<string>();
+
+  for (const visit of portfolioVisits) {
+    if (isSnapshotLastVisitRecord(visit)) continue;
+    const day = visit.date.slice(0, 10);
+    if (day < start90 || day > asOfDay) continue;
+
+    const visitRep = visit.salesRep?.trim();
+    if (repFilter !== "all") {
+      if (visitRep !== repFilter) continue;
+    }
+
+    const item = healthForVisit(visit);
+    if (repFilter === "all" && !item) continue;
+
+    const dedupeKey = strikeRateVisitDedupeKey(visit);
+    if (countedStops.has(dedupeKey)) continue;
+    countedStops.add(dedupeKey);
+
+    const rep =
+      repFilter !== "all"
+        ? repFilter
+        : visitRep || item!.account.salesRep?.trim() || "Unassigned";
+
+    const account =
+      item?.account ??
+      ({
+        id: visit.accountId,
+        name: visit.accountName,
+        type: "other",
+      } as AccountHealth["account"]);
+
+    const accountKey = account.id || normalizeName(account.name);
+    let orders = ordersByAccountKey.get(accountKey);
     if (!orders) {
-      orders = ordersForAccount(orderIndex, item.account);
-      ordersByAccount.set(accountKey, orders);
+      orders = ordersForAccount(orderIndex, account);
+      ordersByAccountKey.set(accountKey, orders);
     }
-    for (const visit of visits) {
-      const rep = visit.salesRep?.trim() || item.account.salesRep?.trim() || "Unassigned";
-      if (repFilter !== "all" && rep !== repFilter) continue;
-      const entry = byRep.get(rep) ?? { visits: 0, converted: 0, orders: 0 };
-      entry.visits += 1;
-      if (visitConvertedWithinDays(visit.date, orders, VISIT_CONVERSION_DAYS)) {
-        entry.converted += 1;
-        entry.orders += 1;
-      }
-      byRep.set(rep, entry);
+
+    const entry = byRep.get(rep) ?? { visits: 0, converted: 0, orders: 0 };
+    entry.visits += 1;
+    if (visitConvertedWithinDays(visit.date, orders, VISIT_CONVERSION_DAYS)) {
+      entry.converted += 1;
+      entry.orders += 1;
     }
+    byRep.set(rep, entry);
   }
 
   let rows = [...byRep.entries()].map(([repName, stats]) => ({
@@ -505,7 +575,6 @@ export function buildSalesInsights(input: BuildSalesInsightsInput): SalesInsight
   } = input;
 
   const orderIndex = buildOrderIndex(portfolioState.orders);
-  const visitIndex = buildVisitIndex(portfolioState.visits);
 
   const dueToReorder = buildDueToReorder(enrichedAccounts, asOf);
   const { accountRows: visitCoverageAccounts, repSummaries } = buildVisitCoverage(
@@ -520,7 +589,7 @@ export function buildSalesInsights(input: BuildSalesInsightsInput): SalesInsight
     repFilter,
   );
   const visitConversionByRep = buildVisitConversion(
-    visitIndex,
+    portfolioState.visits,
     orderIndex,
     enrichedAccounts,
     asOf,

@@ -14,9 +14,13 @@ import {
 import type { Order } from "./types";
 import { normalizeName } from "./format";
 import { rollingPaceWindow } from "./pace-windows";
-import type { ProductTrajectory } from "./product-trends";
+import {
+  productTrendBucketForDate,
+  snapProductTrendCutoffDate,
+  type ProductTrajectory,
+} from "./product-trends";
 
-export type TrendGranularity = "monthly" | "weekly";
+export type TrendGranularity = "monthly" | "weekly" | "30d";
 export type TrendTimeframe = "all" | "ytd" | "12m" | "6m" | "90d";
 
 export type AccountTrendPoint = {
@@ -191,10 +195,14 @@ export function buildBottleTrendData({
   }
   if (cutoffDate) {
     const yearStart = startOfYear(asOfDate);
-    cutoffDate =
-      granularity === "weekly"
-        ? startOfWeek(cutoffDate, { weekStartsOn: 1 })
-        : startOfMonth(cutoffDate);
+    if (granularity === "30d") {
+      cutoffDate = snapProductTrendCutoffDate(cutoffDate, "30d", asOfDate);
+    } else {
+      cutoffDate =
+        granularity === "weekly"
+          ? startOfWeek(cutoffDate, { weekStartsOn: 1 })
+          : startOfMonth(cutoffDate);
+    }
     if (timeframe === "ytd" && cutoffDate < yearStart) {
       cutoffDate = yearStart;
     }
@@ -233,6 +241,12 @@ export function buildBottleTrendData({
       bucketKey = format(weekStart, "yyyy-'W'II");
       bucketLabel = `Wk ${format(weekStart, "MMM d, yyyy")}`;
       bucketTimestamp = weekStart.getTime();
+    } else if (granularity === "30d") {
+      const bucket = productTrendBucketForDate(orderDate, "30d", asOfDate);
+      if (!bucket) continue;
+      bucketKey = bucket.key;
+      bucketLabel = bucket.label;
+      bucketTimestamp = bucket.timestamp;
     } else {
       const monthStart = startOfMonth(orderDate);
       bucketKey = format(monthStart, "yyyy-MM");
