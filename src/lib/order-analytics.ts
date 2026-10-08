@@ -580,8 +580,9 @@ export function listReturningCustomers(
 function historicalPeriodDaysBeforeRecent(
   orders: Order[],
   asOfDate: Date,
+  periodWindowDays: number,
 ): number | null {
-  const recentStart = subDays(asOfDate, PERIOD_WINDOW_DAYS);
+  const recentStart = subDays(asOfDate, periodWindowDays);
   const historicalOrders = orders.filter(
     (order) => parseISO(order.date) < recentStart,
   );
@@ -605,6 +606,121 @@ function classifyProductChange(
   if (delta >= 15) return "increasing";
   if (delta <= -15) return "decreasing";
   return "stable";
+}
+
+export const PRODUCT_CHANGE_PERIOD_OPTIONS = [30, 60, 90] as const;
+export type ProductChangePeriodDays = (typeof PRODUCT_CHANGE_PERIOD_OPTIONS)[number];
+
+export type AccountProductChangeAnalysis = {
+  productChanges: AccountProductChange[];
+  newProducts: string[];
+  droppedProducts: string[];
+  periodDays: {
+    recent: number;
+    prior: number;
+    before: number | null;
+  };
+};
+
+function sortProductChanges(
+  productChanges: AccountProductChange[],
+): AccountProductChange[] {
+  return [...productChanges].sort((a, b) => {
+    const rank = (status: ProductChangeStatus) => {
+      switch (status) {
+        case "dropped":
+          return 0;
+        case "decreasing":
+          return 1;
+        case "new":
+          return 2;
+        case "increasing":
+          return 3;
+        case "stable":
+          return 4;
+      }
+    };
+    const byRank = rank(a.status) - rank(b.status);
+    if (byRank !== 0) return byRank;
+    if (a.status === "stable" && b.status === "stable") {
+      return a.product.localeCompare(b.product);
+    }
+    return b.recentVolume - a.recentVolume;
+  });
+}
+
+/** Recent vs prior vs historical product mix for one account and window size. */
+export function buildAccountProductChanges(
+  accountOrders: Order[],
+  asOf: string,
+  periodWindowDays: number,
+): AccountProductChangeAnalysis {
+  const asOfDate = parseISO(asOf);
+  const recentStart = subDays(asOfDate, periodWindowDays);
+  const priorStart = subDays(asOfDate, periodWindowDays * 2);
+
+  const recentByProduct = new Map<string, number>();
+  const priorByProduct = new Map<string, number>();
+  const historicalByProduct = new Map<string, number>();
+
+  for (const order of accountOrders) {
+    const date = parseISO(order.date);
+    const product = productLabel(order);
+    const volume = lineVolume(order);
+    if (date >= recentStart && date <= asOfDate) {
+      recentByProduct.set(product, (recentByProduct.get(product) ?? 0) + volume);
+    } else if (date >= priorStart && date < recentStart) {
+      priorByProduct.set(product, (priorByProduct.get(product) ?? 0) + volume);
+    } else if (date < recentStart) {
+      historicalByProduct.set(
+        product,
+        (historicalByProduct.get(product) ?? 0) + volume,
+      );
+    }
+  }
+
+  const allProducts = [
+    ...new Set(accountOrders.map((order) => productLabel(order))),
+  ].sort();
+
+  const productChanges = sortProductChanges(
+    allProducts.map((product) => {
+      const recentVolume = recentByProduct.get(product) ?? 0;
+      const priorVolume = priorByProduct.get(product) ?? 0;
+      const historicalVolume = historicalByProduct.get(product) ?? 0;
+      const productOrders = accountOrders.filter(
+        (order) => productLabel(order) === product,
+      );
+      return {
+        product,
+        status: classifyProductChange(recentVolume, priorVolume, historicalVolume),
+        recentVolume,
+        priorVolume,
+        historicalVolume,
+        volumeDeltaPct: volumeDeltaPct(recentVolume, priorVolume),
+        lastOrdered: productOrders[0]?.date ?? null,
+      };
+    }),
+  );
+
+  return {
+    productChanges,
+    newProducts: productChanges
+      .filter((row) => row.status === "new")
+      .map((row) => row.product),
+    droppedProducts: productChanges
+      .filter((row) => row.status === "dropped")
+      .map((row) => row.product),
+    periodDays: {
+      recent: periodWindowDays,
+      prior: periodWindowDays,
+      before: historicalPeriodDaysBeforeRecent(
+        accountOrders,
+        asOfDate,
+        periodWindowDays,
+      ),
+    },
+  };
 }
 
 function buildMonthlyVolumeForAccount(accountOrders: Order[]): AccountMonthlyVolume[] {
@@ -818,67 +934,12 @@ export function buildAccountOrderTracking(
   );
   const volumeAllTime = frequency.totalVolume;
 
-  const recentByProduct = new Map<string, number>();
-  for (const order of recentOrders) {
-    const product = productLabel(order);
-    recentByProduct.set(product, (recentByProduct.get(product) ?? 0) + lineVolume(order));
-  }
-  const priorByProduct = new Map<string, number>();
-  for (const order of priorOrders) {
-    const product = productLabel(order);
-    priorByProduct.set(product, (priorByProduct.get(product) ?? 0) + lineVolume(order));
-  }
-  const historicalByProduct = new Map<string, number>();
-  for (const order of historicalOrders) {
-    const product = productLabel(order);
-    historicalByProduct.set(
-      product,
-      (historicalByProduct.get(product) ?? 0) + lineVolume(order),
-    );
-  }
-
-  const allProducts = [
-    ...new Set(accountOrders.map((order) => productLabel(order))),
-  ].sort();
-
-  const productChanges: AccountProductChange[] = allProducts.map((product) => {
-    const recentVolume = recentByProduct.get(product) ?? 0;
-    const priorVolume = priorByProduct.get(product) ?? 0;
-    const historicalVolume = historicalByProduct.get(product) ?? 0;
-    const productOrders = accountOrders.filter((order) => productLabel(order) === product);
-    return {
-      product,
-      status: classifyProductChange(recentVolume, priorVolume, historicalVolume),
-      recentVolume,
-      priorVolume,
-      historicalVolume,
-      volumeDeltaPct: volumeDeltaPct(recentVolume, priorVolume),
-      lastOrdered: productOrders[0]?.date ?? null,
-    };
-  });
-
-  productChanges.sort((a, b) => {
-    const rank = (status: ProductChangeStatus) => {
-      switch (status) {
-        case "dropped":
-          return 0;
-        case "decreasing":
-          return 1;
-        case "new":
-          return 2;
-        case "increasing":
-          return 3;
-        case "stable":
-          return 4;
-      }
-    };
-    const byRank = rank(a.status) - rank(b.status);
-    if (byRank !== 0) return byRank;
-    if (a.status === "stable" && b.status === "stable") {
-      return a.product.localeCompare(b.product);
-    }
-    return b.recentVolume - a.recentVolume;
-  });
+  const {
+    productChanges,
+    newProducts,
+    droppedProducts,
+    periodDays,
+  } = buildAccountProductChanges(accountOrders, asOf, PERIOD_WINDOW_DAYS);
 
   return {
     accountName,
@@ -892,18 +953,12 @@ export function buildAccountOrderTracking(
     frequencyDeltaDays: frequencyDeltaFromLatestOrderGap(accountOrders, asOf),
     productChanges,
     productCadence: buildProductCadenceForAccount(accountOrders, asOf),
-    newProducts: productChanges.filter((row) => row.status === "new").map((row) => row.product),
-    droppedProducts: productChanges
-      .filter((row) => row.status === "dropped")
-      .map((row) => row.product),
+    newProducts,
+    droppedProducts,
     products,
     orders: accountOrders,
     analysisAsOf: asOf,
-    periodDays: {
-      recent: PERIOD_WINDOW_DAYS,
-      prior: PERIOD_WINDOW_DAYS,
-      before: historicalPeriodDaysBeforeRecent(accountOrders, asOfDate),
-    },
+    periodDays,
   };
 }
 

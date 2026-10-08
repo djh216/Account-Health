@@ -40,11 +40,15 @@ import {
   orderCadenceToneHintClass,
 } from "@/lib/order-cadence";
 import {
+  buildAccountProductChanges,
+  PRODUCT_CHANGE_PERIOD_OPTIONS,
   sortProductCadenceRows,
   type AccountOrderTracking,
   type AccountProductCadence,
   type AccountProductChange,
+  type AccountProductChangeAnalysis,
   type ProductCadenceSortKey,
+  type ProductChangePeriodDays,
   type ProductChangeStatus,
   type ProductPurchaseTracking,
   type RestaurantOrderFrequency,
@@ -67,6 +71,61 @@ function productChangeLabel(status: ProductChangeStatus): string {
     case "stable":
       return "Stable";
   }
+}
+
+export function useProductChangePeriodAnalysis(
+  tracking: AccountOrderTracking,
+  initialPeriod: ProductChangePeriodDays = 90,
+) {
+  const [changePeriodDays, setChangePeriodDays] =
+    useState<ProductChangePeriodDays>(initialPeriod);
+
+  const analysis = useMemo(
+    () =>
+      buildAccountProductChanges(
+        tracking.orders,
+        tracking.analysisAsOf,
+        changePeriodDays,
+      ),
+    [tracking.orders, tracking.analysisAsOf, changePeriodDays],
+  );
+
+  return { changePeriodDays, setChangePeriodDays, analysis };
+}
+
+function ProductChangePeriodControl({
+  value,
+  onChange,
+  className,
+}: {
+  value: ProductChangePeriodDays;
+  onChange: (days: ProductChangePeriodDays) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn("flex flex-wrap items-center justify-between gap-2", className)}
+      role="group"
+      aria-label="Product change comparison period"
+    >
+      <span className="text-xs font-medium text-muted-foreground">Period</span>
+      <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5">
+        {PRODUCT_CHANGE_PERIOD_OPTIONS.map((days) => (
+          <Button
+            key={days}
+            type="button"
+            variant={value === days ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 px-2.5 text-xs tabular-nums"
+            aria-pressed={value === days}
+            onClick={() => onChange(days)}
+          >
+            {days} days
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function productChangeVariant(
@@ -97,22 +156,40 @@ export function AccountTrackingSheet({
   onOpenChange: (open: boolean) => void;
   onSelectProduct?: (product: string) => void;
 }) {
-  const cadence = tracking
-    ? orderCadenceStatus({
-        daysSinceOrder: tracking.frequency.daysSinceLastOrder,
-        lastOrderDate: tracking.frequency.lastOrderDate,
-        intervalDays: tracking.frequency.avgDaysBetweenOrders,
-      })
-    : null;
-
-  const projection = tracking
-    ? projectSingleAccount(tracking, accountHealth, tracking.analysisAsOf)
-    : null;
-
   return (
     <Dialog open={Boolean(tracking)} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[calc(100vh-1.5rem)] w-[min(96rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none md:max-w-none">
         {tracking ? (
+          <AccountTrackingSheetBody
+            tracking={tracking}
+            accountHealth={accountHealth}
+            onSelectProduct={onSelectProduct}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AccountTrackingSheetBody({
+  tracking,
+  accountHealth,
+  onSelectProduct,
+}: {
+  tracking: AccountOrderTracking;
+  accountHealth?: AccountHealth | null;
+  onSelectProduct?: (product: string) => void;
+}) {
+  const cadence = orderCadenceStatus({
+    daysSinceOrder: tracking.frequency.daysSinceLastOrder,
+    lastOrderDate: tracking.frequency.lastOrderDate,
+    intervalDays: tracking.frequency.avgDaysBetweenOrders,
+  });
+
+  const projection = projectSingleAccount(tracking, accountHealth, tracking.analysisAsOf);
+  const productChangePeriod = useProductChangePeriodAnalysis(tracking);
+
+  return (
           <>
             <DialogHeader className="shrink-0 border-b px-6 py-4 pr-14">
               {accountHealth ? (
@@ -133,8 +210,9 @@ export function AccountTrackingSheet({
                 {tracking.accountName}
               </DialogTitle>
               <DialogDescription>
-                Order trends and product mix with 45-day comparisons. Older orders
-                are included in all-time totals and monthly breakdowns. Click any product to view its individual orders.
+                Order trends and product mix with selectable 30 / 60 / 90-day product
+                change windows. Older orders are included in all-time totals and monthly
+                breakdowns. Click any product to view its individual orders.
               </DialogDescription>
             </DialogHeader>
 
@@ -146,6 +224,9 @@ export function AccountTrackingSheet({
                   tracking={tracking}
                   accountHealth={accountHealth}
                   compact
+                  productChangeAnalysis={productChangePeriod.analysis}
+                  changePeriodDays={productChangePeriod.changePeriodDays}
+                  onChangePeriodDays={productChangePeriod.setChangePeriodDays}
                 />
 
                 {projection ? (
@@ -232,8 +313,8 @@ export function AccountTrackingSheet({
                 />
 
                 <ProductChangesTable
-                  changes={tracking.productChanges}
-                  periodDays={tracking.periodDays}
+                  changes={productChangePeriod.analysis.productChanges}
+                  periodDays={productChangePeriod.analysis.periodDays}
                   onSelectProduct={onSelectProduct}
                 />
 
@@ -271,9 +352,6 @@ export function AccountTrackingSheet({
               </div>
             </div>
           </>
-        ) : null}
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -484,16 +562,31 @@ export function AccountTrackingSummary({
   tracking,
   accountHealth,
   compact = false,
+  productChangeAnalysis: productChangeAnalysisProp,
+  changePeriodDays: changePeriodDaysProp,
+  onChangePeriodDays: onChangePeriodDaysProp,
 }: {
   tracking: AccountOrderTracking;
   accountHealth?: AccountHealth | null;
   compact?: boolean;
+  productChangeAnalysis?: AccountProductChangeAnalysis;
+  changePeriodDays?: ProductChangePeriodDays;
+  onChangePeriodDays?: (days: ProductChangePeriodDays) => void;
 }) {
   const { frequency } = tracking;
   const [productsOpen, setProductsOpen] = useState(false);
+  const internalPeriod = useProductChangePeriodAnalysis(tracking);
+  const changePeriodDays = changePeriodDaysProp ?? internalPeriod.changePeriodDays;
+  const setChangePeriodDays =
+    onChangePeriodDaysProp ?? internalPeriod.setChangePeriodDays;
+  const productChangeAnalysis =
+    productChangeAnalysisProp ?? internalPeriod.analysis;
+
+  const { newProducts, droppedProducts, productChanges } = productChangeAnalysis;
+
   const purchasedProducts = useMemo(() => {
     const statusByProduct = new Map(
-      tracking.productChanges.map((change) => [change.product, change.status]),
+      productChanges.map((change) => [change.product, change.status]),
     );
     return [...tracking.products]
       .sort((a, b) => b.volume - a.volume || a.product.localeCompare(b.product))
@@ -501,7 +594,7 @@ export function AccountTrackingSummary({
         ...row,
         status: statusByProduct.get(row.product) ?? "stable",
       }));
-  }, [tracking.productChanges, tracking.products]);
+  }, [productChanges, tracking.products]);
 
   function exportProductsPdf() {
     downloadAccountProductsPdf({
@@ -562,8 +655,8 @@ export function AccountTrackingSummary({
           label="Products"
           value={String(frequency.productCount)}
           hint={
-            tracking.newProducts.length > 0 || tracking.droppedProducts.length > 0
-              ? `${tracking.newProducts.length} new · ${tracking.droppedProducts.length} dropped`
+            newProducts.length > 0 || droppedProducts.length > 0
+              ? `${newProducts.length} new · ${droppedProducts.length} dropped (${changePeriodDays}d)`
               : `${formatNumber(frequency.totalVolume)} total volume`
           }
           onClick={() => setProductsOpen(true)}
@@ -649,30 +742,50 @@ export function AccountTrackingSummary({
         </DialogContent>
       </Dialog>
 
-      {(tracking.newProducts.length > 0 || tracking.droppedProducts.length > 0) && (
+      {tracking.orders.length > 0 ? (
         <div className="space-y-3">
-          {tracking.newProducts.length > 0 ? (
+          <ProductChangePeriodControl
+            value={changePeriodDays}
+            onChange={setChangePeriodDays}
+          />
+          {newProducts.length > 0 ? (
             <div className="rounded-lg border border-primary/20 bg-primary/6 px-3 py-3 text-sm">
-              <p className="font-medium">New products</p>
+              <p className="font-medium">
+                New products
+                <span className="ml-1.5 font-normal text-muted-foreground">
+                  (last {changePeriodDays} days)
+                </span>
+              </p>
               <ul className="mt-2 space-y-1.5">
-                {tracking.newProducts.map((product) => (
+                {newProducts.map((product) => (
                   <li key={product}>{product}</li>
                 ))}
               </ul>
             </div>
           ) : null}
-          {tracking.droppedProducts.length > 0 ? (
+          {droppedProducts.length > 0 ? (
             <div className="rounded-lg border border-destructive/20 bg-destructive/6 px-3 py-3 text-sm">
-              <p className="font-medium">Dropped products</p>
+              <p className="font-medium">
+                Dropped products
+                <span className="ml-1.5 font-normal text-muted-foreground">
+                  (last {changePeriodDays} days)
+                </span>
+              </p>
               <ul className="mt-2 space-y-1.5">
-                {tracking.droppedProducts.map((product) => (
+                {droppedProducts.map((product) => (
                   <li key={product}>{product}</li>
                 ))}
               </ul>
             </div>
+          ) : null}
+          {newProducts.length === 0 && droppedProducts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No new or dropped products in the last {changePeriodDays} days (vs prior{" "}
+              {changePeriodDays} days and earlier history).
+            </p>
           ) : null}
         </div>
-      )}
+      ) : null}
     </>
   );
 }
