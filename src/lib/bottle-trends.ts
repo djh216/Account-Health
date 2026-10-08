@@ -54,6 +54,103 @@ export type AccountBottleSummary = {
   quarterlyTrajectory: ProductTrajectory;
 };
 
+export type AccountBottleCatalogSortKey =
+  | "accountName"
+  | "totalBottles"
+  | "avgBottlesPerOrder"
+  | "monthlyVelocity"
+  | "pace30DeltaPct"
+  | "trajectory30"
+  | "pace90DeltaPct"
+  | "trajectory90"
+  | "orderCount"
+  | "lastOrderDate";
+
+export type BottleCatalogSortDirection = "asc" | "desc";
+
+const TRAJECTORY_SORT_RANK: Record<ProductTrajectory, number> = {
+  accelerating: 5,
+  steady: 4,
+  new: 3,
+  decelerating: 2,
+  dormant: 1,
+};
+
+export function sortAccountBottleSummaries(
+  rows: AccountBottleSummary[],
+  column: AccountBottleCatalogSortKey,
+  direction: BottleCatalogSortDirection,
+): AccountBottleSummary[] {
+  const dir = direction === "asc" ? 1 : -1;
+
+  const compareNumbers = (a: number, b: number) => (a - b) * dir;
+  const compareNullableNumbers = (a: number | null, b: number | null) => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return compareNumbers(a, b);
+  };
+  const compareStrings = (a: string, b: string) => a.localeCompare(b) * dir;
+  const tieAccount = (a: AccountBottleSummary, b: AccountBottleSummary) =>
+    compareStrings(a.accountName, b.accountName);
+
+  const avgPerOrder = (row: AccountBottleSummary) =>
+    row.totalBottles / Math.max(1, row.orderCount);
+
+  return [...rows].sort((a, b) => {
+    switch (column) {
+      case "accountName":
+        return compareStrings(a.accountName, b.accountName) || compareNumbers(a.totalBottles, b.totalBottles);
+      case "totalBottles":
+        return compareNumbers(a.totalBottles, b.totalBottles) || tieAccount(a, b);
+      case "avgBottlesPerOrder":
+        return (
+          compareNumbers(avgPerOrder(a), avgPerOrder(b)) ||
+          compareNumbers(a.totalBottles, b.totalBottles) ||
+          tieAccount(a, b)
+        );
+      case "monthlyVelocity":
+        return (
+          compareNumbers(a.avgBottlesPerMonth, b.avgBottlesPerMonth) ||
+          compareNumbers(a.totalBottles, b.totalBottles) ||
+          tieAccount(a, b)
+        );
+      case "pace30DeltaPct":
+        return (
+          compareNullableNumbers(a.monthlyPaceDeltaPct, b.monthlyPaceDeltaPct) ||
+          compareNumbers(a.paceLastMonth, b.paceLastMonth) ||
+          tieAccount(a, b)
+        );
+      case "trajectory30":
+        return (
+          compareNumbers(
+            TRAJECTORY_SORT_RANK[a.monthlyTrajectory],
+            TRAJECTORY_SORT_RANK[b.monthlyTrajectory],
+          ) || compareNullableNumbers(a.monthlyPaceDeltaPct, b.monthlyPaceDeltaPct) || tieAccount(a, b)
+        );
+      case "pace90DeltaPct":
+        return (
+          compareNullableNumbers(a.quarterlyPaceDeltaPct, b.quarterlyPaceDeltaPct) ||
+          compareNumbers(a.paceLast3Months, b.paceLast3Months) ||
+          tieAccount(a, b)
+        );
+      case "trajectory90":
+        return (
+          compareNumbers(
+            TRAJECTORY_SORT_RANK[a.quarterlyTrajectory],
+            TRAJECTORY_SORT_RANK[b.quarterlyTrajectory],
+          ) ||
+          compareNullableNumbers(a.quarterlyPaceDeltaPct, b.quarterlyPaceDeltaPct) ||
+          tieAccount(a, b)
+        );
+      case "orderCount":
+        return compareNumbers(a.orderCount, b.orderCount) || tieAccount(a, b);
+      case "lastOrderDate":
+        return compareStrings(a.lastOrderDate, b.lastOrderDate) || tieAccount(a, b);
+    }
+  });
+}
+
 function paceDeltaPct(recent: number, prior: number): number | null {
   if (prior > 0) {
     return Math.round(((recent - prior) / prior) * 100);

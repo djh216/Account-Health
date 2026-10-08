@@ -21,7 +21,10 @@ import {
   YAxis,
 } from "recharts";
 import {
+  ArrowDown,
   ArrowDownRight,
+  ArrowUp,
+  ArrowUpDown,
   ArrowUpRight,
   BarChart2,
   Check,
@@ -72,7 +75,10 @@ import { formatDate, formatNumber, normalizeName } from "@/lib/format";
 import {
   buildBottleTrendData,
   bottleTrendOrdersScopeKey,
+  sortAccountBottleSummaries,
   TREND_PALETTE,
+  type AccountBottleCatalogSortKey,
+  type BottleCatalogSortDirection,
   type TrendGranularity,
   type TrendTimeframe,
 } from "@/lib/bottle-trends";
@@ -214,6 +220,49 @@ function PaceComparisonCell({
   );
 }
 
+function SortableAccountCatalogHead({
+  label,
+  column,
+  sort,
+  onSort,
+  align = "left",
+  className,
+}: {
+  label: string;
+  column: AccountBottleCatalogSortKey;
+  sort: { column: AccountBottleCatalogSortKey; direction: BottleCatalogSortDirection };
+  onSort: (column: AccountBottleCatalogSortKey) => void;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  const active = sort.column === column;
+  const Icon = active
+    ? sort.direction === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown;
+
+  return (
+    <TableHead className={cn("p-0", align === "right" ? "text-right" : "text-left", className)}>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSort(column);
+        }}
+        className={cn(
+          "inline-flex w-full items-center gap-1 px-3 py-2.5 text-xs font-semibold hover:text-foreground",
+          align === "right" ? "justify-end" : "justify-start",
+          active ? "text-foreground" : "text-foreground/80",
+        )}
+      >
+        <span className="whitespace-nowrap">{label}</span>
+        <Icon className="size-3.5 shrink-0 opacity-70" />
+      </button>
+    </TableHead>
+  );
+}
+
 type BottleSalesTrendChartProps = {
   orders: Order[];
   asOf?: string;
@@ -287,6 +336,10 @@ export function BottleSalesTrendChart({
   const [includeCurrentMonth, setIncludeCurrentMonth] = useState(true);
   const [showAggregateLine, setShowAggregateLine] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [catalogSort, setCatalogSort] = useState<{
+    column: AccountBottleCatalogSortKey;
+    direction: BottleCatalogSortDirection;
+  }>({ column: "totalBottles", direction: "desc" });
 
   // Color mapping per selected account
   const accountColorMap = useMemo(() => {
@@ -391,11 +444,25 @@ export function BottleSalesTrendChart({
 
   const displayedAccountSummaries = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return activeAccountSummaries;
-    return activeAccountSummaries.filter((summary) =>
-      summary.accountName.toLowerCase().includes(q),
+    const filtered = q
+      ? activeAccountSummaries.filter((summary) =>
+          summary.accountName.toLowerCase().includes(q),
+        )
+      : activeAccountSummaries;
+    return sortAccountBottleSummaries(filtered, catalogSort.column, catalogSort.direction);
+  }, [activeAccountSummaries, searchQuery, catalogSort.column, catalogSort.direction]);
+
+  function toggleAccountCatalogSort(column: AccountBottleCatalogSortKey) {
+    setCatalogSort((current) =>
+      current.column === column
+        ? { column, direction: current.direction === "asc" ? "desc" : "asc" }
+        : {
+            column,
+            direction:
+              column === "accountName" || column === "lastOrderDate" ? "asc" : "desc",
+          },
     );
-  }, [activeAccountSummaries, searchQuery]);
+  }
 
   function handleAccountExcludedFromLists(accountName: string) {
     setSelectedAccounts((prev) => prev.filter((name) => name !== accountName));
@@ -1185,18 +1252,75 @@ export function BottleSalesTrendChart({
                     <TableHead className="w-12 py-2.5 px-3 text-center font-semibold text-foreground">
                       Chart
                     </TableHead>
-                    <TableHead className="py-2.5 px-3 font-semibold text-foreground">
-                      Account
-                    </TableHead>
-                    <TableHead className="text-right">Total Bottles</TableHead>
-                    <TableHead className="text-right">Avg Bottles / Order</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Monthly Velocity</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">30-Day Pace vs Prior</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Trajectory (30d)</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Last 90-Day Pace vs Prior</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">Trajectory (90d)</TableHead>
-                    <TableHead className="text-right">Orders</TableHead>
-                    <TableHead className="text-right">Last Order Date</TableHead>
+                    <SortableAccountCatalogHead
+                      label="Account"
+                      column="accountName"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                    />
+                    <SortableAccountCatalogHead
+                      label="Total Bottles"
+                      column="totalBottles"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="Avg Bottles / Order"
+                      column="avgBottlesPerOrder"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="Monthly Velocity"
+                      column="monthlyVelocity"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="30-Day Pace vs Prior"
+                      column="pace30DeltaPct"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="Trajectory (30d)"
+                      column="trajectory30"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="Last 90-Day Pace vs Prior"
+                      column="pace90DeltaPct"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="Trajectory (90d)"
+                      column="trajectory90"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="Orders"
+                      column="orderCount"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
+                    <SortableAccountCatalogHead
+                      label="Last Order Date"
+                      column="lastOrderDate"
+                      sort={catalogSort}
+                      onSort={toggleAccountCatalogSort}
+                      align="right"
+                    />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
