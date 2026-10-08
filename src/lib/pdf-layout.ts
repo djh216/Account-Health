@@ -164,7 +164,7 @@ export function drawPdfSectionTable(
   } = input;
 
   const titleBlock = sectionTitle ? PDF_SECTION_TITLE_BLOCK_MM : 0;
-  let y = ensurePdfVerticalSpace(doc, startY, titleBlock + PDF_MIN_TABLE_BLOCK_MM);
+  const y = ensurePdfVerticalSpace(doc, startY, titleBlock + PDF_MIN_TABLE_BLOCK_MM);
 
   let tableStartY = y;
   if (sectionTitle) {
