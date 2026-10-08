@@ -1,5 +1,7 @@
 import { differenceInCalendarDays, format, parseISO, subDays } from "date-fns";
 import { normalizeName } from "./format";
+import { rollingPaceWindow } from "./pace-windows";
+import { PRODUCT_PACE_WINDOW_DAYS } from "./product-trends";
 import {
   averageOrdersPerMonthLifetimeFromOrderDates,
   frequencyDeltaFromLatestOrderGap,
@@ -99,6 +101,22 @@ export type AccountProductCadence = {
   daysSinceLastOrder: number;
   daysPastTypical: number | null;
   risk: RiskLevel;
+};
+
+/** Per-SKU row for account-level placement tables (mirrors product catalog account placements). */
+export type AccountProductPlacementRow = {
+  product: string;
+  bottles: number;
+  orderCount: number;
+  firstOrderDate: string;
+  lastOrderDate: string;
+  shareOfAccountVolumePct: number;
+  paceLast30Days: number;
+  pacePrior30Days: number;
+  paceDelta30dPct: number | null;
+  paceLast90Days: number;
+  pacePrior90Days: number;
+  quarterlyPaceDeltaPct: number | null;
 };
 
 export type ProductCadenceSortKey =
@@ -328,6 +346,105 @@ export type OrderAnalyticsSnapshot = {
 
 function lineVolume(order: Order): number {
   return order.cases > 0 ? order.cases : 1;
+}
+
+function placementPaceChangePct(current: number, prior: number): number | null {
+  if (prior <= 0) return current > 0 ? 100 : null;
+  return Math.round(((current - prior) / prior) * 100);
+}
+
+export function buildAccountProductPlacements(
+  accountOrders: Order[],
+  asOf: string,
+): AccountProductPlacementRow[] {
+  const asOfDate = parseISO(asOf.slice(0, 10));
+  const recent30Start = subDays(asOfDate, PRODUCT_PACE_WINDOW_DAYS - 1);
+  const prior30Start = subDays(asOfDate, PRODUCT_PACE_WINDOW_DAYS * 2 - 1);
+  const quarterWindow = rollingPaceWindow(asOfDate, 90);
+
+  const byProduct = new Map<
+    string,
+    {
+      bottles: number;
+      orderCount: number;
+      dates: string[];
+      paceLast30Days: number;
+      pacePrior30Days: number;
+      paceLast90Days: number;
+      pacePrior90Days: number;
+    }
+  >();
+
+  for (const order of accountOrders) {
+    if (!hasSpecifiedProduct(order)) continue;
+    const product = productLabel(order);
+    const btls = lineVolume(order);
+    const orderDate = parseISO(order.date.slice(0, 10));
+    const validDate = !isNaN(orderDate.getTime());
+
+    const existing = byProduct.get(product) ?? {
+      bottles: 0,
+      orderCount: 0,
+      dates: [],
+      paceLast30Days: 0,
+      pacePrior30Days: 0,
+      paceLast90Days: 0,
+      pacePrior90Days: 0,
+    };
+
+    existing.bottles += btls;
+    existing.orderCount += 1;
+    existing.dates.push(order.date);
+
+    if (validDate) {
+      if (orderDate >= recent30Start && orderDate <= asOfDate) {
+        existing.paceLast30Days += btls;
+      } else if (orderDate >= prior30Start && orderDate < recent30Start) {
+        existing.pacePrior30Days += btls;
+      }
+      if (orderDate >= quarterWindow.currentStart && orderDate <= quarterWindow.currentEnd) {
+        existing.paceLast90Days += btls;
+      } else if (
+        orderDate >= quarterWindow.priorStart &&
+        orderDate < quarterWindow.currentStart
+      ) {
+        existing.pacePrior90Days += btls;
+      }
+    }
+
+    byProduct.set(product, existing);
+  }
+
+  const totalBottles = [...byProduct.values()].reduce((sum, row) => sum + row.bottles, 0);
+
+  return [...byProduct.entries()]
+    .map(([product, info]) => {
+      info.dates.sort();
+      return {
+        product,
+        bottles: info.bottles,
+        orderCount: uniqueOrderWeekAnchorDates(
+          accountOrders.filter((order) => productLabel(order) === product),
+        ).length,
+        firstOrderDate: info.dates[0]?.slice(0, 10) ?? "",
+        lastOrderDate: info.dates.at(-1)?.slice(0, 10) ?? "",
+        shareOfAccountVolumePct:
+          totalBottles > 0 ? (info.bottles / totalBottles) * 100 : 0,
+        paceLast30Days: info.paceLast30Days,
+        pacePrior30Days: info.pacePrior30Days,
+        paceDelta30dPct: placementPaceChangePct(
+          info.paceLast30Days,
+          info.pacePrior30Days,
+        ),
+        paceLast90Days: info.paceLast90Days,
+        pacePrior90Days: info.pacePrior90Days,
+        quarterlyPaceDeltaPct: placementPaceChangePct(
+          info.paceLast90Days,
+          info.pacePrior90Days,
+        ),
+      };
+    })
+    .sort((a, b) => b.bottles - a.bottles || a.product.localeCompare(b.product));
 }
 
 export function hasSpecifiedProduct(order: Order): boolean {

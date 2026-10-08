@@ -10,6 +10,7 @@ import {
   Printer,
   Store,
   TrendingUp,
+  Wine,
 } from "lucide-react";
 import { OrderCadenceAlert } from "@/components/order-cadence-alert";
 import { HealthScoreExplainer } from "@/components/health-score-explainer";
@@ -51,11 +52,13 @@ import {
 import {
   buildAccountProductChanges,
   PRODUCT_CHANGE_PERIOD_OPTIONS,
+  buildAccountProductPlacements,
   sortProductCadenceRows,
   type AccountOrderTracking,
   type AccountProductCadence,
   type AccountProductChange,
   type AccountProductChangeAnalysis,
+  type AccountProductPlacementRow,
   type ProductCadenceSortKey,
   type ProductChangePeriodDays,
   type ProductChangeStatus,
@@ -204,6 +207,11 @@ function AccountTrackingSheetBody({
     if (dates.length === 0) return null;
     return dates.reduce((min, date) => (date < min ? date : min));
   }, [tracking.orders]);
+
+  const productPlacements = useMemo(
+    () => buildAccountProductPlacements(tracking.orders, tracking.analysisAsOf),
+    [tracking.orders, tracking.analysisAsOf],
+  );
 
   return (
           <>
@@ -404,17 +412,9 @@ function AccountTrackingSheetBody({
                   </div>
                 ) : null}
 
-              <ProductCadenceTable
-                cadence={tracking.productCadence}
+              <AccountProductPlacementsTable
+                rows={productPlacements}
                 onSelectProduct={onSelectProduct}
-                presentation="catalog"
-              />
-
-              <ProductChangesTable
-                changes={productChangePeriod.analysis.productChanges}
-                periodDays={productChangePeriod.analysis.periodDays}
-                onSelectProduct={onSelectProduct}
-                presentation="catalog"
               />
 
               <div className="space-y-2.5">
@@ -962,6 +962,152 @@ function SortableCadenceHead({
 }
 
 type TrackingTablePresentation = "default" | "catalog";
+
+function AccountProductPlacementsTable({
+  rows,
+  onSelectProduct,
+}: {
+  rows: AccountProductPlacementRow[];
+  onSelectProduct?: (product: string) => void;
+}) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No products have been purchased by this account yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <h4 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
+          <Store className="size-4 text-primary" />
+          <span>Product Placements & Volume Distribution</span>
+        </h4>
+        <span className="text-xs text-muted-foreground">
+          {rows.length} product placement{rows.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border">
+        <Table className="text-xs">
+          <TableHeader>
+            <TableRow className="bg-muted/40">
+              <TableHead className="px-3 py-2.5 font-semibold text-foreground">
+                Product Name
+              </TableHead>
+              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
+                Bottles Purchased
+              </TableHead>
+              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
+                Share of Account Volume
+              </TableHead>
+              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
+                Last 30-Day Pace vs Prior
+              </TableHead>
+              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
+                Last 90-Day Pace vs Prior
+              </TableHead>
+              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
+                Total Orders
+              </TableHead>
+              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
+                First Order
+              </TableHead>
+              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
+                Last Order
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow
+                key={row.product}
+                className="cursor-pointer transition-colors hover:bg-muted/40"
+                onClick={() => onSelectProduct?.(row.product)}
+                title={`Click to view individual orders for ${row.product}`}
+              >
+                <TableCell className="px-3 py-2.5 font-medium text-foreground">
+                  {row.product}
+                </TableCell>
+                <TableCell className="px-3 py-2.5 text-right font-semibold tabular-nums text-foreground whitespace-nowrap">
+                  {formatNumber(row.bottles)} btls
+                </TableCell>
+                <TableCell className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                  <div className="flex items-center justify-end gap-2">
+                    <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-muted sm:block">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{
+                          width: `${Math.min(100, Math.max(4, row.shareOfAccountVolumePct))}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="font-medium tabular-nums text-foreground">
+                      {formatPct(row.shareOfAccountVolumePct)}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                  <div className="flex flex-col items-end">
+                    <span
+                      className={cn(
+                        "text-xs font-semibold",
+                        row.paceDelta30dPct !== null && row.paceDelta30dPct > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : row.paceDelta30dPct !== null && row.paceDelta30dPct < 0
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {row.paceDelta30dPct !== null
+                        ? `${row.paceDelta30dPct > 0 ? "+" : ""}${row.paceDelta30dPct}%`
+                        : "—"}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatNumber(row.paceLast30Days)} vs {formatNumber(row.pacePrior30Days)} btls
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                  <div className="flex flex-col items-end">
+                    <span
+                      className={cn(
+                        "text-xs font-semibold",
+                        row.quarterlyPaceDeltaPct !== null && row.quarterlyPaceDeltaPct > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : row.quarterlyPaceDeltaPct !== null && row.quarterlyPaceDeltaPct < 0
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {row.quarterlyPaceDeltaPct !== null
+                        ? `${row.quarterlyPaceDeltaPct > 0 ? "+" : ""}${row.quarterlyPaceDeltaPct}%`
+                        : "—"}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatNumber(row.paceLast90Days)} vs {formatNumber(row.pacePrior90Days)} btls
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell className="px-3 py-2.5 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+                  {row.orderCount} order{row.orderCount === 1 ? "" : "s"}
+                </TableCell>
+                <TableCell className="px-3 py-2.5 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                  {formatDate(row.firstOrderDate)}
+                </TableCell>
+                <TableCell className="px-3 py-2.5 text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                  {formatDate(row.lastOrderDate)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
 
 function ProductCadenceTable({
   cadence,
