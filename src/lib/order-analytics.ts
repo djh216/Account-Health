@@ -127,6 +127,16 @@ export type ProductCadenceSortKey =
   | "vsTypical"
   | "risk";
 
+export type AccountProductPlacementSortKey =
+  | "product"
+  | "bottles"
+  | "shareOfAccountVolumePct"
+  | "paceDelta30dPct"
+  | "quarterlyPaceDeltaPct"
+  | "orderCount"
+  | "firstOrderDate"
+  | "lastOrderDate";
+
 function productCadenceRiskRank(risk: RiskLevel): number {
   switch (risk) {
     case "critical":
@@ -199,6 +209,53 @@ export type RestaurantFrequencySortKey =
   | "totalVolume";
 
 export type SortDirection = "asc" | "desc";
+
+export function sortAccountProductPlacementRows(
+  rows: AccountProductPlacementRow[],
+  column: AccountProductPlacementSortKey,
+  direction: SortDirection,
+): AccountProductPlacementRow[] {
+  const dir = direction === "asc" ? 1 : -1;
+
+  const compareNumbers = (a: number, b: number) => (a - b) * dir;
+  const compareNullableNumbers = (a: number | null, b: number | null) => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return compareNumbers(a, b);
+  };
+  const compareStrings = (a: string, b: string) => a.localeCompare(b) * dir;
+
+  return [...rows].sort((a, b) => {
+    switch (column) {
+      case "product":
+        return compareStrings(a.product, b.product);
+      case "bottles":
+        return compareNumbers(a.bottles, b.bottles) || compareStrings(a.product, b.product);
+      case "shareOfAccountVolumePct":
+        return (
+          compareNumbers(a.shareOfAccountVolumePct, b.shareOfAccountVolumePct) ||
+          compareNumbers(a.bottles, b.bottles)
+        );
+      case "paceDelta30dPct":
+        return (
+          compareNullableNumbers(a.paceDelta30dPct, b.paceDelta30dPct) ||
+          compareNumbers(a.paceLast30Days, b.paceLast30Days)
+        );
+      case "quarterlyPaceDeltaPct":
+        return (
+          compareNullableNumbers(a.quarterlyPaceDeltaPct, b.quarterlyPaceDeltaPct) ||
+          compareNumbers(a.paceLast90Days, b.paceLast90Days)
+        );
+      case "orderCount":
+        return compareNumbers(a.orderCount, b.orderCount);
+      case "firstOrderDate":
+        return compareStrings(a.firstOrderDate, b.firstOrderDate);
+      case "lastOrderDate":
+        return compareStrings(a.lastOrderDate, b.lastOrderDate);
+    }
+  });
+}
 
 export function sortProductCadenceRows(
   rows: AccountProductCadence[],

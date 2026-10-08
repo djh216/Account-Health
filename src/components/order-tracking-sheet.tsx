@@ -10,7 +10,6 @@ import {
   Printer,
   Store,
   TrendingUp,
-  Wine,
 } from "lucide-react";
 import { OrderCadenceAlert } from "@/components/order-cadence-alert";
 import { HealthScoreExplainer } from "@/components/health-score-explainer";
@@ -53,8 +52,10 @@ import {
   buildAccountProductChanges,
   PRODUCT_CHANGE_PERIOD_OPTIONS,
   buildAccountProductPlacements,
+  sortAccountProductPlacementRows,
   sortProductCadenceRows,
   type AccountOrderTracking,
+  type AccountProductPlacementSortKey,
   type AccountProductCadence,
   type AccountProductChange,
   type AccountProductChangeAnalysis,
@@ -963,6 +964,47 @@ function SortableCadenceHead({
 
 type TrackingTablePresentation = "default" | "catalog";
 
+function SortablePlacementHead({
+  label,
+  column,
+  sort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  column: AccountProductPlacementSortKey;
+  sort: { column: AccountProductPlacementSortKey; direction: SortDirection };
+  onSort: (column: AccountProductPlacementSortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort.column === column;
+  const Icon = active
+    ? sort.direction === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown;
+
+  return (
+    <TableHead className={cn("p-0", align === "right" ? "text-right" : "text-left")}>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSort(column);
+        }}
+        className={cn(
+          "inline-flex w-full items-center gap-1 px-3 py-2.5 text-xs font-semibold hover:text-foreground",
+          align === "right" ? "justify-end" : "justify-start",
+          active ? "text-foreground" : "text-foreground/80",
+        )}
+      >
+        <span className="whitespace-nowrap">{label}</span>
+        <Icon className="size-3.5 shrink-0 opacity-70" />
+      </button>
+    </TableHead>
+  );
+}
+
 function AccountProductPlacementsTable({
   rows,
   onSelectProduct,
@@ -970,6 +1012,32 @@ function AccountProductPlacementsTable({
   rows: AccountProductPlacementRow[];
   onSelectProduct?: (product: string) => void;
 }) {
+  const [sort, setSort] = useState<{
+    column: AccountProductPlacementSortKey;
+    direction: SortDirection;
+  }>({ column: "bottles", direction: "desc" });
+
+  const sortedRows = useMemo(
+    () => sortAccountProductPlacementRows(rows, sort.column, sort.direction),
+    [rows, sort.column, sort.direction],
+  );
+
+  function toggleSort(column: AccountProductPlacementSortKey) {
+    setSort((current) =>
+      current.column === column
+        ? { column, direction: current.direction === "asc" ? "desc" : "asc" }
+        : {
+            column,
+            direction:
+              column === "product" ||
+              column === "firstOrderDate" ||
+              column === "lastOrderDate"
+                ? "asc"
+                : "desc",
+          },
+    );
+  }
+
   if (rows.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -994,34 +1062,65 @@ function AccountProductPlacementsTable({
         <Table className="text-xs">
           <TableHeader>
             <TableRow className="bg-muted/40">
-              <TableHead className="px-3 py-2.5 font-semibold text-foreground">
-                Product Name
-              </TableHead>
-              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
-                Bottles Purchased
-              </TableHead>
-              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
-                Share of Account Volume
-              </TableHead>
-              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
-                Last 30-Day Pace vs Prior
-              </TableHead>
-              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
-                Last 90-Day Pace vs Prior
-              </TableHead>
-              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
-                Total Orders
-              </TableHead>
-              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
-                First Order
-              </TableHead>
-              <TableHead className="px-3 py-2.5 text-right font-semibold text-foreground whitespace-nowrap">
-                Last Order
-              </TableHead>
+              <SortablePlacementHead
+                label="Product Name"
+                column="product"
+                sort={sort}
+                onSort={toggleSort}
+              />
+              <SortablePlacementHead
+                label="Bottles Purchased"
+                column="bottles"
+                sort={sort}
+                onSort={toggleSort}
+                align="right"
+              />
+              <SortablePlacementHead
+                label="Share of Account Volume"
+                column="shareOfAccountVolumePct"
+                sort={sort}
+                onSort={toggleSort}
+                align="right"
+              />
+              <SortablePlacementHead
+                label="Last 30-Day Pace vs Prior"
+                column="paceDelta30dPct"
+                sort={sort}
+                onSort={toggleSort}
+                align="right"
+              />
+              <SortablePlacementHead
+                label="Last 90-Day Pace vs Prior"
+                column="quarterlyPaceDeltaPct"
+                sort={sort}
+                onSort={toggleSort}
+                align="right"
+              />
+              <SortablePlacementHead
+                label="Total Orders"
+                column="orderCount"
+                sort={sort}
+                onSort={toggleSort}
+                align="right"
+              />
+              <SortablePlacementHead
+                label="First Order"
+                column="firstOrderDate"
+                sort={sort}
+                onSort={toggleSort}
+                align="right"
+              />
+              <SortablePlacementHead
+                label="Last Order"
+                column="lastOrderDate"
+                sort={sort}
+                onSort={toggleSort}
+                align="right"
+              />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               <TableRow
                 key={row.product}
                 className="cursor-pointer transition-colors hover:bg-muted/40"
