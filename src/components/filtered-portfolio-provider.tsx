@@ -101,6 +101,8 @@ type FilteredPortfolioContextValue = {
   snapshot: PortfolioSnapshot;
   repFilter: string;
   repFilterPending: boolean;
+  /** True while order-level analytics (heavy bundle) is still warming. */
+  orderAnalyticsPending: boolean;
   setRepFilter: (rep: string) => void;
   reps: string[];
   importParseResult: ReturnType<typeof usePortfolio>["importParseResult"];
@@ -132,6 +134,7 @@ function shellPortfolioContext(input: {
   reps: string[];
   importParseResult: ReturnType<typeof usePortfolio>["importParseResult"];
   resetAll: () => void;
+  orderAnalyticsPending?: boolean;
 }): FilteredPortfolioContextValue {
   return {
     state: input.filteredState,
@@ -154,6 +157,7 @@ function shellPortfolioContext(input: {
     },
     repFilter: input.repFilter,
     repFilterPending: input.repFilterPending,
+    orderAnalyticsPending: input.orderAnalyticsPending ?? false,
     setRepFilter,
     reps: input.reps,
     importParseResult: input.importParseResult,
@@ -339,6 +343,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   );
 
   const repFilterPending = Boolean(hasPortfolioData && !activeCore);
+  const orderAnalyticsPending = Boolean(hasPortfolioData && activeCore && !activeHeavy);
 
   const bundle = useMemo(() => {
     if (!activeCore) return null;
@@ -480,6 +485,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
       snapshot: activeCore.snapshot,
       repFilter,
       repFilterPending,
+      orderAnalyticsPending,
       setRepFilter,
       reps,
       importParseResult,
@@ -506,6 +512,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     activeCore,
     repFilter,
     repFilterPending,
+    orderAnalyticsPending,
     reps,
     importParseResult,
     resetAll,

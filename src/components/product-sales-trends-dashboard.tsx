@@ -39,7 +39,7 @@ import {
 } from "recharts";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
-import { useDashboardShell } from "@/components/dashboard-shell";
+import { useDashboardShell, useOpenUploadDialog } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { RepFilterSelect } from "@/components/rep-filter-select";
 import { ClearDataButton } from "@/components/clear-data-button";
@@ -342,6 +342,7 @@ export function ProductSalesTrendsDashboard({ embedded = false }: { embedded?: b
     productTrends: cachedProductTrends,
   } = useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUpload = useOpenUploadDialog(() => setUploadOpen(true));
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -720,7 +721,7 @@ export function ProductSalesTrendsDashboard({ embedded = false }: { embedded?: b
               />
               <PrintReportButton page="products" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
-              <Button onClick={() => setUploadOpen(true)}>
+              <Button onClick={openUpload}>
                 <Upload data-icon="inline-start" />
                 Upload reports
               </Button>
@@ -849,7 +850,7 @@ export function ProductSalesTrendsDashboard({ embedded = false }: { embedded?: b
                   <Sparkles className="size-4 mr-2" />
                   Load Sample Book
                 </Button>
-                <Button onClick={() => setUploadOpen(true)}>
+                <Button onClick={openUpload}>
                   <Upload className="size-4 mr-2" />
                   Upload Reports
                 </Button>

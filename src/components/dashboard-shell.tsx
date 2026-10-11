@@ -42,6 +42,18 @@ export function useDashboardShell(): DashboardShellContextValue | null {
   return useContext(DashboardShellContext);
 }
 
+/** In the unified shell, upload is owned by the header; standalone pages use a local dialog. */
+export function useOpenUploadDialog(openLocalDialog: () => void) {
+  const shell = useDashboardShell();
+  return useCallback(() => {
+    if (shell) {
+      shell.openUpload();
+      return;
+    }
+    openLocalDialog();
+  }, [shell, openLocalDialog]);
+}
+
 export function DashboardShell({
   activeView,
   onViewChange,

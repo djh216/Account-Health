@@ -19,7 +19,7 @@ import {
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
 import { RepFilterSelect } from "@/components/rep-filter-select";
-import { useDashboardShell } from "@/components/dashboard-shell";
+import { useDashboardShell, useOpenUploadDialog } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -629,6 +629,7 @@ export function SalesInsightsDashboard({ embedded = false }: { embedded?: boolea
   } = useFilteredPortfolio();
   const { insights, insightsPending } = useSalesInsights();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUpload = useOpenUploadDialog(() => setUploadOpen(true));
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [activeInsightsTab, setActiveInsightsTab] = useState("briefing");
   const [kpiDetail, setKpiDetail] = useState<KpiDetailConfig | null>(null);
@@ -688,7 +689,7 @@ export function SalesInsightsDashboard({ embedded = false }: { embedded?: boolea
               />
               <PrintReportButton page="insights" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
-              <Button onClick={() => setUploadOpen(true)}>
+              <Button onClick={openUpload}>
                 <Upload data-icon="inline-start" />
                 Upload reports
               </Button>
@@ -736,7 +737,7 @@ export function SalesInsightsDashboard({ embedded = false }: { embedded?: boolea
               </CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center">
-              <Button onClick={() => setUploadOpen(true)}>Upload reports</Button>
+              <Button onClick={openUpload}>Upload reports</Button>
             </CardContent>
           </Card>
         ) : snapshot.accounts.length === 0 ? (

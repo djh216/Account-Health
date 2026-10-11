@@ -25,7 +25,7 @@ import {
   NotificationSidebar,
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
-import { useDashboardShell } from "@/components/dashboard-shell";
+import { useDashboardShell, useOpenUploadDialog } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -140,6 +140,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     newAccounts,
   } = useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUpload = useOpenUploadDialog(() => setUploadOpen(true));
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState<"all" | RiskLevel>("all");
@@ -318,10 +319,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const panelBody = (
     <>
         {fullState.accounts.length === 0 ? (
-          <EmptyState
-            onUpload={() => setUploadOpen(true)}
-            onLoadSample={handleLoadSample}
-          />
+          <EmptyState onUpload={openUpload} onLoadSample={handleLoadSample} />
         ) : snapshot.accounts.length === 0 ? (
           <Card className="border-dashed py-12">
             <CardHeader className="items-center text-center">
@@ -708,7 +706,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
               />
               <PrintReportButton page="health" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
-              <Button onClick={() => setUploadOpen(true)}>
+              <Button onClick={openUpload}>
                 <Upload data-icon="inline-start" />
                 Upload reports
               </Button>

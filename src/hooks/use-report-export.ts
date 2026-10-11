@@ -23,7 +23,12 @@ import {
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { focusAccountsByHorizon } from "@/lib/score";
 import { todayIso } from "@/lib/format";
-import { useSalesInsights } from "@/hooks/use-sales-insights";
+import { assembleSalesInsightsInput, useSalesInsights } from "@/hooks/use-sales-insights";
+import { portfolioStateCacheKey } from "@/lib/portfolio-analytics-bundle";
+import {
+  getOrBuildSalesInsights,
+} from "@/lib/sales-insights/sales-insights-cache";
+import type { SalesInsightsBundle } from "@/lib/sales-insights/types";
 
 export type ReportPageType = "health" | "orders" | "products" | "insights";
 
@@ -41,6 +46,7 @@ export function useReportExportController() {
     fullState,
     snapshot,
     repFilter,
+    repFilterPending,
     reps,
     enrichedAccounts,
     frequencyAlerts,
@@ -48,6 +54,9 @@ export function useReportExportController() {
     productTrends,
     productAlerts,
     projectionsSummary,
+    newAccounts,
+    retainedAccounts,
+    returningCustomers,
   } = useFilteredPortfolio();
   const { ids: outOfStockIds } = useOutOfStockProducts();
   const { ids: closedAccountIds } = useClosedBusinessAccounts();
@@ -116,9 +125,51 @@ export function useReportExportController() {
   );
 
   const hasImminentChurnData = imminentChurnAccounts.length > 0;
+
+  const insightsBuildInput = useMemo(
+    () =>
+      assembleSalesInsightsInput({
+        enrichedAccounts,
+        repFilter,
+        frequencyAlerts,
+        productAlerts,
+        newAccounts,
+        retainedAccounts,
+        returningCustomers,
+        projectionsSummary,
+        state,
+        snapshot,
+        repFilterPending,
+      }),
+    [
+      enrichedAccounts,
+      repFilter,
+      frequencyAlerts,
+      productAlerts,
+      newAccounts,
+      retainedAccounts,
+      returningCustomers,
+      projectionsSummary,
+      state,
+      snapshot,
+      repFilterPending,
+    ],
+  );
+
   const hasInsightsData = insights !== null;
-  const hasWeeklyBriefingData = hasInsightsData;
-  const hasSalesInsightsPackData = hasInsightsData;
+  const hasWeeklyBriefingData = hasInsightsData || insightsBuildInput !== null;
+  const hasSalesInsightsPackData = hasWeeklyBriefingData;
+
+  const resolveInsightsBundle = useCallback((): SalesInsightsBundle => {
+    if (insights) return insights;
+    if (!insightsBuildInput) {
+      throw new Error(
+        "No account data available to generate reports. Load sample data or upload records first.",
+      );
+    }
+    const portfolioKey = portfolioStateCacheKey(insightsBuildInput.portfolioState);
+    return getOrBuildSalesInsights(portfolioKey, insightsBuildInput);
+  }, [insights, insightsBuildInput]);
 
   const exportFocusHealthPdf = useCallback(async () => {
     if (!hasHealthData) {
@@ -146,15 +197,13 @@ export function useReportExportController() {
   }, [hasHealthData, openPdfPreview, repFilter, asOf, enrichedAccounts]);
 
   const buildWeeklyRepPackArtifact = useCallback(() => {
-    if (!insights) {
-      throw new Error("Insights are not ready yet. Wait for analytics to load.");
-    }
+    const bundle = resolveInsightsBundle();
     return buildSalesInsightsPdfArtifact({
       repFilter,
       generatedAt: asOf,
       insights: {
-        ...insights,
-        winBackSkus: excludeOutOfStockWinBackSkus(insights.winBackSkus, outOfStockIds),
+        ...bundle,
+        winBackSkus: excludeOutOfStockWinBackSkus(bundle.winBackSkus, outOfStockIds),
       },
       focusByHorizon: focusAccountsByHorizon(enrichedAccounts),
       frequencyAlerts,
@@ -162,7 +211,7 @@ export function useReportExportController() {
       productSlowdownAlerts: productAlerts,
     });
   }, [
-    insights,
+    resolveInsightsBundle,
     repFilter,
     asOf,
     outOfStockIds,
@@ -184,7 +233,7 @@ export function useReportExportController() {
   }, [buildWeeklyRepPackArtifact, openPdfPreview]);
 
   const exportFrequencyAlertsPdf = useCallback(async () => {
-    if (!hasAlertsData && !insights) {
+    if (!hasAlertsData && !insightsBuildInput) {
       throw new Error(
         "No account data available to generate reports. Load sample data or upload records first.",
       );
@@ -197,7 +246,7 @@ export function useReportExportController() {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [hasAlertsData, insights, buildWeeklyRepPackArtifact, openPdfPreview]);
+  }, [hasAlertsData, insightsBuildInput, buildWeeklyRepPackArtifact, openPdfPreview]);
 
   const exportOrderAnalyticsPdf = useCallback(async () => {
     if (!hasOrderData) {

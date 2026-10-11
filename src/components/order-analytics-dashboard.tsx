@@ -16,7 +16,8 @@ import {
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
 import { HealthScoreExplainer } from "@/components/health-score-explainer";
-import { useDashboardShell } from "@/components/dashboard-shell";
+import { useDashboardShell, useOpenUploadDialog } from "@/components/dashboard-shell";
+import { DashboardPageLoading } from "@/components/page-loading";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -231,6 +232,7 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
     snapshot,
     repFilter,
     repFilterPending,
+    orderAnalyticsPending,
     setRepFilter,
     reps,
     importParseResult,
@@ -248,6 +250,7 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
     lastOrderGaps,
   } = useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUpload = useOpenUploadDialog(() => setUploadOpen(true));
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] =
     useState<AccountOrderTracking | null>(null);
@@ -468,9 +471,11 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
               </CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center">
-              <Button onClick={() => setUploadOpen(true)}>Upload orders</Button>
+              <Button onClick={openUpload}>Upload orders</Button>
             </CardContent>
           </Card>
+        ) : orderAnalyticsPending ? (
+          <DashboardPageLoading label="order analytics" />
         ) : analytics.orders.length === 0 ? (
           <Card className="border-dashed py-12">
             <CardHeader className="items-center text-center">
@@ -1018,7 +1023,7 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                   flash(message);
                 }}
               />
-              <Button onClick={() => setUploadOpen(true)}>
+              <Button onClick={openUpload}>
                 <Upload data-icon="inline-start" />
                 Upload orders
               </Button>
