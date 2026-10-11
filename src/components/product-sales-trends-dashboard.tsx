@@ -39,6 +39,7 @@ import {
 } from "recharts";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
+import { useDashboardShell } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { RepFilterSelect } from "@/components/rep-filter-select";
 import { ClearDataButton } from "@/components/clear-data-button";
@@ -325,7 +326,8 @@ function CatalogSortHead({
   );
 }
 
-export function ProductSalesTrendsDashboard() {
+export function ProductSalesTrendsDashboard({ embedded = false }: { embedded?: boolean }) {
+  const shell = useDashboardShell();
   const {
     state,
     fullState,
@@ -378,6 +380,10 @@ export function ProductSalesTrendsDashboard() {
   const searchInputId = useId();
 
   function flash(message: string) {
+    if (shell) {
+      shell.flash(message);
+      return;
+    }
     setToast(message);
     window.setTimeout(() => setToast(null), 4000);
   }
@@ -680,8 +686,8 @@ export function ProductSalesTrendsDashboard() {
   }
 
   return (
-    <div className="min-h-screen">
-      {/* App Header */}
+    <div className={embedded ? undefined : "min-h-screen"}>
+      {!embedded ? (
       <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
         <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 sm:px-6 lg:px-8 py-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -731,16 +737,22 @@ export function ProductSalesTrendsDashboard() {
           </div>
         </div>
       </header>
+      ) : null}
 
-      {/* Main Content Area */}
-      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 sm:px-6 lg:px-8 py-6">
-        {toast ? (
+      <div
+        className={
+          embedded
+            ? "space-y-6"
+            : "mx-auto w-full max-w-[96rem] space-y-6 px-4 sm:px-6 lg:px-8 py-6"
+        }
+      >
+        {!embedded && toast ? (
           <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
             {toast}
           </div>
         ) : null}
 
-        {repFilter !== "all" ? (
+        {!embedded && repFilter !== "all" ? (
           <div className="rounded-lg border border-primary/20 bg-primary/6 px-4 py-3 text-sm">
             Showing <span className="font-medium">{repFilter}</span>&apos;s product sales only.
           </div>
@@ -2107,7 +2119,7 @@ export function ProductSalesTrendsDashboard() {
             </Card>
           </>
         )}
-      </main>
+      </div>
 
       <Dialog
         open={Boolean(placementProduct)}
@@ -2449,38 +2461,41 @@ export function ProductSalesTrendsDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Upload Dialog & Notification Drawer */}
-      <UploadDialog
-        open={uploadOpen}
-        onOpenChange={setUploadOpen}
-        onImport={(result) => {
-          const imported = importParseResult(result);
-          const count =
-            result.kind === "orders"
-              ? imported.orders.length
-              : result.kind === "visits"
-                ? imported.visits.length
-                : imported.accounts.length;
-          flash(`Imported ${count} ${result.kind === "orders" ? "order lines" : "records"}.`);
-        }}
-        onUploadCleared={flash}
-      />
-      <NotificationSidebar
-        open={notificationSidebarOpen}
-        onOpenChange={setNotificationSidebarOpen}
-        alerts={frequencyAlerts}
-        productAlerts={productAlerts}
-        accountVisitLookup={accountVisitLookup}
-        defaultCategory="products"
-        onSelectAccount={() => {
-          setNotificationSidebarOpen(false);
-        }}
-        onSelectProduct={(productName) => {
-          const summary = trends.productSummaries.find((s) => s.productName === productName);
-          if (summary) setSelectedDetailProduct(summary);
-          setNotificationSidebarOpen(false);
-        }}
-      />
+      {!embedded ? (
+        <>
+          <UploadDialog
+            open={uploadOpen}
+            onOpenChange={setUploadOpen}
+            onImport={(result) => {
+              const imported = importParseResult(result);
+              const count =
+                result.kind === "orders"
+                  ? imported.orders.length
+                  : result.kind === "visits"
+                    ? imported.visits.length
+                    : imported.accounts.length;
+              flash(`Imported ${count} ${result.kind === "orders" ? "order lines" : "records"}.`);
+            }}
+            onUploadCleared={flash}
+          />
+          <NotificationSidebar
+            open={notificationSidebarOpen}
+            onOpenChange={setNotificationSidebarOpen}
+            alerts={frequencyAlerts}
+            productAlerts={productAlerts}
+            accountVisitLookup={accountVisitLookup}
+            defaultCategory="products"
+            onSelectAccount={() => {
+              setNotificationSidebarOpen(false);
+            }}
+            onSelectProduct={(productName) => {
+              const summary = trends.productSummaries.find((s) => s.productName === productName);
+              if (summary) setSelectedDetailProduct(summary);
+              setNotificationSidebarOpen(false);
+            }}
+          />
+        </>
+      ) : null}
 
       {/* Point Analytics Pop-up Dialog */}
       <TrendPointAnalyticsDialog

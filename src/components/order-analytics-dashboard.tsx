@@ -16,6 +16,7 @@ import {
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
 import { HealthScoreExplainer } from "@/components/health-score-explainer";
+import { useDashboardShell } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -48,9 +49,7 @@ import {
   normalizeName,
 } from "@/lib/format";
 import { VolumeProjectionChurnPanel } from "@/components/volume-projection-churn-panel";
-import { BottleSalesTrendChart } from "@/components/bottle-sales-trend-chart";
 import type { AccountHealth } from "@/lib/types";
-import { hasSpecifiedProduct } from "@/lib/order-analytics";
 import { FREQUENCY_DROP_RECENT_CLEARANCE_DAYS } from "@/lib/frequency-drop-roster";
 import { buildPdfAccountVisitLookup } from "@/lib/report-export";
 import {
@@ -224,7 +223,8 @@ type AccountListDialogState = {
   showPriorOrder?: boolean;
 };
 
-export function OrderAnalyticsDashboard() {
+export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boolean }) {
+  const shell = useDashboardShell();
   const {
     state,
     fullState,
@@ -328,11 +328,6 @@ export function OrderAnalyticsDashboard() {
     [returningCustomers, healthByAccountName],
   );
 
-  const bottleTrendOrders = useMemo(
-    () => state.orders.filter(hasSpecifiedProduct),
-    [state.orders],
-  );
-
   const sortedAccounts = useMemo(
     () =>
       sortAccountTrackingRows(
@@ -398,6 +393,10 @@ export function OrderAnalyticsDashboard() {
     : null;
 
   function flash(message: string) {
+    if (shell) {
+      shell.flash(message);
+      return;
+    }
     setToast(message);
     window.setTimeout(() => setToast(null), 4000);
   }
@@ -412,70 +411,51 @@ export function OrderAnalyticsDashboard() {
     if (tracking) setSelectedAccount(tracking);
   }
 
-  return (
-    <div className="min-h-screen">
-      <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
-        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-primary">
-                <Grape className="size-5" />
-                <p className="text-xs font-semibold tracking-[0.18em] uppercase">
-                  Wine distribution · order analytics
-                </p>
-              </div>
-              <h1 className="font-heading mt-1 text-3xl tracking-tight sm:text-4xl">
-                Order analytics
-              </h1>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                Track how often each restaurant orders, which individual products
-                they buy, and volume trends from your customer order uploads.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <NotificationSidebarTrigger
-                alertsCount={totalAlertsCount}
-                criticalCount={totalCriticalAlertsCount}
-                onClick={() => setNotificationSidebarOpen(true)}
-              />
-              <PrintReportButton page="orders" onMessage={flash} />
-              <ClearDataButton
-                onCleared={(message) => {
-                  setSelectedAccount(null);
-                  flash(message);
-                }}
-              />
-              <Button onClick={() => setUploadOpen(true)}>
-                <Upload data-icon="inline-start" />
-                Upload orders
-              </Button>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <SiteNav />
-            <RepFilterSelect
-              reps={reps}
-              value={repFilter}
-              pending={repFilterPending}
-              onValueChange={setRepFilter}
-            />
-          </div>
-        </div>
-      </header>
+  const orderPanelDialogs = (
+    <>
+      <AccountTrackingSheet
+        tracking={selectedAccountTracking}
+        accountHealth={selectedAccountHealth}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAccount(null);
+        }}
+        onSelectProduct={(product) => {
+          if (selectedAccountTracking) {
+            setSelectedAccountProduct({
+              accountName: selectedAccountTracking.accountName,
+              product,
+            });
+          }
+        }}
+      />
+      <AccountListDialog
+        open={accountListDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setAccountListDialog(null);
+        }}
+        title={accountListDialog?.title ?? ""}
+        description={accountListDialog?.description ?? ""}
+        accounts={accountListDialog?.accounts ?? []}
+        emptyMessage={accountListDialog?.emptyMessage}
+        orderGaps={accountListDialog?.showPriorOrder ? lastOrderGaps : undefined}
+        onSelectAccount={(accountId) => {
+          openAccountFromHealth(accountId);
+          setAccountListDialog(null);
+        }}
+      />
+      <AccountProductOrdersDialog
+        selection={selectedAccountProduct}
+        orders={state.orders}
+        asOf={state.analysisAsOf ?? analytics.asOf}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAccountProduct(null);
+        }}
+      />
+    </>
+  );
 
-      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 py-6">
-        {toast ? (
-          <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
-            {toast}
-          </div>
-        ) : null}
-
-        {repFilter !== "all" ? (
-          <div className="rounded-lg border border-primary/20 bg-primary/6 px-4 py-3 text-sm">
-            Showing <span className="font-medium">{repFilter}</span>&apos;s book only.
-          </div>
-        ) : null}
-
+  const orderPanelBody = (
+    <>
         {fullState.orders.length === 0 ? (
           <Card className="border-dashed py-12">
             <CardHeader className="items-center text-center">
@@ -624,7 +604,6 @@ export function OrderAnalyticsDashboard() {
             <Tabs defaultValue="accounts">
               <TabsList>
                 <TabsTrigger value="accounts">Account tracking</TabsTrigger>
-                <TabsTrigger value="trends">Bottle sales trends</TabsTrigger>
                 <TabsTrigger value="projections" className="relative">
                   Forecast & Churn
                   {projectionsSummary.highChurnCount > 0 ? (
@@ -909,22 +888,6 @@ export function OrderAnalyticsDashboard() {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="trends" className="space-y-4">
-                <BottleSalesTrendChart
-                  orders={bottleTrendOrders}
-                  deferHeavyCompute={bottleTrendOrders.length > 800}
-                  asOf={state.analysisAsOf ?? snapshot.asOf}
-                  accountHealthByName={healthByAccountName}
-                  onNotify={flash}
-                  onSelectAccount={(accountName) => {
-                    const row = analytics.byAccount.find(
-                      (a) => normalizeName(a.accountName) === normalizeName(accountName),
-                    );
-                    if (row) setSelectedAccount(row);
-                  }}
-                />
-              </TabsContent>
-
               <TabsContent value="overview" className="space-y-4">
                 <section className="grid gap-4 lg:grid-cols-2">
               <Card>
@@ -1010,48 +973,86 @@ export function OrderAnalyticsDashboard() {
             </Tabs>
           </>
         )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {orderPanelBody}
+        {orderPanelDialogs}
+      </>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
+        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-primary">
+                <Grape className="size-5" />
+                <p className="text-xs font-semibold tracking-[0.18em] uppercase">
+                  Wine distribution · order analytics
+                </p>
+              </div>
+              <h1 className="font-heading mt-1 text-3xl tracking-tight sm:text-4xl">
+                Order analytics
+              </h1>
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                Track how often each restaurant orders, which individual products
+                they buy, and volume trends from your customer order uploads.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <NotificationSidebarTrigger
+                alertsCount={totalAlertsCount}
+                criticalCount={totalCriticalAlertsCount}
+                onClick={() => setNotificationSidebarOpen(true)}
+              />
+              <PrintReportButton page="orders" onMessage={flash} />
+              <ClearDataButton
+                onCleared={(message) => {
+                  setSelectedAccount(null);
+                  flash(message);
+                }}
+              />
+              <Button onClick={() => setUploadOpen(true)}>
+                <Upload data-icon="inline-start" />
+                Upload orders
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <SiteNav />
+            <RepFilterSelect
+              reps={reps}
+              value={repFilter}
+              pending={repFilterPending}
+              onValueChange={setRepFilter}
+            />
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 py-6">
+        {toast ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
+            {toast}
+          </div>
+        ) : null}
+
+        {repFilter !== "all" ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/6 px-4 py-3 text-sm">
+            Showing <span className="font-medium">{repFilter}</span>&apos;s book only.
+          </div>
+        ) : null}
+
+        {orderPanelBody}
       </main>
 
-      <AccountTrackingSheet
-        tracking={selectedAccountTracking}
-        accountHealth={selectedAccountHealth}
-        onOpenChange={(open) => {
-          if (!open) setSelectedAccount(null);
-        }}
-        onSelectProduct={(product) => {
-          if (selectedAccountTracking) {
-            setSelectedAccountProduct({
-              accountName: selectedAccountTracking.accountName,
-              product,
-            });
-          }
-        }}
-      />
-
-      <AccountListDialog
-        open={accountListDialog !== null}
-        onOpenChange={(open) => {
-          if (!open) setAccountListDialog(null);
-        }}
-        title={accountListDialog?.title ?? ""}
-        description={accountListDialog?.description ?? ""}
-        accounts={accountListDialog?.accounts ?? []}
-        emptyMessage={accountListDialog?.emptyMessage}
-        orderGaps={accountListDialog?.showPriorOrder ? lastOrderGaps : undefined}
-        onSelectAccount={(accountId) => {
-          openAccountFromHealth(accountId);
-          setAccountListDialog(null);
-        }}
-      />
-
-      <AccountProductOrdersDialog
-        selection={selectedAccountProduct}
-        orders={state.orders}
-        asOf={state.analysisAsOf ?? analytics.asOf}
-        onOpenChange={(open) => {
-          if (!open) setSelectedAccountProduct(null);
-        }}
-      />
+      {orderPanelDialogs}
 
       <UploadDialog
         open={uploadOpen}

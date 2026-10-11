@@ -19,6 +19,7 @@ import {
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
 import { RepFilterSelect } from "@/components/rep-filter-select";
+import { useDashboardShell } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -543,7 +544,8 @@ function InsightTable({
   );
 }
 
-export function SalesInsightsDashboard() {
+export function SalesInsightsDashboard({ embedded = false }: { embedded?: boolean }) {
+  const shell = useDashboardShell();
   const {
     reps,
     repFilter,
@@ -582,6 +584,10 @@ export function SalesInsightsDashboard() {
     productAlerts.filter((a) => a.severity === "critical").length;
 
   function flash(message: string) {
+    if (shell) {
+      shell.flash(message);
+      return;
+    }
     setToast(message);
     window.setTimeout(() => setToast(null), 4000);
   }
@@ -589,7 +595,8 @@ export function SalesInsightsDashboard() {
   const b = insights?.weeklyBriefing;
 
   return (
-    <div className="min-h-screen">
+    <div className={embedded ? undefined : "min-h-screen"}>
+      {!embedded ? (
       <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
         <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -633,15 +640,22 @@ export function SalesInsightsDashboard() {
           </div>
         </div>
       </header>
+      ) : null}
 
-      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-        {toast ? (
+      <div
+        className={
+          embedded
+            ? "space-y-6"
+            : "mx-auto w-full max-w-[96rem] space-y-6 px-4 py-6 sm:px-6 lg:px-8"
+        }
+      >
+        {!embedded && toast ? (
           <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
             {toast}
           </div>
         ) : null}
 
-        {repFilter !== "all" ? (
+        {!embedded && repFilter !== "all" ? (
           <div className="rounded-lg border border-primary/20 bg-primary/6 px-4 py-3 text-sm">
             Showing <span className="font-medium">{repFilter}</span>&apos;s book only.
           </div>
@@ -1085,7 +1099,7 @@ export function SalesInsightsDashboard() {
             </Tabs>
           </>
         )}
-      </main>
+      </div>
 
       <InsightKpiDialog
         config={kpiDetail}
@@ -1095,31 +1109,34 @@ export function SalesInsightsDashboard() {
         }}
       />
 
-      <UploadDialog
-        open={uploadOpen}
-        onOpenChange={setUploadOpen}
-        onImport={(result) => {
-          const imported = importParseResult(result);
-          const count =
-            result.kind === "orders"
-              ? imported.orders.length
-              : result.kind === "visits"
-                ? imported.visits.length
-                : imported.accounts.length;
-          flash(
-            `Imported ${count} ${reportKindLabel(result.kind)} rows from ${result.fileName}. Scores updated.`,
-          );
-        }}
-        onUploadCleared={flash}
-      />
-
-      <NotificationSidebar
-        alerts={frequencyAlerts}
-        productAlerts={productAlerts}
-        accountVisitLookup={accountVisitLookup}
-        open={notificationSidebarOpen}
-        onOpenChange={setNotificationSidebarOpen}
-      />
+      {!embedded ? (
+        <>
+          <UploadDialog
+            open={uploadOpen}
+            onOpenChange={setUploadOpen}
+            onImport={(result) => {
+              const imported = importParseResult(result);
+              const count =
+                result.kind === "orders"
+                  ? imported.orders.length
+                  : result.kind === "visits"
+                    ? imported.visits.length
+                    : imported.accounts.length;
+              flash(
+                `Imported ${count} ${reportKindLabel(result.kind)} rows from ${result.fileName}. Scores updated.`,
+              );
+            }}
+            onUploadCleared={flash}
+          />
+          <NotificationSidebar
+            alerts={frequencyAlerts}
+            productAlerts={productAlerts}
+            accountVisitLookup={accountVisitLookup}
+            open={notificationSidebarOpen}
+            onOpenChange={setNotificationSidebarOpen}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

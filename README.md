@@ -28,7 +28,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:43123](http://localhost:43123).
+Open [http://localhost:43123](http://localhost:43123). The app uses a **single workspace** with tabs: **Weekly book** (default), **Account health**, **Orders & tracking**, and **Sales trends** (by account or by SKU). Legacy routes `/orders`, `/products`, and `/insights` redirect to the matching tab. **Export weekly pack** in the header generates the consolidated sales insights PDF; use **Advanced PDF exports** for individual reports.
 
 ## Report formats
 

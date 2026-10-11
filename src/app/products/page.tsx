@@ -1,5 +1,5 @@
-import { ProductSalesTrendsDashboard } from "@/components/product-sales-trends-dashboard";
+import { redirect } from "next/navigation";
 
-export default function ProductsPage() {
-  return <ProductSalesTrendsDashboard />;
+export default function ProductSalesPage() {
+  redirect("/?view=trends&grain=product");
 }

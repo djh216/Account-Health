@@ -27,7 +27,7 @@ import {
 } from "@/components/report-export-provider";
 import { cn } from "@/lib/utils";
 
-export type PrimaryPdfExport = "page" | "alerts" | "action-plan";
+export type PrimaryPdfExport = "page" | "alerts" | "action-plan" | "weekly-pack";
 
 export function PrintReportButton({
   page,
@@ -37,7 +37,7 @@ export function PrintReportButton({
   label = "Export PDF",
   title = "Generate a print-ready PDF preview",
   onMessage,
-  primaryExport = "page",
+  primaryExport = "weekly-pack",
   showMenu = true,
 }: {
   page?: ReportPageType;
@@ -65,6 +65,7 @@ export function PrintReportButton({
     exportImminentChurnPdf,
     exportWeeklyBriefingPdf,
     exportSalesInsightsPackPdf,
+    hasSalesInsightsPackData,
     hasHealthData,
     hasRepActionPlanData,
     hasOrderData,
@@ -73,7 +74,6 @@ export function PrintReportButton({
     hasProductSlowdownData,
     hasImminentChurnData,
     hasWeeklyBriefingData,
-    hasSalesInsightsPackData,
   } = useReportExport();
 
   const [localToast, setLocalToast] = useState<string | null>(null);
@@ -118,6 +118,18 @@ export function PrintReportButton({
         await exportRepActionPlansPdf();
         notify("Action plan PDF ready — print or save from the preview.");
         return;
+      }
+      if (primaryExport === "weekly-pack") {
+        if (hasSalesInsightsPackData) {
+          await exportSalesInsightsPackPdf();
+          notify("Weekly sales insights pack PDF ready — print or save from the preview.");
+          return;
+        }
+        if (hasRepActionPlanData) {
+          await exportRepActionPlansPdf();
+          notify("Rep action plan PDF ready — print or save from the preview.");
+          return;
+        }
       }
       await exportCurrentPagePdf(effectivePage);
       notify(`${pageShortName} PDF ready — print or save from the preview.`);
@@ -178,7 +190,7 @@ export function PrintReportButton({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuLabel className="text-xs text-muted-foreground">
-              PDF reports
+              Advanced PDF exports
             </DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => void runExport(exportFocusHealthPdf, "Account health")}

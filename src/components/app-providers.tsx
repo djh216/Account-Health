@@ -1,12 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { Suspense, useEffect, type ReactNode } from "react";
 import { FilteredPortfolioProvider } from "@/components/filtered-portfolio-provider";
 import { ReportExportProvider } from "@/components/report-export-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-const DASHBOARD_ROUTES = ["/", "/orders", "/products", "/insights"] as const;
+const DASHBOARD_ROUTES = ["/", "/?view=insights", "/?view=health", "/?view=orders", "/?view=trends"] as const;
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -19,9 +19,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   return (
     <FilteredPortfolioProvider>
-      <ReportExportProvider>
-        <TooltipProvider>{children}</TooltipProvider>
-      </ReportExportProvider>
+      <Suspense fallback={<TooltipProvider>{children}</TooltipProvider>}>
+        <ReportExportProvider>
+          <TooltipProvider>{children}</TooltipProvider>
+        </ReportExportProvider>
+      </Suspense>
     </FilteredPortfolioProvider>
   );
 }

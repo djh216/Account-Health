@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { parseDashboardView, dashboardViewToReportPage } from "@/lib/dashboard-view";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { buildFocusHealthPdfArtifact } from "@/lib/generate-focus-health-pdf";
@@ -39,6 +40,7 @@ export type PdfPreviewSession = {
 /** Single instance — mount via ReportExportProvider only. */
 export function useReportExportController() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const {
     state,
     fullState,
@@ -78,8 +80,13 @@ export function useReportExportController() {
     if (pathname === "/orders") return "orders";
     if (pathname === "/products") return "products";
     if (pathname === "/insights") return "insights";
+    if (pathname === "/") {
+      const view = parseDashboardView(searchParams.get("view"));
+      const grain = searchParams.get("grain") === "product" ? "product" : "account";
+      return dashboardViewToReportPage(view, grain);
+    }
     return "health";
-  }, [pathname]);
+  }, [pathname, searchParams]);
 
   const visibleFullState = useMemo(
     () => excludeHomeBaseFromPortfolio(fullState),
