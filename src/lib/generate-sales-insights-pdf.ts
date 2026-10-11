@@ -198,21 +198,6 @@ export function generateSalesInsightsPdfDocument(input: SalesInsightsPdfInput): 
   });
 
   y = drawPdfSectionTable(doc, y, {
-    sectionTitle: "SKU breadth change (90d vs prior 90d)",
-    head: [["Account", "Recent SKUs", "Prior SKUs", "Δ", "Volume 90d"]],
-    body:
-      s.skuBreadth.length > 0
-        ? s.skuBreadth.slice(0, 30).map((r) => [
-            r.accountName,
-            r.skuCountRecent90,
-            r.skuCountPrior90,
-            r.skuDelta,
-            formatNumber(r.volume90),
-          ])
-        : [["—", "No rows", "—", "—", "—"]],
-  });
-
-  y = drawPdfSectionTable(doc, y, {
     sectionTitle: "Win-back SKUs (prior volume, none recent)",
     head: [["Account", "Product", "Prior 90d btl", "Last order", "Days since"]],
     body:
@@ -253,21 +238,6 @@ export function generateSalesInsightsPdfDocument(input: SalesInsightsPdfInput): 
             r.account.risk,
           ])
         : [["—", "No rows", "—", "—"]],
-  });
-
-  y = drawPdfSectionTable(doc, y, {
-    sectionTitle: "Volume & risk by tier",
-    head: [["Tier", "Accounts", "Btl 90d", "At-risk btl", "Critical #"]],
-    body:
-      s.volumeByTier.length > 0
-        ? s.volumeByTier.map((r) => [
-            r.label,
-            r.accountCount,
-            formatNumber(r.bottles90),
-            formatNumber(r.atRiskVolume90),
-            r.criticalCount,
-          ])
-        : [["—", "No rows", "—", "—", "—"]],
   });
 
   stampPdfFooters(doc, "Weekly rep pack", s.asOf);
