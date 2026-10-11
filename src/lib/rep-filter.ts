@@ -1,4 +1,5 @@
 import { normalizeName } from "./format";
+import { isGuidoMartelliRep } from "./visit-rep-remap";
 import type { PortfolioState } from "./types";
 
 export const REP_FILTER_KEY = "cellar-pulse.rep-filter.v1";
@@ -8,10 +9,14 @@ const listeners = new Set<() => void>();
 export function listSalesReps(state: PortfolioState): string[] {
   const names = new Set<string>();
   for (const account of state.accounts) {
-    if (account.salesRep) names.add(account.salesRep);
+    if (account.salesRep && !isGuidoMartelliRep(account.salesRep)) {
+      names.add(account.salesRep);
+    }
   }
   for (const visit of state.visits) {
-    if (visit.salesRep) names.add(visit.salesRep);
+    if (visit.salesRep && !isGuidoMartelliRep(visit.salesRep)) {
+      names.add(visit.salesRep);
+    }
   }
   return [...names].sort();
 }

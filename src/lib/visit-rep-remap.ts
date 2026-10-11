@@ -191,6 +191,11 @@ export function isDavidHallRep(name: string | undefined | null): boolean {
   if (!name?.trim()) return false;
   return normalizeName(name) === DAVID_HALL_REP_NORMALIZED;
 }
+
+export function isGuidoMartelliRep(name: string | undefined | null): boolean {
+  if (!name?.trim()) return false;
+  return normalizeName(name) === GUIDO_MARTELLI_REP_NORMALIZED;
+}
 export function normalizeVisitSalesRep(name: string | undefined | null): string | undefined {
   if (!name?.trim()) return undefined;
   const trimmed = name.trim();
@@ -279,6 +284,22 @@ export function stripDavidHallFromPortfolio(state: PortfolioState): PortfolioSta
   const visits = state.visits.filter((visit) => !isDavidHallRep(visit.salesRep));
   const accounts = state.accounts.map((account) =>
     isDavidHallRep(account.salesRep)
+      ? { ...account, salesRep: undefined, salesRepFromRoster: false }
+      : account,
+  );
+  const visitsChanged = visits.length !== state.visits.length;
+  const accountsChanged = accounts.some(
+    (account, index) => account.salesRep !== state.accounts[index]?.salesRep,
+  );
+  if (!visitsChanged && !accountsChanged) return state;
+  return { ...state, visits, accounts };
+}
+
+/** Remove Guido Martelli visits and clear Guido as account rep (no rep dashboard). */
+export function stripGuidoMartelliFromPortfolio(state: PortfolioState): PortfolioState {
+  const visits = state.visits.filter((visit) => !isGuidoMartelliRep(visit.salesRep));
+  const accounts = state.accounts.map((account) =>
+    isGuidoMartelliRep(account.salesRep)
       ? { ...account, salesRep: undefined, salesRepFromRoster: false }
       : account,
   );

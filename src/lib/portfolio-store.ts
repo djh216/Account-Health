@@ -5,9 +5,11 @@ import { getRepFilterSnapshot, resetRepFilter, setRepFilter } from "./rep-filter
 import {
   assignAccountRepsFromRecentVisits,
   isDavidHallRep,
+  isGuidoMartelliRep,
   normalizeVisitSalesRep,
   remapPortfolioSalesReps,
   stripDavidHallFromPortfolio,
+  stripGuidoMartelliFromPortfolio,
 } from "./visit-rep-remap";
 import {
   clearPortfolio,
@@ -46,7 +48,9 @@ export function subscribePortfolio(listener: () => void): () => void {
 
 function cleanPortfolioState(state: PortfolioState): PortfolioState {
   return assignAccountRepsFromRecentVisits(
-    stripDavidHallFromPortfolio(remapPortfolioSalesReps(stripPaDemoPortfolio(state))),
+    stripDavidHallFromPortfolio(
+      stripGuidoMartelliFromPortfolio(remapPortfolioSalesReps(stripPaDemoPortfolio(state))),
+    ),
   );
 }
 
@@ -78,7 +82,7 @@ function syncRepFilterAfterPortfolioClean(): void {
   if (typeof window === "undefined") return;
   const current = getRepFilterSnapshot();
   if (current === "all") return;
-  if (isDavidHallRep(current)) {
+  if (isDavidHallRep(current) || isGuidoMartelliRep(current)) {
     resetRepFilter();
     return;
   }
