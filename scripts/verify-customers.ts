@@ -28,6 +28,7 @@ GoggleWorks,(610) 374-4600,arts@goggleworks.example,"Park in the lot, then use t
 Same Lid,Trenton 484-356-8508,first@example.com,first note,111,Philadelphia
 Same Lid,Trenton 484-356-8508,second@example.com,later note,111,Philadelphia
 ,555-111-2222,noname@example.com,should skip,999,Philadelphia
+Jaffa,undefined,null,undefined,4242,Philadelphia
 `;
 
 const parsed = parseCustomerCsv("outfield-accounts.csv", sample);
@@ -91,6 +92,9 @@ if (parsed.ok) {
     !parsed.directory.customers.some((customer) => customer.lid === "999"),
     "blank names should be skipped",
   );
+
+  const jaffa = byName.get("Jaffa");
+  expect(jaffa?.phonesRaw === "" && jaffa.emailsRaw === "" && jaffa.deliveryInstructions === "", "placeholder undefined/null should be blank");
 
   const matches = customersMatchingAccountName(parsed.directory, "3rd and Ferry");
   expect(matches.length === 1, "account name lookup should find the customer");

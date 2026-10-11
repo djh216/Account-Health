@@ -294,14 +294,15 @@ function headerKey(header: string): string {
 }
 
 function cleanInline(value: unknown): string {
-  return String(value ?? "")
+  const text = String(value ?? "")
     .replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  return isPlaceholder(text) ? "" : text;
 }
 
 function cleanMultiline(value: unknown): string {
-  return String(value ?? "")
+  const text = String(value ?? "")
     .replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g, "")
     .replace(/\r\n/g, "\n")
     .split("\n")
@@ -309,6 +310,11 @@ function cleanMultiline(value: unknown): string {
     .filter((line, index, lines) => line.length > 0 || (index > 0 && index < lines.length - 1))
     .join("\n")
     .trim();
+  return isPlaceholder(text) ? "" : text;
+}
+
+function isPlaceholder(value: string): boolean {
+  return /^(undefined|null|n\/a)$/i.test(value);
 }
 
 function cleanLabel(value: string): string {
