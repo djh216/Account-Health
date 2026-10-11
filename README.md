@@ -28,7 +28,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:43123](http://localhost:43123). The app uses a **single workspace** with tabs: **Weekly book** (default), **Account health**, **Orders & tracking**, and **Sales trends** (by account or by SKU). Legacy routes `/orders`, `/products`, and `/insights` redirect to the matching tab. **Export weekly pack** in the header generates the consolidated sales insights PDF; use **Advanced PDF exports** for individual reports.
+Open [http://localhost:43123](http://localhost:43123). The app uses a **single workspace** with tabs: **Weekly book** (default), **Account health**, **Orders & tracking**, and **Sales trends** (by account or by SKU). Legacy routes `/orders`, `/products`, and `/insights` redirect to the matching tab. **Export weekly pack** generates one PDF with briefing KPIs, week 1–3 focus accounts, frequency/churn/wine slowdown alerts, and all sales insight tables (replacing separate briefing, insights pack, action plan, and alert PDFs). **Advanced PDF exports** remain for order analytics, full product catalog (+ slowing appendix), and extended account focus columns.
 
 ## Report formats
 

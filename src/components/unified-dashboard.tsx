@@ -20,13 +20,8 @@ export function UnifiedDashboard() {
     () => parseDashboardView(searchParams.get("view")),
     [searchParams],
   );
-  const trendsGrainFromUrl: TrendsGrain =
+  const trendsGrain: TrendsGrain =
     searchParams.get("grain") === "product" ? "product" : "account";
-  const [trendsGrain, setTrendsGrain] = useState<TrendsGrain>(trendsGrainFromUrl);
-
-  useEffect(() => {
-    setTrendsGrain(trendsGrainFromUrl);
-  }, [trendsGrainFromUrl]);
 
   const setView = useCallback(
     (view: DashboardViewId) => {
@@ -39,7 +34,6 @@ export function UnifiedDashboard() {
 
   const setTrendsGrainAndUrl = useCallback(
     (grain: TrendsGrain) => {
-      setTrendsGrain(grain);
       const params = new URLSearchParams(searchParams.toString());
       params.set("view", "trends");
       params.set("grain", grain);

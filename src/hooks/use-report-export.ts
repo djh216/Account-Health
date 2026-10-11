@@ -6,12 +6,9 @@ import { parseDashboardView, dashboardViewToReportPage } from "@/lib/dashboard-v
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { buildFocusHealthPdfArtifact } from "@/lib/generate-focus-health-pdf";
-import { buildFrequencyAlertsPdfArtifact } from "@/lib/generate-frequency-alerts-pdf";
 import { buildOrderAnalyticsPdfArtifact } from "@/lib/generate-order-analytics-pdf";
 import { buildProductTrendsPdfArtifact } from "@/lib/generate-product-trends-pdf";
-import { buildRepActionPlansPdfArtifact } from "@/lib/generate-rep-action-plan-pdf";
-import { buildProductSlowdownPdfArtifact } from "@/lib/generate-product-slowdown-pdf";
-import { buildImminentChurnPdfArtifact } from "@/lib/generate-imminent-churn-pdf";
+import { buildSalesInsightsPdfArtifact } from "@/lib/generate-sales-insights-pdf";
 import {
   buildRepActionPlans,
   buildPdfAccountVisitLookup,
@@ -27,8 +24,6 @@ import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { focusAccountsByHorizon } from "@/lib/score";
 import { todayIso } from "@/lib/format";
 import { useSalesInsights } from "@/hooks/use-sales-insights";
-import { buildWeeklyBriefingPdfArtifact } from "@/lib/generate-weekly-briefing-pdf";
-import { buildSalesInsightsPdfArtifact } from "@/lib/generate-sales-insights-pdf";
 
 export type ReportPageType = "health" | "orders" | "products" | "insights";
 
@@ -150,62 +145,59 @@ export function useReportExportController() {
     }
   }, [hasHealthData, openPdfPreview, repFilter, asOf, enrichedAccounts]);
 
-  const exportRepActionPlansPdf = useCallback(async () => {
-    const plans = buildRepActionPlans(visibleFullState, reps, repFilter);
-    if (plans.length === 0) {
-      throw new Error(
-        "No account data available to build rep action plans. Load sample data or upload records first.",
-      );
+  const buildWeeklyRepPackArtifact = useCallback(() => {
+    if (!insights) {
+      throw new Error("Insights are not ready yet. Wait for analytics to load.");
     }
-    setBusy(true);
-    setBusyAction("Generating Rep Action Plan PDF…");
-    try {
-      openPdfPreview(
-        "Rep action plan (weeks 1–3)",
-        buildRepActionPlansPdfArtifact({
-          repFilter,
-          asOf,
-          generatedAt: asOf,
-          plans,
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
-  }, [visibleFullState, reps, repFilter, asOf, openPdfPreview]);
-
-  const exportFrequencyAlertsPdf = useCallback(async () => {
-    if (!hasAlertsData) {
-      throw new Error(
-        "No account data available to generate frequency alerts. Load sample data or upload records first.",
-      );
-    }
-    setBusy(true);
-    setBusyAction("Generating Frequency Alerts PDF…");
-    try {
-      openPdfPreview(
-        "Frequency drop alerts",
-        buildFrequencyAlertsPdfArtifact({
-          repFilter,
-          asOf,
-          generatedAt: asOf,
-          alerts: frequencyAlerts,
-          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
+    return buildSalesInsightsPdfArtifact({
+      repFilter,
+      generatedAt: asOf,
+      insights: {
+        ...insights,
+        winBackSkus: excludeOutOfStockWinBackSkus(insights.winBackSkus, outOfStockIds),
+      },
+      focusByHorizon: focusAccountsByHorizon(enrichedAccounts),
+      frequencyAlerts,
+      churnAccounts: imminentChurnAccounts,
+      productSlowdownAlerts: productAlerts,
+    });
   }, [
-    hasAlertsData,
-    openPdfPreview,
+    insights,
     repFilter,
     asOf,
-    frequencyAlerts,
+    outOfStockIds,
     enrichedAccounts,
+    frequencyAlerts,
+    imminentChurnAccounts,
+    productAlerts,
   ]);
+
+  const exportRepActionPlansPdf = useCallback(async () => {
+    setBusy(true);
+    setBusyAction("Generating weekly rep pack…");
+    try {
+      openPdfPreview("Weekly rep pack", buildWeeklyRepPackArtifact());
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [buildWeeklyRepPackArtifact, openPdfPreview]);
+
+  const exportFrequencyAlertsPdf = useCallback(async () => {
+    if (!hasAlertsData && !insights) {
+      throw new Error(
+        "No account data available to generate reports. Load sample data or upload records first.",
+      );
+    }
+    setBusy(true);
+    setBusyAction("Generating weekly rep pack…");
+    try {
+      openPdfPreview("Weekly rep pack", buildWeeklyRepPackArtifact());
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [hasAlertsData, insights, buildWeeklyRepPackArtifact, openPdfPreview]);
 
   const exportOrderAnalyticsPdf = useCallback(async () => {
     if (!hasOrderData) {
@@ -281,114 +273,28 @@ export function useReportExportController() {
     enrichedAccounts,
   ]);
 
-  const exportProductSlowdownPdf = useCallback(async () => {
-    if (!hasProductSlowdownData) {
-      throw new Error(
-        "No product slowdown alerts to export. Load orders and check the alerts panel.",
-      );
-    }
+  const exportSalesInsightsPackPdf = useCallback(async () => {
     setBusy(true);
-    setBusyAction("Generating Product Slowdown PDF…");
+    setBusyAction("Generating weekly rep pack…");
     try {
-      openPdfPreview(
-        "Product slowdown report",
-        buildProductSlowdownPdfArtifact({
-          repFilter,
-          asOf,
-          generatedAt: asOf,
-          alerts: productAlerts,
-          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
-        }),
-      );
+      openPdfPreview("Weekly rep pack", buildWeeklyRepPackArtifact());
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [
-    hasProductSlowdownData,
-    openPdfPreview,
-    repFilter,
-    asOf,
-    productAlerts,
-    enrichedAccounts,
-  ]);
+  }, [buildWeeklyRepPackArtifact, openPdfPreview]);
+
+  const exportProductSlowdownPdf = useCallback(async () => {
+    await exportProductTrendsPdf();
+  }, [exportProductTrendsPdf]);
 
   const exportImminentChurnPdf = useCallback(async () => {
-    if (!hasImminentChurnData) {
-      throw new Error(
-        "No high-churn accounts to export. Open volume projections after loading order history.",
-      );
-    }
-    setBusy(true);
-    setBusyAction("Generating Imminent Churn PDF…");
-    try {
-      openPdfPreview(
-        "Imminent churn intervention",
-        buildImminentChurnPdfArtifact({
-          repFilter,
-          asOf,
-          generatedAt: asOf,
-          accounts: imminentChurnAccounts,
-          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
-  }, [
-    hasImminentChurnData,
-    openPdfPreview,
-    repFilter,
-    asOf,
-    imminentChurnAccounts,
-    enrichedAccounts,
-  ]);
+    await exportSalesInsightsPackPdf();
+  }, [exportSalesInsightsPackPdf]);
 
   const exportWeeklyBriefingPdf = useCallback(async () => {
-    if (!insights) {
-      throw new Error("Insights are not ready yet. Wait for analytics to load.");
-    }
-    setBusy(true);
-    setBusyAction("Generating Weekly Briefing PDF…");
-    try {
-      openPdfPreview(
-        "Weekly book briefing",
-        buildWeeklyBriefingPdfArtifact({
-          repFilter,
-          generatedAt: asOf,
-          briefing: insights.weeklyBriefing,
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
-  }, [insights, openPdfPreview, repFilter, asOf]);
-
-  const exportSalesInsightsPackPdf = useCallback(async () => {
-    if (!insights) {
-      throw new Error("Insights are not ready yet. Wait for analytics to load.");
-    }
-    setBusy(true);
-    setBusyAction("Generating Sales Insights PDF…");
-    try {
-      openPdfPreview(
-        "Sales insights pack",
-        buildSalesInsightsPdfArtifact({
-          repFilter,
-          generatedAt: asOf,
-          insights: {
-            ...insights,
-            winBackSkus: excludeOutOfStockWinBackSkus(insights.winBackSkus, outOfStockIds),
-          },
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
-  }, [insights, openPdfPreview, repFilter, asOf, outOfStockIds]);
+    await exportSalesInsightsPackPdf();
+  }, [exportSalesInsightsPackPdf]);
 
   const exportCurrentPagePdf = useCallback(
     async (pageOverride?: ReportPageType) => {
@@ -396,8 +302,8 @@ export function useReportExportController() {
       switch (page) {
         case "insights":
           if (hasWeeklyBriefingData) {
-            await exportWeeklyBriefingPdf();
-            return "Weekly book briefing PDF opened.";
+            await exportSalesInsightsPackPdf();
+            return "Weekly rep pack PDF opened.";
           }
           break;
         case "orders":
@@ -414,16 +320,16 @@ export function useReportExportController() {
           break;
         case "health":
         default:
-          if (hasHealthData) {
-            await exportFocusHealthPdf();
-            return "Account health PDF opened.";
+          if (hasHealthData || hasWeeklyBriefingData) {
+            await exportSalesInsightsPackPdf();
+            return "Weekly rep pack PDF opened.";
           }
           break;
       }
 
-      if (hasAlertsData) {
-        await exportFrequencyAlertsPdf();
-        return "Frequency alerts PDF opened.";
+      if (hasAlertsData || hasWeeklyBriefingData) {
+        await exportSalesInsightsPackPdf();
+        return "Weekly rep pack PDF opened.";
       }
       throw new Error("No data loaded. Please load sample data or upload accounts/orders first.");
     },
@@ -435,10 +341,8 @@ export function useReportExportController() {
       hasAlertsData,
       exportOrderAnalyticsPdf,
       exportProductTrendsPdf,
-      exportFocusHealthPdf,
-      exportFrequencyAlertsPdf,
+      exportSalesInsightsPackPdf,
       hasWeeklyBriefingData,
-      exportWeeklyBriefingPdf,
     ],
   );
 
@@ -447,9 +351,9 @@ export function useReportExportController() {
       if (page) {
         return exportCurrentPagePdf(page);
       }
-      return exportFrequencyAlertsPdf();
+      return exportSalesInsightsPackPdf();
     },
-    [exportCurrentPagePdf, exportFrequencyAlertsPdf],
+    [exportCurrentPagePdf, exportSalesInsightsPackPdf],
   );
 
   const triggerSafePrint = useCallback(
