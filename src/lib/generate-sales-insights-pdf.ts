@@ -226,7 +226,7 @@ export function generateSalesInsightsPdfDocument(input: SalesInsightsPdfInput): 
         : [["—", "No rows", "—", "—"]],
   });
 
-  y = drawPdfSectionTable(doc, y, {
+  drawPdfSectionTable(doc, y, {
     sectionTitle: "Declining accounts (14d score)",
     head: [["Account", "Score", "Δ14d", "Risk"]],
     body:
