@@ -7,10 +7,12 @@ import type { Account, PortfolioState, ReportKind, Visit } from "./types";
 
 export const GUIDO_MARTELLI_REP_NORMALIZED = normalizeName("Guido Martelli");
 export const ANGELA_RICCETTI_REP = "Angela Riccetti";
+export const JORDAN_FULLER_REP = "Jordan Fuller";
 
 const WESTERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED = normalizeName(
   "Western Philly Suburbs",
 );
+const PHILADELPHIA_TERRITORY_NORMALIZED = normalizeName("Philadelphia");
 
 /** True when region or county is the Western Philly Suburbs territory (flexible spelling). */
 export function isWesternPhillySuburbsTerritory(
@@ -28,6 +30,21 @@ export function isWesternPhillySuburbsTerritory(
     ) {
       return true;
     }
+  }
+  return false;
+}
+
+/** Philadelphia territory (excludes Western Philly Suburbs, which has its own rep). */
+export function isPhiladelphiaTerritory(
+  region?: string | null,
+  county?: string | null,
+): boolean {
+  if (isWesternPhillySuburbsTerritory(region, county)) return false;
+  for (const value of [region, county]) {
+    if (!value?.trim()) continue;
+    const normalized = normalizeName(value);
+    if (normalized === PHILADELPHIA_TERRITORY_NORMALIZED) return true;
+    if (normalized.includes("philadelphia")) return true;
   }
   return false;
 }
@@ -71,13 +88,27 @@ export function reassignWesternPhillyGuidoRep(
   return ANGELA_RICCETTI_REP;
 }
 
-function applyWesternPhillyGuidoRepToSalesRep(
+/** Guido Martelli → Jordan Fuller for Philadelphia territory accounts and activity. */
+export function reassignPhiladelphiaGuidoRep(
+  salesRep: string | undefined | null,
+  region?: string | null,
+  county?: string | null,
+): string | undefined {
+  if (!salesRep?.trim()) return undefined;
+  const trimmed = salesRep.trim();
+  if (normalizeName(trimmed) !== GUIDO_MARTELLI_REP_NORMALIZED) return trimmed;
+  if (!isPhiladelphiaTerritory(region, county)) return trimmed;
+  return JORDAN_FULLER_REP;
+}
+
+function applyTerritoryGuidoRepToSalesRep(
   salesRep: string | undefined,
   region?: string,
   county?: string,
 ): string | undefined {
   const normalized = normalizeVisitSalesRep(salesRep);
-  return reassignWesternPhillyGuidoRep(normalized, region, county);
+  const western = reassignWesternPhillyGuidoRep(normalized, region, county);
+  return reassignPhiladelphiaGuidoRep(western, region, county);
 }
 
 type RepAtDate = { date: string; rep: string };
@@ -195,7 +226,7 @@ export function remapVisitImportRecords(
     .filter((visit): visit is Visit => visit !== null);
   const lookups = buildAccountTerritoryLookups(records.accounts);
   for (const account of records.accounts) {
-    account.salesRep = applyWesternPhillyGuidoRepToSalesRep(
+    account.salesRep = applyTerritoryGuidoRepToSalesRep(
       account.salesRep,
       account.region,
       account.county,
@@ -203,7 +234,7 @@ export function remapVisitImportRecords(
   }
   records.visits = records.visits.map((visit) => {
     const territory = resolveAccountTerritory(visit.accountId, visit.accountName, lookups);
-    const salesRep = applyWesternPhillyGuidoRepToSalesRep(
+    const salesRep = applyTerritoryGuidoRepToSalesRep(
       visit.salesRep,
       territory.region,
       territory.county,
@@ -220,7 +251,7 @@ export function remapPortfolioSalesReps(state: PortfolioState): PortfolioState {
 
   const visits = state.visits.map((visit) => {
     const territory = resolveAccountTerritory(visit.accountId, visit.accountName, lookups);
-    const salesRep = applyWesternPhillyGuidoRepToSalesRep(
+    const salesRep = applyTerritoryGuidoRepToSalesRep(
       visit.salesRep,
       territory.region,
       territory.county,
@@ -230,7 +261,7 @@ export function remapPortfolioSalesReps(state: PortfolioState): PortfolioState {
     return { ...visit, salesRep };
   });
   const accounts = state.accounts.map((account) => {
-    const salesRep = applyWesternPhillyGuidoRepToSalesRep(
+    const salesRep = applyTerritoryGuidoRepToSalesRep(
       account.salesRep,
       account.region,
       account.county,
