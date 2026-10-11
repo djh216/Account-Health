@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountCustomerCard } from "@/components/account-customer-card";
 import { HealthScoreChangeReasons } from "@/components/health-score-change-reasons";
 import { HealthScoreExplainer } from "@/components/health-score-explainer";
 import { HealthScoreFactorBar } from "@/components/health-score-factor-bar";
@@ -80,6 +81,7 @@ export function AccountDetail({
 
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-6 py-5 lg:grid-cols-2 lg:overflow-hidden">
               <div className="space-y-4 lg:overflow-y-auto lg:pr-1">
+                <AccountCustomerCard accountName={account.account.name} />
                 {account.orderCadenceOverdue ? (
                   <OrderCadenceAlert
                     cadence={{
