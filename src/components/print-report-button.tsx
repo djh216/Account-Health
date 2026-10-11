@@ -163,8 +163,7 @@ export function PrintReportButton({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuLabel className="text-xs font-normal leading-snug text-muted-foreground">
-              Specialized exports (weekly rep pack already includes alerts, churn, focus, and
-              insight tables)
+              Specialized exports
             </DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => void runExport(exportOrderAnalyticsPdf, "Order analytics")}
