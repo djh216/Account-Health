@@ -17,88 +17,145 @@ const NORTHERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED = normalizeName(
 );
 const PHILADELPHIA_TERRITORY_NORMALIZED = normalizeName("Philadelphia");
 
-/** True when region or county is the Western Philly Suburbs territory (flexible spelling). */
-export function isWesternPhillySuburbsTerritory(
-  region?: string | null,
-  county?: string | null,
-): boolean {
-  for (const value of [region, county]) {
-    if (!value?.trim()) continue;
-    const normalized = normalizeName(value);
-    if (normalized === WESTERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED) return true;
-    if (
-      normalized.includes("western") &&
-      normalized.includes("philly") &&
-      normalized.includes("suburb")
-    ) {
-      return true;
-    }
+export type TerritoryFields = {
+  region?: string | null;
+  county?: string | null;
+  city?: string | null;
+};
+
+function territoryStrings(fields: TerritoryFields): string[] {
+  const values: string[] = [];
+  for (const value of [fields.region, fields.county, fields.city]) {
+    if (value?.trim()) values.push(value.trim());
+  }
+  return values;
+}
+
+function isWesternPhillySuburbsNormalized(normalized: string): boolean {
+  if (normalized.includes("northern") || normalized.startsWith("north ")) return false;
+  if (normalized === WESTERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED) return true;
+  if (
+    normalized.includes("western") &&
+    normalized.includes("philly") &&
+    normalized.includes("suburb")
+  ) {
+    return true;
+  }
+  if (
+    normalized.includes("western") &&
+    normalized.includes("philadelphia") &&
+    normalized.includes("suburb")
+  ) {
+    return true;
+  }
+  if (normalized.includes("west") && normalized.includes("philly") && normalized.includes("suburb")) {
+    return true;
   }
   return false;
 }
 
-/** True when region or county is the Northern Philly Suburbs territory (flexible spelling). */
+function isNorthernPhillySuburbsNormalized(normalized: string): boolean {
+  if (normalized.includes("western") || normalized.startsWith("west ")) return false;
+  if (normalized === NORTHERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED) return true;
+  if (normalized === normalizeName("North Philly Suburbs")) return true;
+  if (
+    (normalized.includes("northern") || normalized.includes("north")) &&
+    normalized.includes("philly") &&
+    normalized.includes("suburb")
+  ) {
+    return true;
+  }
+  if (
+    (normalized.includes("northern") || normalized.includes("north")) &&
+    normalized.includes("philadelphia") &&
+    normalized.includes("suburb")
+  ) {
+    return true;
+  }
+  if (
+    (normalized.includes("northern") || normalized.startsWith("north ")) &&
+    normalized.includes("philly") &&
+    !normalized.includes("western")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** True when region, county, or city is the Western Philly Suburbs territory (flexible spelling). */
+export function isWesternPhillySuburbsTerritory(
+  region?: string | null,
+  county?: string | null,
+  city?: string | null,
+): boolean {
+  return territoryStrings({ region, county, city }).some((value) =>
+    isWesternPhillySuburbsNormalized(normalizeName(value)),
+  );
+}
+
+/** True when region, county, or city is the Northern Philly Suburbs territory (flexible spelling). */
 export function isNorthernPhillySuburbsTerritory(
   region?: string | null,
   county?: string | null,
+  city?: string | null,
 ): boolean {
-  for (const value of [region, county]) {
-    if (!value?.trim()) continue;
-    const normalized = normalizeName(value);
-    if (normalized === NORTHERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED) return true;
-    if (
-      normalized.includes("northern") &&
-      normalized.includes("philly") &&
-      normalized.includes("suburb")
-    ) {
-      return true;
-    }
-    if (
-      normalized.includes("northern") &&
-      normalized.includes("philadelphia") &&
-      normalized.includes("suburb")
-    ) {
-      return true;
-    }
-  }
-  return false;
+  return territoryStrings({ region, county, city }).some((value) =>
+    isNorthernPhillySuburbsNormalized(normalizeName(value)),
+  );
 }
 
 /** Philadelphia territory (excludes Western / Northern Philly Suburbs, which have their own reps). */
 export function isPhiladelphiaTerritory(
   region?: string | null,
   county?: string | null,
+  city?: string | null,
 ): boolean {
-  if (isWesternPhillySuburbsTerritory(region, county)) return false;
-  if (isNorthernPhillySuburbsTerritory(region, county)) return false;
-  for (const value of [region, county]) {
-    if (!value?.trim()) continue;
+  const fields = { region, county, city };
+  if (isWesternPhillySuburbsTerritory(region, county, city)) return false;
+  if (isNorthernPhillySuburbsTerritory(region, county, city)) return false;
+  return territoryStrings(fields).some((value) => {
     const normalized = normalizeName(value);
     if (normalized === PHILADELPHIA_TERRITORY_NORMALIZED) return true;
-    if (normalized.includes("philadelphia")) return true;
-  }
-  return false;
+    if (normalized.includes("philadelphia") && !normalized.includes("suburb")) return true;
+    return false;
+  });
+}
+
+function accountTerritoryFields(account: Account): TerritoryFields {
+  return {
+    region: account.region,
+    county: account.county,
+    city: account.city,
+  };
 }
 
 function buildAccountTerritoryLookups(accounts: Account[]): {
-  regionByAccountId: Map<string, { region?: string; county?: string }>;
-  regionByAccountName: Map<string, { region?: string; county?: string }>;
+  regionByAccountId: Map<string, TerritoryFields>;
+  regionByAccountName: Map<string, TerritoryFields>;
+  accountById: Map<string, Account>;
+  accountByName: Map<string, Account>;
 } {
-  const regionByAccountId = new Map<string, { region?: string; county?: string }>();
-  const regionByAccountName = new Map<string, { region?: string; county?: string }>();
+  const regionByAccountId = new Map<string, TerritoryFields>();
+  const regionByAccountName = new Map<string, TerritoryFields>();
+  const accountById = new Map<string, Account>();
+  const accountByName = new Map<string, Account>();
   for (const account of accounts) {
-    const territory = { region: account.region, county: account.county };
-    if (account.id) regionByAccountId.set(account.id, territory);
+    const territory = accountTerritoryFields(account);
+    if (account.id) {
+      regionByAccountId.set(account.id, territory);
+      accountById.set(account.id, account);
+    }
     regionByAccountName.set(normalizeName(account.name), territory);
+    accountByName.set(normalizeName(account.name), account);
   }
-  return { regionByAccountId, regionByAccountName };
+  return { regionByAccountId, regionByAccountName, accountById, accountByName };
 }
 
 function resolveAccountTerritory(
   accountId: string,
   accountName: string,
   lookups: ReturnType<typeof buildAccountTerritoryLookups>,
-): { region?: string; county?: string } {
+): TerritoryFields {
   return (
     lookups.regionByAccountId.get(accountId) ??
     lookups.regionByAccountName.get(normalizeName(accountName)) ??
@@ -106,16 +163,28 @@ function resolveAccountTerritory(
   );
 }
 
+function resolveAccountForVisit(
+  visit: Visit,
+  lookups: ReturnType<typeof buildAccountTerritoryLookups>,
+): Account | undefined {
+  if (visit.accountId) {
+    const byId = lookups.accountById.get(visit.accountId);
+    if (byId) return byId;
+  }
+  return lookups.accountByName.get(normalizeName(visit.accountName));
+}
+
 /** Guido Martelli → Angela Riccetti for Western Philly Suburbs accounts and activity. */
 export function reassignWesternPhillyGuidoRep(
   salesRep: string | undefined | null,
   region?: string | null,
   county?: string | null,
+  city?: string | null,
 ): string | undefined {
   if (!salesRep?.trim()) return undefined;
   const trimmed = salesRep.trim();
   if (normalizeName(trimmed) !== GUIDO_MARTELLI_REP_NORMALIZED) return trimmed;
-  if (!isWesternPhillySuburbsTerritory(region, county)) return trimmed;
+  if (!isWesternPhillySuburbsTerritory(region, county, city)) return trimmed;
   return ANGELA_RICCETTI_REP;
 }
 
@@ -124,11 +193,12 @@ export function reassignNorthernPhillyGuidoRep(
   salesRep: string | undefined | null,
   region?: string | null,
   county?: string | null,
+  city?: string | null,
 ): string | undefined {
   if (!salesRep?.trim()) return undefined;
   const trimmed = salesRep.trim();
   if (normalizeName(trimmed) !== GUIDO_MARTELLI_REP_NORMALIZED) return trimmed;
-  if (!isNorthernPhillySuburbsTerritory(region, county)) return trimmed;
+  if (!isNorthernPhillySuburbsTerritory(region, county, city)) return trimmed;
   return JORDAN_FULLER_REP;
 }
 
@@ -137,23 +207,39 @@ export function reassignPhiladelphiaGuidoRep(
   salesRep: string | undefined | null,
   region?: string | null,
   county?: string | null,
+  city?: string | null,
 ): string | undefined {
   if (!salesRep?.trim()) return undefined;
   const trimmed = salesRep.trim();
   if (normalizeName(trimmed) !== GUIDO_MARTELLI_REP_NORMALIZED) return trimmed;
-  if (!isPhiladelphiaTerritory(region, county)) return trimmed;
+  if (!isPhiladelphiaTerritory(region, county, city)) return trimmed;
   return JORDAN_FULLER_REP;
 }
 
 function applyTerritoryGuidoRepToSalesRep(
   salesRep: string | undefined,
-  region?: string,
-  county?: string,
+  territory: TerritoryFields,
 ): string | undefined {
   const normalized = normalizeVisitSalesRep(salesRep);
-  const western = reassignWesternPhillyGuidoRep(normalized, region, county);
-  const northern = reassignNorthernPhillyGuidoRep(western, region, county);
-  return reassignPhiladelphiaGuidoRep(northern, region, county);
+  const { region, county, city } = territory;
+  const western = reassignWesternPhillyGuidoRep(normalized, region, county, city);
+  const northern = reassignNorthernPhillyGuidoRep(western, region, county, city);
+  return reassignPhiladelphiaGuidoRep(northern, region, county, city);
+}
+
+function reconcileGuidoVisitRep(
+  visit: Visit,
+  account: Account | undefined,
+  territory: TerritoryFields,
+): string | undefined {
+  let salesRep = applyTerritoryGuidoRepToSalesRep(visit.salesRep, territory);
+  if (isGuidoMartelliRep(salesRep) && account?.salesRep && !isGuidoMartelliRep(account.salesRep)) {
+    return account.salesRep;
+  }
+  if (isGuidoMartelliRep(salesRep) && account) {
+    salesRep = applyTerritoryGuidoRepToSalesRep(visit.salesRep, accountTerritoryFields(account));
+  }
+  return salesRep;
 }
 
 type RepAtDate = { date: string; rep: string };
@@ -178,7 +264,7 @@ export function latestActivityRepByAccountKeys(
   for (const visit of visits) {
     if (isSnapshotLastVisitRecord(visit)) continue;
     const rep = normalizeVisitSalesRep(visit.salesRep);
-    if (!rep) continue;
+    if (!rep || isGuidoMartelliRep(rep)) continue;
     const day = visit.date.slice(0, 10);
     if (!day) continue;
 
@@ -208,12 +294,22 @@ export function assignAccountRepsFromRecentVisits(state: PortfolioState): Portfo
 
   let changed = false;
   const accounts = state.accounts.map((account) => {
-    if (account.salesRepFromRoster && account.salesRep?.trim()) return account;
+    if (account.salesRepFromRoster && account.salesRep?.trim()) {
+      const remapped = applyTerritoryGuidoRepToSalesRep(
+        account.salesRep,
+        accountTerritoryFields(account),
+      );
+      if (remapped && remapped !== account.salesRep && !isGuidoMartelliRep(remapped)) {
+        changed = true;
+        return { ...account, salesRep: remapped, salesRepFromRoster: false };
+      }
+      return account;
+    }
 
     const byId = account.id ? byAccountId.get(account.id) : undefined;
     const byName = byAccountName.get(normalizeName(account.name));
     const rep = repFromMostRecentVisit(byId, byName);
-    if (!rep) return account;
+    if (!rep || isGuidoMartelliRep(rep)) return account;
     if (account.salesRep === rep) return account;
 
     changed = true;
@@ -269,26 +365,29 @@ export function isVisitStyleImport(kind: ReportKind): boolean {
 export function remapVisitImportRecords(
   records: { accounts: Account[]; visits: Visit[] },
   kind: ReportKind,
+  existingAccounts: Account[] = [],
 ): void {
   if (!isVisitStyleImport(kind)) return;
   records.visits = records.visits
     .map((visit) => applyVisitImportRules(visit))
     .filter((visit): visit is Visit => visit !== null);
-  const lookups = buildAccountTerritoryLookups(records.accounts);
+  const lookups = buildAccountTerritoryLookups([...existingAccounts, ...records.accounts]);
   for (const account of records.accounts) {
-    account.salesRep = applyTerritoryGuidoRepToSalesRep(
+    const salesRep = applyTerritoryGuidoRepToSalesRep(
       account.salesRep,
-      account.region,
-      account.county,
+      accountTerritoryFields(account),
     );
+    if (salesRep !== account.salesRep) {
+      account.salesRep = salesRep;
+      account.salesRepFromRoster = false;
+    }
   }
   records.visits = records.visits.map((visit) => {
-    const territory = resolveAccountTerritory(visit.accountId, visit.accountName, lookups);
-    const salesRep = applyTerritoryGuidoRepToSalesRep(
-      visit.salesRep,
-      territory.region,
-      territory.county,
-    );
+    const account = resolveAccountForVisit(visit, lookups);
+    const territory = account
+      ? accountTerritoryFields(account)
+      : resolveAccountTerritory(visit.accountId, visit.accountName, lookups);
+    const salesRep = reconcileGuidoVisitRep(visit, account, territory);
     if (salesRep === visit.salesRep) return visit;
     return { ...visit, salesRep };
   });
@@ -299,27 +398,29 @@ export function remapPortfolioSalesReps(state: PortfolioState): PortfolioState {
   let changed = false;
   const lookups = buildAccountTerritoryLookups(state.accounts);
 
-  const visits = state.visits.map((visit) => {
-    const territory = resolveAccountTerritory(visit.accountId, visit.accountName, lookups);
+  const accounts = state.accounts.map((account) => {
     const salesRep = applyTerritoryGuidoRepToSalesRep(
-      visit.salesRep,
-      territory.region,
-      territory.county,
+      account.salesRep,
+      accountTerritoryFields(account),
     );
+    if (salesRep === account.salesRep) return account;
+    changed = true;
+    return { ...account, salesRep, salesRepFromRoster: false };
+  });
+
+  const refreshedLookups = buildAccountTerritoryLookups(accounts);
+
+  const visits = state.visits.map((visit) => {
+    const account = resolveAccountForVisit(visit, refreshedLookups);
+    const territory = account
+      ? accountTerritoryFields(account)
+      : resolveAccountTerritory(visit.accountId, visit.accountName, refreshedLookups);
+    const salesRep = reconcileGuidoVisitRep(visit, account, territory);
     if (salesRep === visit.salesRep) return visit;
     changed = true;
     return { ...visit, salesRep };
   });
-  const accounts = state.accounts.map((account) => {
-    const salesRep = applyTerritoryGuidoRepToSalesRep(
-      account.salesRep,
-      account.region,
-      account.county,
-    );
-    if (salesRep === account.salesRep) return account;
-    changed = true;
-    return { ...account, salesRep };
-  });
+
   if (!changed) return state;
   return { ...state, visits, accounts };
 }
