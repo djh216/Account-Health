@@ -1,7 +1,7 @@
 {
   "name": "Cellar Pulse",
   "install": "npm ci",
-  "start": "bash .cursor/start-dev.sh",
+  "start": "bash -lc 'cd \"${CURSOR_WORKSPACE_DIR:-/workspace}\" && bash .cursor/start-dev.sh'",
   "ports": [
     {
       "name": "Next.js dev",
@@ -9,6 +9,6 @@
     }
   ],
   "repositoryDependencies": [
-    "github.com/djh216/cellar-pulse"
+    "github.com/djh216/Account-Health"
   ]
 }
