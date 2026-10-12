@@ -243,6 +243,9 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     }
   }
 
+  const coreCacheReady =
+    !hasPortfolioData || isRepCoreWarm(analyticsCache, repFilter);
+
   const [analyticsEpoch, setAnalyticsEpoch] = useState(0);
 
   /** Heavy analytics (order tracking, projections) — idle when possible. */
@@ -334,8 +337,8 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
   }, [repFilter, reps]);
 
   const activeCore = useMemo(
-    () => analyticsCache.get(repFilter)?.core ?? null,
-    [analyticsCache, repFilter, visibleStateKey, analyticsEpoch],
+    () => (coreCacheReady ? analyticsCache.get(repFilter)?.core ?? null : null),
+    [analyticsCache, repFilter, visibleStateKey, analyticsEpoch, coreCacheReady],
   );
   const activeHeavy = useMemo(
     () => analyticsCache.get(repFilter)?.heavy ?? null,

@@ -133,7 +133,9 @@ export function useSalesInsights(): {
 
   const getInsightsSnapshot = useCallback((): SalesInsightsBundle | null => {
     if (!input || !portfolioKey) return null;
-    return getCachedSalesInsights(portfolioKey, input.repFilter, input) ?? null;
+    const cached = getCachedSalesInsights(portfolioKey, input.repFilter, input);
+    if (cached) return cached;
+    return getOrBuildSalesInsights(portfolioKey, input);
   }, [input, portfolioKey]);
 
   const insights = useSyncExternalStore(

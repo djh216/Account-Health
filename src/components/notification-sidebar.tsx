@@ -1028,7 +1028,7 @@ export function NotificationSidebarTrigger({
         className,
       )}
     >
-      <div className="relative">
+      <span className="relative inline-flex">
         <Bell className="size-4 shrink-0 text-foreground" />
         {alertsCount > 0 ? (
           <span
@@ -1036,9 +1036,10 @@ export function NotificationSidebarTrigger({
               "absolute -top-1 -right-1 size-2 rounded-full",
               (criticalCount ?? 0) > 0 ? "bg-rose-500 animate-pulse" : "bg-amber-500",
             )}
+            suppressHydrationWarning
           />
         ) : null}
-      </div>
+      </span>
       <span className="hidden sm:inline font-medium">Frequency Alerts</span>
       {alertsCount > 0 ? (
         <span
