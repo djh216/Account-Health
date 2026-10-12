@@ -1,5 +1,9 @@
 import { normalizeName } from "./format";
 import {
+  isKnownPhiladelphiaAccountName,
+  isPhiladelphiaGeographyLabel,
+} from "./philadelphia-territory";
+import {
   dropSupersededSnapshotLastVisits,
   isSnapshotLastVisitRecord,
 } from "./visit-index";
@@ -113,20 +117,27 @@ export function isNorthernPhillySuburbsTerritory(
   );
 }
 
-/** Philadelphia territory (excludes Western / Northern Philly Suburbs, which have their own reps). */
+/**
+ * Philadelphia territory (excludes Western / Northern Philly Suburbs).
+ * Uses region/county/city, known account names, and common Philly neighborhood labels.
+ */
 export function isPhiladelphiaTerritory(
   region?: string | null,
   county?: string | null,
   city?: string | null,
+  accountName?: string | null,
 ): boolean {
-  const fields = { region, county, city };
+  if (accountName && isKnownPhiladelphiaAccountName(accountName)) return true;
+
   if (isWesternPhillySuburbsTerritory(region, county, city)) return false;
   if (isNorthernPhillySuburbsTerritory(region, county, city)) return false;
-  return territoryStrings(fields).some((value) => {
+
+  return territoryStrings({ region, county, city }).some((value) => {
     const normalized = normalizeName(value);
+    if (normalized.includes("suburb")) return false;
     if (normalized === PHILADELPHIA_TERRITORY_NORMALIZED) return true;
-    if (normalized.includes("philadelphia") && !normalized.includes("suburb")) return true;
-    return false;
+    if (normalized.includes("philadelphia")) return true;
+    return isPhiladelphiaGeographyLabel(value);
   });
 }
 
@@ -225,11 +236,12 @@ export function reassignPhiladelphiaLegacyTeamRep(
   region?: string | null,
   county?: string | null,
   city?: string | null,
+  accountName?: string | null,
 ): string | undefined {
   if (!salesRep?.trim()) return undefined;
   const trimmed = salesRep.trim();
   if (!isPhiladelphiaJordanFullerSourceRep(trimmed)) return trimmed;
-  if (!isPhiladelphiaTerritory(region, county, city)) return trimmed;
+  if (!isPhiladelphiaTerritory(region, county, city, accountName)) return trimmed;
   return JORDAN_FULLER_REP;
 }
 
@@ -239,23 +251,31 @@ export function reassignPhiladelphiaGuidoRep(
   region?: string | null,
   county?: string | null,
   city?: string | null,
+  accountName?: string | null,
 ): string | undefined {
-  return reassignPhiladelphiaLegacyTeamRep(salesRep, region, county, city);
+  return reassignPhiladelphiaLegacyTeamRep(salesRep, region, county, city, accountName);
 }
 
 function applyTerritoryGuidoRepToSalesRep(
   salesRep: string | undefined,
   territory: TerritoryFields,
+  accountName?: string | null,
 ): string | undefined {
   const { region, county, city } = territory;
   if (salesRep?.trim()) {
-    const phillyDirect = reassignPhiladelphiaLegacyTeamRep(salesRep, region, county, city);
+    const phillyDirect = reassignPhiladelphiaLegacyTeamRep(
+      salesRep,
+      region,
+      county,
+      city,
+      accountName,
+    );
     if (phillyDirect === JORDAN_FULLER_REP) return JORDAN_FULLER_REP;
   }
   const normalized = normalizeVisitSalesRep(salesRep);
   const western = reassignWesternPhillyGuidoRep(normalized, region, county, city);
   const northern = reassignNorthernPhillyGuidoRep(western, region, county, city);
-  return reassignPhiladelphiaLegacyTeamRep(northern, region, county, city);
+  return reassignPhiladelphiaLegacyTeamRep(northern, region, county, city, accountName);
 }
 
 function reconcileGuidoVisitRep(
@@ -263,7 +283,8 @@ function reconcileGuidoVisitRep(
   account: Account | undefined,
   territory: TerritoryFields,
 ): string | undefined {
-  let salesRep = applyTerritoryGuidoRepToSalesRep(visit.salesRep, territory);
+  const accountName = account?.name ?? visit.accountName;
+  let salesRep = applyTerritoryGuidoRepToSalesRep(visit.salesRep, territory, accountName);
   if (
     isPhiladelphiaJordanFullerSourceRep(salesRep) &&
     account?.salesRep &&
@@ -271,8 +292,12 @@ function reconcileGuidoVisitRep(
   ) {
     return account.salesRep;
   }
-  if (isPhiladelphiaJordanFullerSourceRep(salesRep) && account) {
-    salesRep = applyTerritoryGuidoRepToSalesRep(visit.salesRep, accountTerritoryFields(account));
+  if (isPhiladelphiaJordanFullerSourceRep(salesRep)) {
+    salesRep = applyTerritoryGuidoRepToSalesRep(
+      visit.salesRep,
+      account ? accountTerritoryFields(account) : territory,
+      accountName,
+    );
   }
   return salesRep;
 }
@@ -333,6 +358,7 @@ export function assignAccountRepsFromRecentVisits(state: PortfolioState): Portfo
       const remapped = applyTerritoryGuidoRepToSalesRep(
         account.salesRep,
         accountTerritoryFields(account),
+        account.name,
       );
       if (remapped && remapped !== account.salesRep && !isGuidoMartelliRep(remapped)) {
         changed = true;
@@ -411,6 +437,7 @@ export function remapVisitImportRecords(
     const salesRep = applyTerritoryGuidoRepToSalesRep(
       account.salesRep,
       accountTerritoryFields(account),
+      account.name,
     );
     if (salesRep !== account.salesRep) {
       account.salesRep = salesRep;
@@ -437,6 +464,7 @@ export function remapPortfolioSalesReps(state: PortfolioState): PortfolioState {
     const salesRep = applyTerritoryGuidoRepToSalesRep(
       account.salesRep,
       accountTerritoryFields(account),
+      account.name,
     );
     if (salesRep === account.salesRep) return account;
     changed = true;
