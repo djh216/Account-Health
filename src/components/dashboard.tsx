@@ -88,6 +88,7 @@ type AccountListDialogState = {
   accounts: AccountHealth[];
   showHistory?: boolean;
   emptyMessage?: string;
+  sortableByRepAndTier?: boolean;
 };
 
 const RISK_FILTERS: Array<{ value: "all" | RiskLevel; label: string }> = [
@@ -420,6 +421,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
                     description: "Critical and at-risk accounts on this book.",
                     accounts: needAttentionAccounts,
                     showHistory: snapshot.mode === "history",
+                    sortableByRepAndTier: true,
                   })
                 }
               />
@@ -656,6 +658,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
         accounts={accountListDialog?.accounts ?? []}
         showHistory={accountListDialog?.showHistory}
         emptyMessage={accountListDialog?.emptyMessage}
+        sortableByRepAndTier={accountListDialog?.sortableByRepAndTier}
         onSelectAccount={setSelectedId}
       />
     </>
