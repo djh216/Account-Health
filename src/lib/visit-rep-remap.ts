@@ -12,6 +12,9 @@ export const JORDAN_FULLER_REP = "Jordan Fuller";
 const WESTERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED = normalizeName(
   "Western Philly Suburbs",
 );
+const NORTHERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED = normalizeName(
+  "Northern Philly Suburbs",
+);
 const PHILADELPHIA_TERRITORY_NORMALIZED = normalizeName("Philadelphia");
 
 /** True when region or county is the Western Philly Suburbs territory (flexible spelling). */
@@ -34,12 +37,40 @@ export function isWesternPhillySuburbsTerritory(
   return false;
 }
 
-/** Philadelphia territory (excludes Western Philly Suburbs, which has its own rep). */
+/** True when region or county is the Northern Philly Suburbs territory (flexible spelling). */
+export function isNorthernPhillySuburbsTerritory(
+  region?: string | null,
+  county?: string | null,
+): boolean {
+  for (const value of [region, county]) {
+    if (!value?.trim()) continue;
+    const normalized = normalizeName(value);
+    if (normalized === NORTHERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED) return true;
+    if (
+      normalized.includes("northern") &&
+      normalized.includes("philly") &&
+      normalized.includes("suburb")
+    ) {
+      return true;
+    }
+    if (
+      normalized.includes("northern") &&
+      normalized.includes("philadelphia") &&
+      normalized.includes("suburb")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Philadelphia territory (excludes Western / Northern Philly Suburbs, which have their own reps). */
 export function isPhiladelphiaTerritory(
   region?: string | null,
   county?: string | null,
 ): boolean {
   if (isWesternPhillySuburbsTerritory(region, county)) return false;
+  if (isNorthernPhillySuburbsTerritory(region, county)) return false;
   for (const value of [region, county]) {
     if (!value?.trim()) continue;
     const normalized = normalizeName(value);
@@ -88,6 +119,19 @@ export function reassignWesternPhillyGuidoRep(
   return ANGELA_RICCETTI_REP;
 }
 
+/** Guido Martelli → Jordan Fuller for Northern Philly Suburbs accounts and activity. */
+export function reassignNorthernPhillyGuidoRep(
+  salesRep: string | undefined | null,
+  region?: string | null,
+  county?: string | null,
+): string | undefined {
+  if (!salesRep?.trim()) return undefined;
+  const trimmed = salesRep.trim();
+  if (normalizeName(trimmed) !== GUIDO_MARTELLI_REP_NORMALIZED) return trimmed;
+  if (!isNorthernPhillySuburbsTerritory(region, county)) return trimmed;
+  return JORDAN_FULLER_REP;
+}
+
 /** Guido Martelli → Jordan Fuller for Philadelphia territory accounts and activity. */
 export function reassignPhiladelphiaGuidoRep(
   salesRep: string | undefined | null,
@@ -108,7 +152,8 @@ function applyTerritoryGuidoRepToSalesRep(
 ): string | undefined {
   const normalized = normalizeVisitSalesRep(salesRep);
   const western = reassignWesternPhillyGuidoRep(normalized, region, county);
-  return reassignPhiladelphiaGuidoRep(western, region, county);
+  const northern = reassignNorthernPhillyGuidoRep(western, region, county);
+  return reassignPhiladelphiaGuidoRep(northern, region, county);
 }
 
 type RepAtDate = { date: string; rep: string };
