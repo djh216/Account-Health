@@ -46,6 +46,7 @@ export function PrintReportButton({
     activePage,
     exportCurrentPagePdf,
     exportFocusHealthPdf,
+    exportAccountOrderTrackingPdf,
     exportOrderAnalyticsPdf,
     exportProductTrendsPdf,
     exportSalesInsightsPackPdf,
@@ -64,7 +65,7 @@ export function PrintReportButton({
 
   const pageShortName =
     effectivePage === "orders"
-      ? "Order analytics"
+      ? "Account order tracking"
       : effectivePage === "products"
         ? "Product trends"
         : effectivePage === "insights"
@@ -165,6 +166,16 @@ export function PrintReportButton({
             <DropdownMenuLabel className="text-xs font-normal leading-snug text-muted-foreground">
               Specialized exports
             </DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() =>
+                void runExport(exportAccountOrderTrackingPdf, "Account order tracking")
+              }
+              disabled={!hasOrderData}
+              className="gap-2"
+            >
+              <BarChart3 className="size-4 shrink-0 text-primary" />
+              Account order tracking table
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => void runExport(exportOrderAnalyticsPdf, "Order analytics")}
               disabled={!hasOrderData}

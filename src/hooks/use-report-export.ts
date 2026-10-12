@@ -6,6 +6,7 @@ import { parseDashboardView, dashboardViewToReportPage } from "@/lib/dashboard-v
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { buildFocusHealthPdfArtifact } from "@/lib/generate-focus-health-pdf";
+import { buildAccountOrderTrackingPdfArtifact } from "@/lib/generate-account-order-tracking-pdf";
 import { buildOrderAnalyticsPdfArtifact } from "@/lib/generate-order-analytics-pdf";
 import { buildProductTrendsPdfArtifact } from "@/lib/generate-product-trends-pdf";
 import { buildSalesInsightsPdfArtifact } from "@/lib/generate-sales-insights-pdf";
@@ -22,7 +23,8 @@ import {
 } from "@/lib/out-of-stock-products";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { focusAccountsByHorizon } from "@/lib/score";
-import { todayIso } from "@/lib/format";
+import { normalizeName, todayIso } from "@/lib/format";
+import { sortAccountTrackingRows } from "@/lib/order-analytics";
 import { assembleSalesInsightsInput, useSalesInsights } from "@/hooks/use-sales-insights";
 import { portfolioStateCacheKey } from "@/lib/portfolio-analytics-bundle";
 import {
@@ -248,6 +250,55 @@ export function useReportExportController() {
     }
   }, [hasAlertsData, insightsBuildInput, buildWeeklyRepPackArtifact, openPdfPreview]);
 
+  const accountOrderTrackingRows = useMemo(() => {
+    const healthByAccountName = new Map(
+      enrichedAccounts.map((item) => [normalizeName(item.account.name), item]),
+    );
+    return sortAccountTrackingRows(
+      orderAnalytics.byAccount.map((row) => {
+        const health = healthByAccountName.get(normalizeName(row.accountName));
+        return {
+          ...row,
+          healthScore: health?.score ?? null,
+          healthScoreChange14d: health?.scoreChange14d ?? null,
+          territoryRank: health?.territoryRank ?? null,
+        };
+      }),
+      "territoryRank",
+      "asc",
+    );
+  }, [orderAnalytics.byAccount, enrichedAccounts]);
+
+  const exportAccountOrderTrackingPdf = useCallback(async () => {
+    if (!hasOrderData || accountOrderTrackingRows.length === 0) {
+      throw new Error(
+        "No account order tracking data available. Load sample data or upload orders first.",
+      );
+    }
+    setBusy(true);
+    setBusyAction("Generating account order tracking PDF…");
+    try {
+      openPdfPreview(
+        "Account order tracking",
+        buildAccountOrderTrackingPdfArtifact({
+          repFilter,
+          asOf,
+          generatedAt: asOf,
+          rows: accountOrderTrackingRows,
+        }),
+      );
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [
+    hasOrderData,
+    accountOrderTrackingRows,
+    openPdfPreview,
+    repFilter,
+    asOf,
+  ]);
+
   const exportOrderAnalyticsPdf = useCallback(async () => {
     if (!hasOrderData) {
       throw new Error(
@@ -357,8 +408,8 @@ export function useReportExportController() {
           break;
         case "orders":
           if (hasOrderData) {
-            await exportOrderAnalyticsPdf();
-            return "Order analytics PDF opened.";
+            await exportAccountOrderTrackingPdf();
+            return "Account order tracking PDF opened.";
           }
           break;
         case "products":
@@ -388,6 +439,7 @@ export function useReportExportController() {
       hasProductData,
       hasHealthData,
       hasAlertsData,
+      exportAccountOrderTrackingPdf,
       exportOrderAnalyticsPdf,
       exportProductTrendsPdf,
       exportSalesInsightsPackPdf,
@@ -464,6 +516,7 @@ export function useReportExportController() {
     exportFocusHealthPdf,
     exportRepActionPlansPdf,
     exportFrequencyAlertsPdf,
+    exportAccountOrderTrackingPdf,
     exportOrderAnalyticsPdf,
     exportProductTrendsPdf,
     exportProductSlowdownPdf,
