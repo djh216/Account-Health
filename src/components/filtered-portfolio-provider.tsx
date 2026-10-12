@@ -234,19 +234,37 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
 
   const hasPortfolioData = visibleState.accounts.length > 0;
 
-  /** Core analytics (scores, trends) — warm synchronously so the UI never spins. */
-  if (hasPortfolioData && !isRepCoreWarm(analyticsCache, repFilter)) {
-    try {
-      readPortfolioCoreForFilteredState(analyticsCache, repFilter, filteredState);
-    } catch (error) {
-      console.error("Failed to warm portfolio analytics core", error);
-    }
-  }
-
   const coreCacheReady =
     !hasPortfolioData || isRepCoreWarm(analyticsCache, repFilter);
 
   const [analyticsEpoch, setAnalyticsEpoch] = useState(0);
+
+  /** Core analytics (scores, trends) — off the render path so the UI stays responsive. */
+  useEffect(() => {
+    if (!hasPortfolioData) return;
+    if (isRepCoreWarm(analyticsCache, repFilter)) return;
+
+    let cancelled = false;
+
+    const warmCore = () => {
+      if (cancelled) return;
+      if (isRepCoreWarm(analyticsCache, repFilter)) return;
+      try {
+        readPortfolioCoreForFilteredState(analyticsCache, repFilter, filteredState);
+        queueMicrotask(() => {
+          if (!cancelled) setAnalyticsEpoch((epoch) => epoch + 1);
+        });
+      } catch (error) {
+        console.error("Failed to warm portfolio analytics core", error);
+      }
+    };
+
+    const timerId = window.setTimeout(warmCore, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [visibleStateKey, repFilter, filteredState, hasPortfolioData, analyticsCache]);
 
   /** Heavy analytics (order tracking, projections) — idle when possible. */
   useEffect(() => {
@@ -261,7 +279,9 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
       if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
       try {
         readPortfolioHeavyForFilteredState(analyticsCache, repFilter, filteredState);
-        setAnalyticsEpoch((epoch) => epoch + 1);
+        queueMicrotask(() => {
+          if (!cancelled) setAnalyticsEpoch((epoch) => epoch + 1);
+        });
       } catch (error) {
         console.error("Failed to warm portfolio analytics heavy", error);
       }

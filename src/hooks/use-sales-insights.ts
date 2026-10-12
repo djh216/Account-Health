@@ -133,9 +133,7 @@ export function useSalesInsights(): {
 
   const getInsightsSnapshot = useCallback((): SalesInsightsBundle | null => {
     if (!input || !portfolioKey) return null;
-    const cached = getCachedSalesInsights(portfolioKey, input.repFilter, input);
-    if (cached) return cached;
-    return getOrBuildSalesInsights(portfolioKey, input);
+    return getCachedSalesInsights(portfolioKey, input.repFilter, input) ?? null;
   }, [input, portfolioKey]);
 
   const insights = useSyncExternalStore(
@@ -159,7 +157,7 @@ export function useSalesInsights(): {
     };
 
     if (typeof requestIdleCallback !== "undefined") {
-      const idleId = requestIdleCallback(compute, { timeout: 120 });
+      const idleId = requestIdleCallback(compute, { timeout: 500 });
       return () => {
         cancelled = true;
         cancelIdleCallback(idleId);
