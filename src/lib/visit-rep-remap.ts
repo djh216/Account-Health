@@ -6,8 +6,17 @@ import {
 import type { Account, PortfolioState, ReportKind, Visit } from "./types";
 
 export const GUIDO_MARTELLI_REP_NORMALIZED = normalizeName("Guido Martelli");
+export const GINA_TERRA_REP_NORMALIZED = normalizeName("Gina Terra");
+export const LIZ_BRUNO_REP_NORMALIZED = normalizeName("Liz Bruno");
 export const ANGELA_RICCETTI_REP = "Angela Riccetti";
 export const JORDAN_FULLER_REP = "Jordan Fuller";
+
+/** Reps reassigned to Jordan Fuller in Philadelphia territory (not suburb bands). */
+const PHILADELPHIA_JORDAN_FULLER_SOURCE_REPS = new Set([
+  GUIDO_MARTELLI_REP_NORMALIZED,
+  GINA_TERRA_REP_NORMALIZED,
+  LIZ_BRUNO_REP_NORMALIZED,
+]);
 
 const WESTERN_PHILLY_SUBURBS_TERRITORY_NORMALIZED = normalizeName(
   "Western Philly Suburbs",
@@ -202,8 +211,16 @@ export function reassignNorthernPhillyGuidoRep(
   return JORDAN_FULLER_REP;
 }
 
-/** Guido Martelli → Jordan Fuller for Philadelphia territory accounts and activity. */
-export function reassignPhiladelphiaGuidoRep(
+export function isPhiladelphiaJordanFullerSourceRep(name: string | undefined | null): boolean {
+  if (!name?.trim()) return false;
+  return PHILADELPHIA_JORDAN_FULLER_SOURCE_REPS.has(normalizeName(name));
+}
+
+/**
+ * Guido Martelli, Gina Terra, or Liz Bruno → Jordan Fuller for Philadelphia territory
+ * accounts and activity.
+ */
+export function reassignPhiladelphiaLegacyTeamRep(
   salesRep: string | undefined | null,
   region?: string | null,
   county?: string | null,
@@ -211,20 +228,34 @@ export function reassignPhiladelphiaGuidoRep(
 ): string | undefined {
   if (!salesRep?.trim()) return undefined;
   const trimmed = salesRep.trim();
-  if (normalizeName(trimmed) !== GUIDO_MARTELLI_REP_NORMALIZED) return trimmed;
+  if (!isPhiladelphiaJordanFullerSourceRep(trimmed)) return trimmed;
   if (!isPhiladelphiaTerritory(region, county, city)) return trimmed;
   return JORDAN_FULLER_REP;
+}
+
+/** @deprecated Use reassignPhiladelphiaLegacyTeamRep — Guido-only alias for tests/callers. */
+export function reassignPhiladelphiaGuidoRep(
+  salesRep: string | undefined | null,
+  region?: string | null,
+  county?: string | null,
+  city?: string | null,
+): string | undefined {
+  return reassignPhiladelphiaLegacyTeamRep(salesRep, region, county, city);
 }
 
 function applyTerritoryGuidoRepToSalesRep(
   salesRep: string | undefined,
   territory: TerritoryFields,
 ): string | undefined {
-  const normalized = normalizeVisitSalesRep(salesRep);
   const { region, county, city } = territory;
+  if (salesRep?.trim()) {
+    const phillyDirect = reassignPhiladelphiaLegacyTeamRep(salesRep, region, county, city);
+    if (phillyDirect === JORDAN_FULLER_REP) return JORDAN_FULLER_REP;
+  }
+  const normalized = normalizeVisitSalesRep(salesRep);
   const western = reassignWesternPhillyGuidoRep(normalized, region, county, city);
   const northern = reassignNorthernPhillyGuidoRep(western, region, county, city);
-  return reassignPhiladelphiaGuidoRep(northern, region, county, city);
+  return reassignPhiladelphiaLegacyTeamRep(northern, region, county, city);
 }
 
 function reconcileGuidoVisitRep(
@@ -233,10 +264,14 @@ function reconcileGuidoVisitRep(
   territory: TerritoryFields,
 ): string | undefined {
   let salesRep = applyTerritoryGuidoRepToSalesRep(visit.salesRep, territory);
-  if (isGuidoMartelliRep(salesRep) && account?.salesRep && !isGuidoMartelliRep(account.salesRep)) {
+  if (
+    isPhiladelphiaJordanFullerSourceRep(salesRep) &&
+    account?.salesRep &&
+    !isPhiladelphiaJordanFullerSourceRep(account.salesRep)
+  ) {
     return account.salesRep;
   }
-  if (isGuidoMartelliRep(salesRep) && account) {
+  if (isPhiladelphiaJordanFullerSourceRep(salesRep) && account) {
     salesRep = applyTerritoryGuidoRepToSalesRep(visit.salesRep, accountTerritoryFields(account));
   }
   return salesRep;
@@ -264,7 +299,7 @@ export function latestActivityRepByAccountKeys(
   for (const visit of visits) {
     if (isSnapshotLastVisitRecord(visit)) continue;
     const rep = normalizeVisitSalesRep(visit.salesRep);
-    if (!rep || isGuidoMartelliRep(rep)) continue;
+    if (!rep || isPhiladelphiaJordanFullerSourceRep(rep)) continue;
     const day = visit.date.slice(0, 10);
     if (!day) continue;
 
@@ -309,7 +344,7 @@ export function assignAccountRepsFromRecentVisits(state: PortfolioState): Portfo
     const byId = account.id ? byAccountId.get(account.id) : undefined;
     const byName = byAccountName.get(normalizeName(account.name));
     const rep = repFromMostRecentVisit(byId, byName);
-    if (!rep || isGuidoMartelliRep(rep)) return account;
+    if (!rep || isPhiladelphiaJordanFullerSourceRep(rep)) return account;
     if (account.salesRep === rep) return account;
 
     changed = true;
