@@ -194,18 +194,27 @@ function resolveAccountForVisit(
   return lookups.accountByName.get(normalizeName(visit.accountName));
 }
 
-/** Guido Martelli → Angela Riccetti for Western Philly Suburbs accounts and activity. */
+/** All accounts and activity in Western Philly Suburbs → Angela Riccetti. */
+export function reassignWesternPhillySuburbsRep(
+  salesRep: string | undefined | null,
+  region?: string | null,
+  county?: string | null,
+  city?: string | null,
+): string | undefined {
+  if (!isWesternPhillySuburbsTerritory(region, county, city)) {
+    return salesRep?.trim() || undefined;
+  }
+  return ANGELA_RICCETTI_REP;
+}
+
+/** @deprecated Prefer reassignWesternPhillySuburbsRep — Guido-only alias. */
 export function reassignWesternPhillyGuidoRep(
   salesRep: string | undefined | null,
   region?: string | null,
   county?: string | null,
   city?: string | null,
 ): string | undefined {
-  if (!salesRep?.trim()) return undefined;
-  const trimmed = salesRep.trim();
-  if (normalizeName(trimmed) !== GUIDO_MARTELLI_REP_NORMALIZED) return trimmed;
-  if (!isWesternPhillySuburbsTerritory(region, county, city)) return trimmed;
-  return ANGELA_RICCETTI_REP;
+  return reassignWesternPhillySuburbsRep(salesRep, region, county, city);
 }
 
 /** Guido Martelli → Jordan Fuller for Northern Philly Suburbs accounts and activity. */
@@ -262,6 +271,9 @@ function applyTerritoryGuidoRepToSalesRep(
   accountName?: string | null,
 ): string | undefined {
   const { region, county, city } = territory;
+  const westernPhillyRep = reassignWesternPhillySuburbsRep(salesRep, region, county, city);
+  if (westernPhillyRep === ANGELA_RICCETTI_REP) return ANGELA_RICCETTI_REP;
+
   if (salesRep?.trim()) {
     const phillyDirect = reassignPhiladelphiaLegacyTeamRep(
       salesRep,
@@ -273,7 +285,7 @@ function applyTerritoryGuidoRepToSalesRep(
     if (phillyDirect === JORDAN_FULLER_REP) return JORDAN_FULLER_REP;
   }
   const normalized = normalizeVisitSalesRep(salesRep);
-  const western = reassignWesternPhillyGuidoRep(normalized, region, county, city);
+  const western = reassignWesternPhillySuburbsRep(normalized, region, county, city);
   const northern = reassignNorthernPhillyGuidoRep(western, region, county, city);
   return reassignPhiladelphiaLegacyTeamRep(northern, region, county, city, accountName);
 }

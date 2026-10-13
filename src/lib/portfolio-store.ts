@@ -47,11 +47,11 @@ export function subscribePortfolio(listener: () => void): () => void {
 }
 
 function cleanPortfolioState(state: PortfolioState): PortfolioState {
-  return assignAccountRepsFromRecentVisits(
-    stripDavidHallFromPortfolio(
-      stripGuidoMartelliFromPortfolio(remapPortfolioSalesReps(stripPaDemoPortfolio(state))),
-    ),
-  );
+  const remapped = remapPortfolioSalesReps(stripPaDemoPortfolio(state));
+  const noHall = stripDavidHallFromPortfolio(remapped);
+  const noGuido = stripGuidoMartelliFromPortfolio(noHall);
+  const withReps = assignAccountRepsFromRecentVisits(noGuido);
+  return remapPortfolioSalesReps(withReps);
 }
 
 function withUploadLastVisitIndex(state: PortfolioState): PortfolioState {
