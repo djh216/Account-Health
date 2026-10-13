@@ -3,10 +3,13 @@ import { stripPaDemoPortfolio } from "./pa-demo";
 import { ensureUploadLastVisitIndex } from "./upload-last-visits";
 import { getRepFilterSnapshot, resetRepFilter, setRepFilter } from "./rep-filter";
 import {
+  assignAccountRepsFromRecentVisits,
   isDavidHallRep,
+  isGuidoMartelliRep,
   normalizeVisitSalesRep,
   remapPortfolioSalesReps,
   stripDavidHallFromPortfolio,
+  stripGuidoMartelliFromPortfolio,
 } from "./visit-rep-remap";
 import {
   clearPortfolio,
@@ -44,9 +47,11 @@ export function subscribePortfolio(listener: () => void): () => void {
 }
 
 function cleanPortfolioState(state: PortfolioState): PortfolioState {
-  return stripDavidHallFromPortfolio(
-    remapPortfolioSalesReps(stripPaDemoPortfolio(state)),
-  );
+  const remapped = remapPortfolioSalesReps(stripPaDemoPortfolio(state));
+  const noHall = stripDavidHallFromPortfolio(remapped);
+  const noGuido = stripGuidoMartelliFromPortfolio(noHall);
+  const withReps = assignAccountRepsFromRecentVisits(noGuido);
+  return remapPortfolioSalesReps(withReps);
 }
 
 function withUploadLastVisitIndex(state: PortfolioState): PortfolioState {
@@ -77,7 +82,7 @@ function syncRepFilterAfterPortfolioClean(): void {
   if (typeof window === "undefined") return;
   const current = getRepFilterSnapshot();
   if (current === "all") return;
-  if (isDavidHallRep(current)) {
+  if (isDavidHallRep(current) || isGuidoMartelliRep(current)) {
     resetRepFilter();
     return;
   }

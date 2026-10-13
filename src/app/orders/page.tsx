@@ -1,5 +1,5 @@
-import { OrderAnalyticsDashboard } from "@/components/order-analytics-dashboard";
+import { redirect } from "next/navigation";
 
-export default function OrdersPage() {
-  return <OrderAnalyticsDashboard />;
+export default function OrderAnalyticsPage() {
+  redirect("/?view=orders");
 }

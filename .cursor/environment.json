@@ -1,20 +1,14 @@
 {
   "name": "Cellar Pulse",
   "install": "npm ci",
+  "start": "bash -lc 'exec \"${CURSOR_WORKSPACE_DIR:-/workspace}/start-dev.sh\"'",
   "ports": [
     {
       "name": "Next.js dev",
       "port": 43123
     }
   ],
-  "terminals": [
-    {
-      "name": "dev",
-      "command": "npm run dev",
-      "description": "Next.js app on http://127.0.0.1:43123"
-    }
-  ],
   "repositoryDependencies": [
-    "github.com/djh216/cellar-pulse"
+    "github.com/djh216/Account-Health"
   ]
 }

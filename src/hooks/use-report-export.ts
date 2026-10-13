@@ -1,16 +1,15 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { parseDashboardView, dashboardViewToReportPage } from "@/lib/dashboard-view";
 import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import { excludeHomeBaseFromPortfolio } from "@/lib/account-filters";
 import { buildFocusHealthPdfArtifact } from "@/lib/generate-focus-health-pdf";
-import { buildFrequencyAlertsPdfArtifact } from "@/lib/generate-frequency-alerts-pdf";
+import { buildAccountOrderTrackingPdfArtifact } from "@/lib/generate-account-order-tracking-pdf";
 import { buildOrderAnalyticsPdfArtifact } from "@/lib/generate-order-analytics-pdf";
 import { buildProductTrendsPdfArtifact } from "@/lib/generate-product-trends-pdf";
-import { buildRepActionPlansPdfArtifact } from "@/lib/generate-rep-action-plan-pdf";
-import { buildProductSlowdownPdfArtifact } from "@/lib/generate-product-slowdown-pdf";
-import { buildImminentChurnPdfArtifact } from "@/lib/generate-imminent-churn-pdf";
+import { buildSalesInsightsPdfArtifact } from "@/lib/generate-sales-insights-pdf";
 import {
   buildRepActionPlans,
   buildPdfAccountVisitLookup,
@@ -24,10 +23,14 @@ import {
 } from "@/lib/out-of-stock-products";
 import { useOutOfStockProducts } from "@/hooks/use-out-of-stock-products";
 import { focusAccountsByHorizon } from "@/lib/score";
-import { todayIso } from "@/lib/format";
-import { useSalesInsights } from "@/hooks/use-sales-insights";
-import { buildWeeklyBriefingPdfArtifact } from "@/lib/generate-weekly-briefing-pdf";
-import { buildSalesInsightsPdfArtifact } from "@/lib/generate-sales-insights-pdf";
+import { normalizeName, todayIso } from "@/lib/format";
+import { sortAccountTrackingRows } from "@/lib/order-analytics";
+import { assembleSalesInsightsInput, useSalesInsights } from "@/hooks/use-sales-insights";
+import { portfolioStateCacheKey } from "@/lib/portfolio-analytics-bundle";
+import {
+  getOrBuildSalesInsights,
+} from "@/lib/sales-insights/sales-insights-cache";
+import type { SalesInsightsBundle } from "@/lib/sales-insights/types";
 
 export type ReportPageType = "health" | "orders" | "products" | "insights";
 
@@ -39,11 +42,13 @@ export type PdfPreviewSession = {
 /** Single instance — mount via ReportExportProvider only. */
 export function useReportExportController() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const {
     state,
     fullState,
     snapshot,
     repFilter,
+    repFilterPending,
     reps,
     enrichedAccounts,
     frequencyAlerts,
@@ -51,6 +56,9 @@ export function useReportExportController() {
     productTrends,
     productAlerts,
     projectionsSummary,
+    newAccounts,
+    retainedAccounts,
+    returningCustomers,
   } = useFilteredPortfolio();
   const { ids: outOfStockIds } = useOutOfStockProducts();
   const { ids: closedAccountIds } = useClosedBusinessAccounts();
@@ -78,8 +86,13 @@ export function useReportExportController() {
     if (pathname === "/orders") return "orders";
     if (pathname === "/products") return "products";
     if (pathname === "/insights") return "insights";
+    if (pathname === "/") {
+      const view = parseDashboardView(searchParams.get("view"));
+      const grain = searchParams.get("grain") === "product" ? "product" : "account";
+      return dashboardViewToReportPage(view, grain);
+    }
     return "health";
-  }, [pathname]);
+  }, [pathname, searchParams]);
 
   const visibleFullState = useMemo(
     () => excludeHomeBaseFromPortfolio(fullState),
@@ -114,9 +127,51 @@ export function useReportExportController() {
   );
 
   const hasImminentChurnData = imminentChurnAccounts.length > 0;
+
+  const insightsBuildInput = useMemo(
+    () =>
+      assembleSalesInsightsInput({
+        enrichedAccounts,
+        repFilter,
+        frequencyAlerts,
+        productAlerts,
+        newAccounts,
+        retainedAccounts,
+        returningCustomers,
+        projectionsSummary,
+        state,
+        snapshot,
+        repFilterPending,
+      }),
+    [
+      enrichedAccounts,
+      repFilter,
+      frequencyAlerts,
+      productAlerts,
+      newAccounts,
+      retainedAccounts,
+      returningCustomers,
+      projectionsSummary,
+      state,
+      snapshot,
+      repFilterPending,
+    ],
+  );
+
   const hasInsightsData = insights !== null;
-  const hasWeeklyBriefingData = hasInsightsData;
-  const hasSalesInsightsPackData = hasInsightsData;
+  const hasWeeklyBriefingData = hasInsightsData || insightsBuildInput !== null;
+  const hasSalesInsightsPackData = hasWeeklyBriefingData;
+
+  const resolveInsightsBundle = useCallback((): SalesInsightsBundle => {
+    if (insights) return insights;
+    if (!insightsBuildInput) {
+      throw new Error(
+        "No account data available to generate reports. Load sample data or upload records first.",
+      );
+    }
+    const portfolioKey = portfolioStateCacheKey(insightsBuildInput.portfolioState);
+    return getOrBuildSalesInsights(portfolioKey, insightsBuildInput);
+  }, [insights, insightsBuildInput]);
 
   const exportFocusHealthPdf = useCallback(async () => {
     if (!hasHealthData) {
@@ -143,48 +198,93 @@ export function useReportExportController() {
     }
   }, [hasHealthData, openPdfPreview, repFilter, asOf, enrichedAccounts]);
 
+  const buildWeeklyRepPackArtifact = useCallback(() => {
+    const bundle = resolveInsightsBundle();
+    return buildSalesInsightsPdfArtifact({
+      repFilter,
+      generatedAt: asOf,
+      insights: {
+        ...bundle,
+        winBackSkus: excludeOutOfStockWinBackSkus(bundle.winBackSkus, outOfStockIds),
+      },
+      focusByHorizon: focusAccountsByHorizon(enrichedAccounts),
+      frequencyAlerts,
+      churnAccounts: imminentChurnAccounts,
+      productSlowdownAlerts: productAlerts,
+    });
+  }, [
+    resolveInsightsBundle,
+    repFilter,
+    asOf,
+    outOfStockIds,
+    enrichedAccounts,
+    frequencyAlerts,
+    imminentChurnAccounts,
+    productAlerts,
+  ]);
+
   const exportRepActionPlansPdf = useCallback(async () => {
-    const plans = buildRepActionPlans(visibleFullState, reps, repFilter);
-    if (plans.length === 0) {
-      throw new Error(
-        "No account data available to build rep action plans. Load sample data or upload records first.",
-      );
-    }
     setBusy(true);
-    setBusyAction("Generating Rep Action Plan PDF…");
+    setBusyAction("Generating weekly rep pack…");
     try {
-      openPdfPreview(
-        "Rep action plan (weeks 1–3)",
-        buildRepActionPlansPdfArtifact({
-          repFilter,
-          asOf,
-          generatedAt: asOf,
-          plans,
-        }),
-      );
+      openPdfPreview("Weekly rep pack", buildWeeklyRepPackArtifact());
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [visibleFullState, reps, repFilter, asOf, openPdfPreview]);
+  }, [buildWeeklyRepPackArtifact, openPdfPreview]);
 
   const exportFrequencyAlertsPdf = useCallback(async () => {
-    if (!hasAlertsData) {
+    if (!hasAlertsData && !insightsBuildInput) {
       throw new Error(
-        "No account data available to generate frequency alerts. Load sample data or upload records first.",
+        "No account data available to generate reports. Load sample data or upload records first.",
       );
     }
     setBusy(true);
-    setBusyAction("Generating Frequency Alerts PDF…");
+    setBusyAction("Generating weekly rep pack…");
+    try {
+      openPdfPreview("Weekly rep pack", buildWeeklyRepPackArtifact());
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  }, [hasAlertsData, insightsBuildInput, buildWeeklyRepPackArtifact, openPdfPreview]);
+
+  const accountOrderTrackingRows = useMemo(() => {
+    const healthByAccountName = new Map(
+      enrichedAccounts.map((item) => [normalizeName(item.account.name), item]),
+    );
+    return sortAccountTrackingRows(
+      orderAnalytics.byAccount.map((row) => {
+        const health = healthByAccountName.get(normalizeName(row.accountName));
+        return {
+          ...row,
+          healthScore: health?.score ?? null,
+          healthScoreChange14d: health?.scoreChange14d ?? null,
+          territoryRank: health?.territoryRank ?? null,
+        };
+      }),
+      "territoryRank",
+      "asc",
+    );
+  }, [orderAnalytics.byAccount, enrichedAccounts]);
+
+  const exportAccountOrderTrackingPdf = useCallback(async () => {
+    if (!hasOrderData || accountOrderTrackingRows.length === 0) {
+      throw new Error(
+        "No account order tracking data available. Load sample data or upload orders first.",
+      );
+    }
+    setBusy(true);
+    setBusyAction("Generating account order tracking PDF…");
     try {
       openPdfPreview(
-        "Frequency drop alerts",
-        buildFrequencyAlertsPdfArtifact({
+        "Account order tracking",
+        buildAccountOrderTrackingPdfArtifact({
           repFilter,
           asOf,
           generatedAt: asOf,
-          alerts: frequencyAlerts,
-          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
+          rows: accountOrderTrackingRows,
         }),
       );
     } finally {
@@ -192,12 +292,11 @@ export function useReportExportController() {
       setBusyAction(null);
     }
   }, [
-    hasAlertsData,
+    hasOrderData,
+    accountOrderTrackingRows,
     openPdfPreview,
     repFilter,
     asOf,
-    frequencyAlerts,
-    enrichedAccounts,
   ]);
 
   const exportOrderAnalyticsPdf = useCallback(async () => {
@@ -274,114 +373,28 @@ export function useReportExportController() {
     enrichedAccounts,
   ]);
 
-  const exportProductSlowdownPdf = useCallback(async () => {
-    if (!hasProductSlowdownData) {
-      throw new Error(
-        "No product slowdown alerts to export. Load orders and check the alerts panel.",
-      );
-    }
+  const exportSalesInsightsPackPdf = useCallback(async () => {
     setBusy(true);
-    setBusyAction("Generating Product Slowdown PDF…");
+    setBusyAction("Generating weekly rep pack…");
     try {
-      openPdfPreview(
-        "Product slowdown report",
-        buildProductSlowdownPdfArtifact({
-          repFilter,
-          asOf,
-          generatedAt: asOf,
-          alerts: productAlerts,
-          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
-        }),
-      );
+      openPdfPreview("Weekly rep pack", buildWeeklyRepPackArtifact());
     } finally {
       setBusy(false);
       setBusyAction(null);
     }
-  }, [
-    hasProductSlowdownData,
-    openPdfPreview,
-    repFilter,
-    asOf,
-    productAlerts,
-    enrichedAccounts,
-  ]);
+  }, [buildWeeklyRepPackArtifact, openPdfPreview]);
+
+  const exportProductSlowdownPdf = useCallback(async () => {
+    await exportProductTrendsPdf();
+  }, [exportProductTrendsPdf]);
 
   const exportImminentChurnPdf = useCallback(async () => {
-    if (!hasImminentChurnData) {
-      throw new Error(
-        "No high-churn accounts to export. Open volume projections after loading order history.",
-      );
-    }
-    setBusy(true);
-    setBusyAction("Generating Imminent Churn PDF…");
-    try {
-      openPdfPreview(
-        "Imminent churn intervention",
-        buildImminentChurnPdfArtifact({
-          repFilter,
-          asOf,
-          generatedAt: asOf,
-          accounts: imminentChurnAccounts,
-          accountVisitLookup: buildPdfAccountVisitLookup(enrichedAccounts),
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
-  }, [
-    hasImminentChurnData,
-    openPdfPreview,
-    repFilter,
-    asOf,
-    imminentChurnAccounts,
-    enrichedAccounts,
-  ]);
+    await exportSalesInsightsPackPdf();
+  }, [exportSalesInsightsPackPdf]);
 
   const exportWeeklyBriefingPdf = useCallback(async () => {
-    if (!insights) {
-      throw new Error("Insights are not ready yet. Wait for analytics to load.");
-    }
-    setBusy(true);
-    setBusyAction("Generating Weekly Briefing PDF…");
-    try {
-      openPdfPreview(
-        "Weekly book briefing",
-        buildWeeklyBriefingPdfArtifact({
-          repFilter,
-          generatedAt: asOf,
-          briefing: insights.weeklyBriefing,
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
-  }, [insights, openPdfPreview, repFilter, asOf]);
-
-  const exportSalesInsightsPackPdf = useCallback(async () => {
-    if (!insights) {
-      throw new Error("Insights are not ready yet. Wait for analytics to load.");
-    }
-    setBusy(true);
-    setBusyAction("Generating Sales Insights PDF…");
-    try {
-      openPdfPreview(
-        "Sales insights pack",
-        buildSalesInsightsPdfArtifact({
-          repFilter,
-          generatedAt: asOf,
-          insights: {
-            ...insights,
-            winBackSkus: excludeOutOfStockWinBackSkus(insights.winBackSkus, outOfStockIds),
-          },
-        }),
-      );
-    } finally {
-      setBusy(false);
-      setBusyAction(null);
-    }
-  }, [insights, openPdfPreview, repFilter, asOf, outOfStockIds]);
+    await exportSalesInsightsPackPdf();
+  }, [exportSalesInsightsPackPdf]);
 
   const exportCurrentPagePdf = useCallback(
     async (pageOverride?: ReportPageType) => {
@@ -389,14 +402,14 @@ export function useReportExportController() {
       switch (page) {
         case "insights":
           if (hasWeeklyBriefingData) {
-            await exportWeeklyBriefingPdf();
-            return "Weekly book briefing PDF opened.";
+            await exportSalesInsightsPackPdf();
+            return "Weekly rep pack PDF opened.";
           }
           break;
         case "orders":
           if (hasOrderData) {
-            await exportOrderAnalyticsPdf();
-            return "Order analytics PDF opened.";
+            await exportAccountOrderTrackingPdf();
+            return "Account order tracking PDF opened.";
           }
           break;
         case "products":
@@ -407,16 +420,16 @@ export function useReportExportController() {
           break;
         case "health":
         default:
-          if (hasHealthData) {
-            await exportFocusHealthPdf();
-            return "Account health PDF opened.";
+          if (hasHealthData || hasWeeklyBriefingData) {
+            await exportSalesInsightsPackPdf();
+            return "Weekly rep pack PDF opened.";
           }
           break;
       }
 
-      if (hasAlertsData) {
-        await exportFrequencyAlertsPdf();
-        return "Frequency alerts PDF opened.";
+      if (hasAlertsData || hasWeeklyBriefingData) {
+        await exportSalesInsightsPackPdf();
+        return "Weekly rep pack PDF opened.";
       }
       throw new Error("No data loaded. Please load sample data or upload accounts/orders first.");
     },
@@ -426,12 +439,11 @@ export function useReportExportController() {
       hasProductData,
       hasHealthData,
       hasAlertsData,
+      exportAccountOrderTrackingPdf,
       exportOrderAnalyticsPdf,
       exportProductTrendsPdf,
-      exportFocusHealthPdf,
-      exportFrequencyAlertsPdf,
+      exportSalesInsightsPackPdf,
       hasWeeklyBriefingData,
-      exportWeeklyBriefingPdf,
     ],
   );
 
@@ -440,9 +452,9 @@ export function useReportExportController() {
       if (page) {
         return exportCurrentPagePdf(page);
       }
-      return exportFrequencyAlertsPdf();
+      return exportSalesInsightsPackPdf();
     },
-    [exportCurrentPagePdf, exportFrequencyAlertsPdf],
+    [exportCurrentPagePdf, exportSalesInsightsPackPdf],
   );
 
   const triggerSafePrint = useCallback(
@@ -504,6 +516,7 @@ export function useReportExportController() {
     exportFocusHealthPdf,
     exportRepActionPlansPdf,
     exportFrequencyAlertsPdf,
+    exportAccountOrderTrackingPdf,
     exportOrderAnalyticsPdf,
     exportProductTrendsPdf,
     exportProductSlowdownPdf,

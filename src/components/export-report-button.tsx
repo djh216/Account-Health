@@ -2,12 +2,12 @@
 
 import { PrintReportButton } from "@/components/print-report-button";
 
-/** Alerts PDF only — prefer PrintReportButton on dashboards. */
+/** Weekly rep pack (includes former alerts export). */
 export function ExportReportButton({
   className,
   variant = "outline",
   size = "default",
-  label = "Export alerts",
+  label = "Export weekly pack",
   onMessage,
 }: {
   page?: "health" | "orders" | "products";

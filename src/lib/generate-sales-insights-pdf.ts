@@ -1,31 +1,157 @@
 import { jsPDF } from "jspdf";
-import { formatDate, formatNumber } from "./format";
+import { formatDate, formatHealthScoreChange, formatNumber } from "./format";
+import type { AccountFrequencyAlert } from "./frequency-alerts";
+import { FOCUS_SECTIONS } from "./focus-sections";
 import { buildExportPdfFilename } from "./pdf-filename";
+import type { AccountProjectionAndChurn } from "./order-projections";
 import {
   artifactFromJsPdf,
   downloadPdfArtifact,
   type PdfExportArtifact,
 } from "./pdf-present";
-import { drawPdfSectionTable, drawPdfTitleBar, stampPdfFooters } from "./pdf-layout";
+import {
+  drawPdfKpiRow,
+  drawPdfSectionTable,
+  drawPdfTitleBar,
+  stampPdfFooters,
+} from "./pdf-layout";
+import type { ProductSlowingAlert } from "./product-trends";
 import type { SalesInsightsBundle } from "./sales-insights/types";
+import type { AccountHealth, FocusHorizon, RiskLevel } from "./types";
+import { territoryTierLabel } from "./territory-value";
 
 export type SalesInsightsPdfInput = {
   repFilter: string;
   generatedAt: string;
   insights: SalesInsightsBundle;
+  /** Weeks 1–3 priority accounts (replaces separate account-health / action-plan PDFs). */
+  focusByHorizon?: Record<FocusHorizon, AccountHealth[]>;
+  /** Order frequency drop alerts (merged from standalone frequency-alerts export). */
+  frequencyAlerts?: AccountFrequencyAlert[];
+  /** High churn projection accounts (merged from imminent-churn export). */
+  churnAccounts?: AccountProjectionAndChurn[];
+  /** 28-day wine slowdown alerts (summary; full SKU detail stays on product trends PDF). */
+  productSlowdownAlerts?: ProductSlowingAlert[];
 };
+
+const FOCUS_WINDOW_LABEL: Record<FocusHorizon, string> = {
+  this_week: "Week 1",
+  two_weeks: "Week 2",
+  three_weeks: "Week 3",
+};
+
+const RISK_SHORT: Record<RiskLevel, string> = {
+  critical: "CRITICAL",
+  at_risk: "AT RISK",
+  dormant: "DORMANT",
+  healthy: "HEALTHY",
+};
+
+function focusCompactRow(window: string, item: AccountHealth): (string | number)[] {
+  const tier = item.territoryTier ? territoryTierLabel(item.territoryTier) : "—";
+  return [
+    window,
+    item.account.name,
+    RISK_SHORT[item.risk],
+    tier,
+    `${item.score}${formatHealthScoreChange(item.scoreChange14d) ?? ""}`,
+    item.daysSinceOrder !== null ? `${item.daysSinceOrder}d` : "—",
+  ];
+}
 
 export function generateSalesInsightsPdfDocument(input: SalesInsightsPdfInput): jsPDF {
   const { insights: s } = input;
+  const b = s.weeklyBriefing;
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
   let y = drawPdfTitleBar(
     doc,
-    "Sales insights pack",
+    "Weekly rep pack",
     input.repFilter,
     s.asOf,
     input.generatedAt,
   );
+
+  y = drawPdfKpiRow(doc, y, [
+    { label: "Accounts", value: String(b.totalAccounts) },
+    { label: "Avg score", value: String(b.avgScore) },
+    { label: "Critical", value: String(b.criticalCount), color: [190, 18, 60] },
+    { label: "At risk", value: String(b.atRiskCount), color: [180, 83, 9] },
+    { label: "Btl at risk (90d)", value: formatNumber(b.volumeAtRisk90) },
+    { label: "Due to reorder", value: String(b.dueToReorderCount) },
+  ]);
+
+  y = drawPdfKpiRow(doc, y, [
+    { label: "Visit overdue", value: String(b.visitOverdueCount) },
+    {
+      label: "Strike rate (90d)",
+      value: b.strikeRateAllRepsPct !== null ? `${b.strikeRateAllRepsPct}%` : "—",
+    },
+    { label: "Freq. drop alerts", value: String(b.frequencyAlertCount) },
+    { label: "Wine slowdown alerts", value: String(b.productAlertCount) },
+    { label: "High churn", value: String(b.highChurnCount), color: [190, 18, 60] },
+    { label: "New / retained", value: `${b.newAccountsCount} / ${b.retainedCount}` },
+  ]);
+
+  if (input.focusByHorizon) {
+    const focusBody = FOCUS_SECTIONS.flatMap((section) => {
+      const label = FOCUS_WINDOW_LABEL[section.horizon];
+      const accounts = input.focusByHorizon![section.horizon];
+      if (accounts.length === 0) return [];
+      return accounts.slice(0, 25).map((item) => focusCompactRow(label, item));
+    });
+
+    y = drawPdfSectionTable(doc, y, {
+      sectionTitle: "Account focus by week (health score & cadence)",
+      head: [["Window", "Account", "Risk", "Tier", "Score", "Days since order"]],
+      body:
+        focusBody.length > 0
+          ? focusBody
+          : [["—", "No focus accounts in active horizons", "—", "—", "—", "—"]],
+    });
+  }
+
+  const frequencyAlerts = input.frequencyAlerts ?? [];
+  if (frequencyAlerts.length > 0) {
+    y = drawPdfSectionTable(doc, y, {
+      sectionTitle: "Order frequency drop alerts",
+      head: [["Severity", "Account", "Pace drop", "Orders / mo (recent vs typ)"]],
+      body: frequencyAlerts.slice(0, 35).map((alert) => [
+        alert.severity.toUpperCase(),
+        alert.accountName,
+        `-${alert.dropPercentage}%`,
+        `${alert.recentOrdersPerMonth} vs ${alert.typicalOrdersPerMonth}`,
+      ]),
+    });
+  }
+
+  const churnAccounts = input.churnAccounts ?? [];
+  if (churnAccounts.length > 0) {
+    y = drawPdfSectionTable(doc, y, {
+      sectionTitle: "High churn risk (volume projection)",
+      head: [["Account", "Churn score", "Btl / mo at risk", "Days since order"]],
+      body: churnAccounts.slice(0, 25).map((account) => [
+        account.accountName,
+        `${account.churnScore}%`,
+        formatNumber(account.monthlyVolumeAtRisk),
+        account.daysSinceLastOrder ?? "—",
+      ]),
+    });
+  }
+
+  const productAlerts = input.productSlowdownAlerts ?? [];
+  if (productAlerts.length > 0) {
+    y = drawPdfSectionTable(doc, y, {
+      sectionTitle: "28-day wine slowdown alerts (summary)",
+      head: [["Wine / SKU", "Severity", "Drop", "Note"]],
+      body: productAlerts.slice(0, 30).map((alert) => [
+        alert.productName,
+        alert.severity.toUpperCase(),
+        `-${alert.dropPercentage}%`,
+        alert.message.length > 72 ? `${alert.message.slice(0, 69)}…` : alert.message,
+      ]),
+    });
+  }
 
   y = drawPdfSectionTable(doc, y, {
     sectionTitle: "Proactive reorder window (next 14 days)",
@@ -72,21 +198,6 @@ export function generateSalesInsightsPdfDocument(input: SalesInsightsPdfInput): 
   });
 
   y = drawPdfSectionTable(doc, y, {
-    sectionTitle: "SKU breadth change (90d vs prior 90d)",
-    head: [["Account", "Recent SKUs", "Prior SKUs", "Δ", "Volume 90d"]],
-    body:
-      s.skuBreadth.length > 0
-        ? s.skuBreadth.slice(0, 30).map((r) => [
-            r.accountName,
-            r.skuCountRecent90,
-            r.skuCountPrior90,
-            r.skuDelta,
-            formatNumber(r.volume90),
-          ])
-        : [["—", "No rows", "—", "—", "—"]],
-  });
-
-  y = drawPdfSectionTable(doc, y, {
     sectionTitle: "Win-back SKUs (prior volume, none recent)",
     head: [["Account", "Product", "Prior 90d btl", "Last order", "Days since"]],
     body:
@@ -115,7 +226,7 @@ export function generateSalesInsightsPdfDocument(input: SalesInsightsPdfInput): 
         : [["—", "No rows", "—", "—"]],
   });
 
-  y = drawPdfSectionTable(doc, y, {
+  drawPdfSectionTable(doc, y, {
     sectionTitle: "Declining accounts (14d score)",
     head: [["Account", "Score", "Δ14d", "Risk"]],
     body:
@@ -129,22 +240,7 @@ export function generateSalesInsightsPdfDocument(input: SalesInsightsPdfInput): 
         : [["—", "No rows", "—", "—"]],
   });
 
-  y = drawPdfSectionTable(doc, y, {
-    sectionTitle: "Volume & risk by tier",
-    head: [["Tier", "Accounts", "Btl 90d", "At-risk btl", "Critical #"]],
-    body:
-      s.volumeByTier.length > 0
-        ? s.volumeByTier.map((r) => [
-            r.label,
-            r.accountCount,
-            formatNumber(r.bottles90),
-            formatNumber(r.atRiskVolume90),
-            r.criticalCount,
-          ])
-        : [["—", "No rows", "—", "—", "—"]],
-  });
-
-  stampPdfFooters(doc, "Sales insights", s.asOf);
+  stampPdfFooters(doc, "Weekly rep pack", s.asOf);
   return doc;
 }
 
@@ -152,7 +248,7 @@ export function buildSalesInsightsPdfArtifact(input: SalesInsightsPdfInput): Pdf
   const stamp = input.generatedAt.slice(0, 10);
   return artifactFromJsPdf(
     generateSalesInsightsPdfDocument(input),
-    buildExportPdfFilename(input.repFilter, "sales-insights-pack", stamp),
+    buildExportPdfFilename(input.repFilter, "weekly-rep-pack", stamp),
   );
 }
 

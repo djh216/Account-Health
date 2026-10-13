@@ -173,6 +173,54 @@ export function generateProductTrendsPdfDocument(input: ProductTrendsPdfInput): 
     },
   });
 
+  const slowingAlerts = input.slowingAlerts?.filter(Boolean) ?? [];
+  if (slowingAlerts.length > 0) {
+    const afterCatalogY =
+      (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ??
+      tableStartY + 24;
+    const alertStartY = ensurePdfVerticalSpace(doc, afterCatalogY);
+
+    autoTable(doc, {
+      startY: alertStartY + 6,
+      margin: { left: MARGIN_X, right: MARGIN_X, bottom: 14 },
+      head: [
+        [
+          "Slowing wine alert",
+          "Severity",
+          "28d drop",
+          "Recent vs prior btl",
+          "Top buyer accounts",
+        ],
+      ],
+      body: slowingAlerts.map((alert) => [
+        alert.productName,
+        alert.severity.toUpperCase(),
+        `-${alert.dropPercentage}%`,
+        `${formatNumber(alert.recentVolume28d)} vs ${formatNumber(alert.priorVolume28d)}`,
+        alert.topAtRiskAccounts.slice(0, 4).join(", ") || "—",
+      ]),
+      theme: "grid",
+      headStyles: {
+        fillColor: [254, 243, 199],
+        textColor: [120, 53, 15],
+        fontStyle: "bold",
+        fontSize: 8,
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+        textColor: TEXT_DARK,
+        cellPadding: 1.8,
+      },
+      columnStyles: {
+        0: { cellWidth: 62 },
+        1: { cellWidth: 22, fontStyle: "bold" },
+        2: { cellWidth: 18, halign: "right" },
+        3: { cellWidth: 38, halign: "right" },
+        4: { cellWidth: 80 },
+      },
+    });
+  }
+
   // Page numbering footers
   const totalPages = doc.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {

@@ -7,3 +7,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Cursor Cloud specific instructions
+
+- Dev server: **http://127.0.0.1:43123** (`npm run dev`). On agent boot, `.cursor/start-dev.sh` runs via `environment.json` `start` (runs `npm ci` if `node_modules` is missing).
+- If the browser shows **ERR_CONNECTION_REFUSED** on 43123, check `curl -I http://127.0.0.1:43123/` and `/tmp/cursor/start-user/start-user.log` (exit `127` usually means `start` ran before the repo checkout — restart with `bash .cursor/start-dev.sh` from `/workspace`). Without a successful environment build, `install` is skipped on boot — `start` runs `npm ci` when `node_modules` is missing.
+- Typecheck: `npx tsc --noEmit`. Lint: `npm run lint` (vendored `public/pdf.worker.min.mjs` is ignored).

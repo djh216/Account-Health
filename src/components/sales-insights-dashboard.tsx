@@ -19,6 +19,7 @@ import {
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
 import { RepFilterSelect } from "@/components/rep-filter-select";
+import { useDashboardShell, useOpenUploadDialog } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,11 @@ type KpiDetailConfig = {
   headers: string[];
   rows: (string | number)[][];
   emptyMessage: string;
+  /** When set, show segment filter chips and filter rows by this column. */
+  segmentFilter?: {
+    columnIndex: number;
+    options?: string[];
+  };
 };
 
 function Kpi({
@@ -140,6 +146,91 @@ function SnapshotBox({
   );
 }
 
+function InsightKpiDialogBody({ config }: { config: KpiDetailConfig }) {
+  const [segment, setSegment] = useState("All");
+
+  const segmentOptions = useMemo(() => {
+    if (!config.segmentFilter) return [];
+    const { columnIndex, options } = config.segmentFilter;
+    if (options?.length) return options;
+    return [
+      ...new Set(config.rows.map((row) => String(row[columnIndex]))),
+    ].sort();
+  }, [config]);
+
+  const filteredRows = useMemo(() => {
+    if (!config.segmentFilter || segment === "All") return config.rows;
+    const { columnIndex } = config.segmentFilter;
+    return config.rows.filter((row) => String(row[columnIndex]) === segment);
+  }, [config, segment]);
+
+  const emptyAfterFilter =
+    config.rows.length > 0 && filteredRows.length === 0;
+
+  return (
+    <>
+      {config.segmentFilter ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Segment
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={segment === "All" ? "default" : "outline"}
+              onClick={() => setSegment("All")}
+            >
+              All
+            </Button>
+            {segmentOptions.map((option) => (
+              <Button
+                key={option}
+                type="button"
+                size="sm"
+                variant={segment === option ? "default" : "outline"}
+                onClick={() => setSegment(option)}
+              >
+                {option}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {config.rows.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">{config.emptyMessage}</p>
+      ) : emptyAfterFilter ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          No accounts in this segment.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {config.headers.map((header) => (
+                  <TableHead key={header}>{header}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredRows.map((row, rowIndex) => (
+                <TableRow key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <TableCell key={cellIndex} className="align-top text-sm">
+                      {cell}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </>
+  );
+}
+
 function InsightKpiDialog({
   config,
   open,
@@ -159,32 +250,7 @@ function InsightKpiDialog({
           <DialogDescription>{config.description}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto px-6 py-4">
-          {config.rows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">{config.emptyMessage}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {config.headers.map((header) => (
-                      <TableHead key={header}>{header}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {config.rows.map((row, rowIndex) => (
-                    <TableRow key={rowIndex}>
-                      {row.map((cell, cellIndex) => (
-                        <TableCell key={cellIndex} className="align-top text-sm">
-                          {cell}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          {open ? <InsightKpiDialogBody key={config.title} config={config} /> : null}
         </div>
       </DialogContent>
     </Dialog>
@@ -543,7 +609,8 @@ function InsightTable({
   );
 }
 
-export function SalesInsightsDashboard() {
+export function SalesInsightsDashboard({ embedded = false }: { embedded?: boolean }) {
+  const shell = useDashboardShell();
   const {
     reps,
     repFilter,
@@ -562,6 +629,7 @@ export function SalesInsightsDashboard() {
   } = useFilteredPortfolio();
   const { insights, insightsPending } = useSalesInsights();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUpload = useOpenUploadDialog(() => setUploadOpen(true));
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [activeInsightsTab, setActiveInsightsTab] = useState("briefing");
   const [kpiDetail, setKpiDetail] = useState<KpiDetailConfig | null>(null);
@@ -582,6 +650,10 @@ export function SalesInsightsDashboard() {
     productAlerts.filter((a) => a.severity === "critical").length;
 
   function flash(message: string) {
+    if (shell) {
+      shell.flash(message);
+      return;
+    }
     setToast(message);
     window.setTimeout(() => setToast(null), 4000);
   }
@@ -589,7 +661,8 @@ export function SalesInsightsDashboard() {
   const b = insights?.weeklyBriefing;
 
   return (
-    <div className="min-h-screen">
+    <div className={embedded ? undefined : "min-h-screen"}>
+      {!embedded ? (
       <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
         <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -616,7 +689,7 @@ export function SalesInsightsDashboard() {
               />
               <PrintReportButton page="insights" onMessage={flash} />
               <ClearDataButton onCleared={flash} />
-              <Button onClick={() => setUploadOpen(true)}>
+              <Button onClick={openUpload}>
                 <Upload data-icon="inline-start" />
                 Upload reports
               </Button>
@@ -633,15 +706,22 @@ export function SalesInsightsDashboard() {
           </div>
         </div>
       </header>
+      ) : null}
 
-      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-        {toast ? (
+      <div
+        className={
+          embedded
+            ? "space-y-6"
+            : "mx-auto w-full max-w-[96rem] space-y-6 px-4 py-6 sm:px-6 lg:px-8"
+        }
+      >
+        {!embedded && toast ? (
           <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
             {toast}
           </div>
         ) : null}
 
-        {repFilter !== "all" ? (
+        {!embedded && repFilter !== "all" ? (
           <div className="rounded-lg border border-primary/20 bg-primary/6 px-4 py-3 text-sm">
             Showing <span className="font-medium">{repFilter}</span>&apos;s book only.
           </div>
@@ -657,7 +737,7 @@ export function SalesInsightsDashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center">
-              <Button onClick={() => setUploadOpen(true)}>Upload reports</Button>
+              <Button onClick={openUpload}>Upload reports</Button>
             </CardContent>
           </Card>
         ) : snapshot.accounts.length === 0 ? (
@@ -827,6 +907,10 @@ export function SalesInsightsDashboard() {
                           description: `${b.newAccountsCount} new, ${b.retainedCount} retained, and ${b.returningCount} returning customers on this book.`,
                           headers: ["Segment", "Account", "Last order", "Recent volume"],
                           emptyMessage: "No lifecycle segments for this window.",
+                          segmentFilter: {
+                            columnIndex: 0,
+                            options: ["New", "Retained", "Returning"],
+                          },
                           rows: [
                             ...newAccounts.map((row) => [
                               "New",
@@ -1085,7 +1169,7 @@ export function SalesInsightsDashboard() {
             </Tabs>
           </>
         )}
-      </main>
+      </div>
 
       <InsightKpiDialog
         config={kpiDetail}
@@ -1095,31 +1179,34 @@ export function SalesInsightsDashboard() {
         }}
       />
 
-      <UploadDialog
-        open={uploadOpen}
-        onOpenChange={setUploadOpen}
-        onImport={(result) => {
-          const imported = importParseResult(result);
-          const count =
-            result.kind === "orders"
-              ? imported.orders.length
-              : result.kind === "visits"
-                ? imported.visits.length
-                : imported.accounts.length;
-          flash(
-            `Imported ${count} ${reportKindLabel(result.kind)} rows from ${result.fileName}. Scores updated.`,
-          );
-        }}
-        onUploadCleared={flash}
-      />
-
-      <NotificationSidebar
-        alerts={frequencyAlerts}
-        productAlerts={productAlerts}
-        accountVisitLookup={accountVisitLookup}
-        open={notificationSidebarOpen}
-        onOpenChange={setNotificationSidebarOpen}
-      />
+      {!embedded ? (
+        <>
+          <UploadDialog
+            open={uploadOpen}
+            onOpenChange={setUploadOpen}
+            onImport={(result) => {
+              const imported = importParseResult(result);
+              const count =
+                result.kind === "orders"
+                  ? imported.orders.length
+                  : result.kind === "visits"
+                    ? imported.visits.length
+                    : imported.accounts.length;
+              flash(
+                `Imported ${count} ${reportKindLabel(result.kind)} rows from ${result.fileName}. Scores updated.`,
+              );
+            }}
+            onUploadCleared={flash}
+          />
+          <NotificationSidebar
+            alerts={frequencyAlerts}
+            productAlerts={productAlerts}
+            accountVisitLookup={accountVisitLookup}
+            open={notificationSidebarOpen}
+            onOpenChange={setNotificationSidebarOpen}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

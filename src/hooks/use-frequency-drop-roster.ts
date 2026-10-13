@@ -25,10 +25,7 @@ export function useFrequencyDropRoster(
   );
 
   useEffect(() => {
-    if (!enabled) {
-      setRecentClearances([]);
-      return;
-    }
+    if (!enabled) return;
 
     const apply = () => {
       const synced = syncFrequencyDropRoster({
@@ -49,8 +46,10 @@ export function useFrequencyDropRoster(
     };
   }, [alertSignature, portfolioKey, repFilter, asOf, enabled, alerts]);
 
+  const visibleClearances = enabled ? recentClearances : [];
+
   return {
-    recentClearances,
-    recentClearanceCount: recentClearances.length,
+    recentClearances: visibleClearances,
+    recentClearanceCount: visibleClearances.length,
   };
 }

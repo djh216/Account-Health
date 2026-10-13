@@ -1,24 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import {
-  AlertTriangle,
-  BarChart3,
-  CalendarRange,
-  ChevronDown,
-  Download,
-  FileText,
-  Loader2,
-  TrendingDown,
-  Wine,
-} from "lucide-react";
+import { BarChart3, ChevronDown, Download, FileText, Loader2, Wine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -27,7 +16,7 @@ import {
 } from "@/components/report-export-provider";
 import { cn } from "@/lib/utils";
 
-export type PrimaryPdfExport = "page" | "alerts" | "action-plan";
+export type PrimaryPdfExport = "page" | "alerts" | "action-plan" | "weekly-pack";
 
 export function PrintReportButton({
   page,
@@ -37,7 +26,7 @@ export function PrintReportButton({
   label = "Export PDF",
   title = "Generate a print-ready PDF preview",
   onMessage,
-  primaryExport = "page",
+  primaryExport = "weekly-pack",
   showMenu = true,
 }: {
   page?: ReportPageType;
@@ -57,23 +46,17 @@ export function PrintReportButton({
     activePage,
     exportCurrentPagePdf,
     exportFocusHealthPdf,
+    exportAccountOrderTrackingPdf,
     exportOrderAnalyticsPdf,
     exportProductTrendsPdf,
-    exportRepActionPlansPdf,
-    exportFrequencyAlertsPdf,
-    exportProductSlowdownPdf,
-    exportImminentChurnPdf,
-    exportWeeklyBriefingPdf,
     exportSalesInsightsPackPdf,
+    hasSalesInsightsPackData,
     hasHealthData,
     hasRepActionPlanData,
+    hasAlertsData,
     hasOrderData,
     hasProductData,
-    hasAlertsData,
-    hasProductSlowdownData,
-    hasImminentChurnData,
     hasWeeklyBriefingData,
-    hasSalesInsightsPackData,
   } = useReportExport();
 
   const [localToast, setLocalToast] = useState<string | null>(null);
@@ -82,7 +65,7 @@ export function PrintReportButton({
 
   const pageShortName =
     effectivePage === "orders"
-      ? "Order analytics"
+      ? "Account order tracking"
       : effectivePage === "products"
         ? "Product trends"
         : effectivePage === "insights"
@@ -109,15 +92,18 @@ export function PrintReportButton({
 
   async function handlePrimaryExport() {
     try {
-      if (primaryExport === "alerts") {
-        await exportFrequencyAlertsPdf();
-        notify("Frequency alerts PDF ready — print or save from the preview.");
-        return;
-      }
-      if (primaryExport === "action-plan") {
-        await exportRepActionPlansPdf();
-        notify("Action plan PDF ready — print or save from the preview.");
-        return;
+      if (
+        primaryExport === "alerts" ||
+        primaryExport === "action-plan" ||
+        primaryExport === "weekly-pack"
+      ) {
+        if (hasSalesInsightsPackData || hasRepActionPlanData || hasAlertsData) {
+          await exportSalesInsightsPackPdf();
+          notify(
+            "Weekly rep pack PDF ready — includes briefing KPIs, focus accounts, alerts, and insight tables.",
+          );
+          return;
+        }
       }
       await exportCurrentPagePdf(effectivePage);
       notify(`${pageShortName} PDF ready — print or save from the preview.`);
@@ -177,16 +163,18 @@ export function PrintReportButton({
             <ChevronDown className="size-3.5 opacity-70" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              PDF reports
+            <DropdownMenuLabel className="text-xs font-normal leading-snug text-muted-foreground">
+              Specialized exports
             </DropdownMenuLabel>
             <DropdownMenuItem
-              onClick={() => void runExport(exportFocusHealthPdf, "Account health")}
-              disabled={!hasHealthData}
+              onClick={() =>
+                void runExport(exportAccountOrderTrackingPdf, "Account order tracking")
+              }
+              disabled={!hasOrderData}
               className="gap-2"
             >
-              <FileText className="size-4 shrink-0 text-primary" />
-              Account health &amp; focus
+              <BarChart3 className="size-4 shrink-0 text-primary" />
+              Account order tracking table
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => void runExport(exportOrderAnalyticsPdf, "Order analytics")}
@@ -194,7 +182,7 @@ export function PrintReportButton({
               className="gap-2"
             >
               <BarChart3 className="size-4 shrink-0 text-primary" />
-              Order analytics
+              Order analytics (frequency &amp; volume)
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => void runExport(exportProductTrendsPdf, "Product sales trends")}
@@ -202,59 +190,15 @@ export function PrintReportButton({
               className="gap-2"
             >
               <Wine className="size-4 shrink-0 text-primary" />
-              Product sales trends
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => void runExport(exportRepActionPlansPdf, "Rep action plan")}
-              disabled={!hasRepActionPlanData}
-              className="gap-2"
-            >
-              <CalendarRange className="size-4 shrink-0 text-primary" />
-              Rep action plan (weeks 1–3)
+              Product catalog &amp; slowing wines
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => void runExport(exportFrequencyAlertsPdf, "Frequency drop alerts")}
-              disabled={!hasAlertsData}
-              className="gap-2"
-            >
-              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
-              Frequency drop alerts
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => void runExport(exportProductSlowdownPdf, "Product slowdown")}
-              disabled={!hasProductSlowdownData}
-              className="gap-2"
-            >
-              <TrendingDown className="size-4 shrink-0 text-amber-600" />
-              Product slowdown report
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                void runExport(exportImminentChurnPdf, "Imminent churn intervention")
-              }
-              disabled={!hasImminentChurnData}
-              className="gap-2"
-            >
-              <AlertTriangle className="size-4 shrink-0 text-rose-600" />
-              Imminent churn intervention
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => void runExport(exportWeeklyBriefingPdf, "Weekly book briefing")}
-              disabled={!hasWeeklyBriefingData}
+              onClick={() => void runExport(exportFocusHealthPdf, "Account focus detail")}
+              disabled={!hasHealthData}
               className="gap-2"
             >
               <FileText className="size-4 shrink-0 text-primary" />
-              Weekly book briefing
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => void runExport(exportSalesInsightsPackPdf, "Sales insights pack")}
-              disabled={!hasSalesInsightsPackData}
-              className="gap-2"
-            >
-              <FileText className="size-4 shrink-0 text-primary" />
-              Sales insights pack (all sections)
+              Account focus detail (extended columns)
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

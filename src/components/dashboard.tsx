@@ -25,6 +25,7 @@ import {
   NotificationSidebar,
   NotificationSidebarTrigger,
 } from "@/components/notification-sidebar";
+import { useDashboardShell, useOpenUploadDialog } from "@/components/dashboard-shell";
 import { SiteNav } from "@/components/site-nav";
 import { UploadDialog } from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ type AccountListDialogState = {
   accounts: AccountHealth[];
   showHistory?: boolean;
   emptyMessage?: string;
+  sortableByRepAndTier?: boolean;
 };
 
 const RISK_FILTERS: Array<{ value: "all" | RiskLevel; label: string }> = [
@@ -119,7 +121,8 @@ const TERRITORY_TIER_SECTIONS: Array<{
   },
 ];
 
-export function Dashboard() {
+export function Dashboard({ embedded = false }: { embedded?: boolean }) {
+  const shell = useDashboardShell();
   const {
     state,
     fullState,
@@ -138,6 +141,7 @@ export function Dashboard() {
     newAccounts,
   } = useFilteredPortfolio();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const openUpload = useOpenUploadDialog(() => setUploadOpen(true));
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState<"all" | RiskLevel>("all");
@@ -299,6 +303,10 @@ export function Dashboard() {
     : null;
 
   function flash(message: string) {
+    if (shell) {
+      shell.flash(message);
+      return;
+    }
     setToast(message);
     window.setTimeout(() => setToast(null), 4000);
   }
@@ -309,78 +317,10 @@ export function Dashboard() {
     flash("Sample wine distribution book loaded (10 accounts with order history and visits).");
   }
 
-  return (
-    <div className="min-h-screen">
-      <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
-        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 sm:px-6 lg:px-8 py-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-primary">
-                <Grape className="size-5" />
-                <p className="text-xs font-semibold tracking-[0.18em] uppercase">
-                  Wine distribution · account health
-                </p>
-              </div>
-              <h1 className="font-heading mt-1 text-3xl tracking-tight sm:text-4xl">
-                Cellar Pulse
-              </h1>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                Upload order history, visit snapshots (last order & last visit dates),
-                and account master data. We score each account’s health, classify risk,
-                and surface priority accounts for this week, two weeks out, and three weeks out
-                (risk, then value tier, then health score).
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {fullState.accounts.length === 0 ? (
-                <Button variant="outline" onClick={handleLoadSample}>
-                  <Sparkles data-icon="inline-start" />
-                  Load sample book
-                </Button>
-              ) : null}
-              <NotificationSidebarTrigger
-                alertsCount={totalAlertsCount}
-                criticalCount={totalCriticalAlertsCount}
-                onClick={() => setNotificationSidebarOpen(true)}
-              />
-              <PrintReportButton page="health" onMessage={flash} />
-              <ClearDataButton onCleared={flash} />
-              <Button onClick={() => setUploadOpen(true)}>
-                <Upload data-icon="inline-start" />
-                Upload reports
-              </Button>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <SiteNav />
-            <RepFilterSelect
-              reps={reps}
-              value={repFilter}
-              pending={repFilterPending}
-              onValueChange={setRepFilter}
-            />
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 sm:px-6 lg:px-8 py-6">
-        {toast ? (
-          <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
-            {toast}
-          </div>
-        ) : null}
-
-        {repFilter !== "all" ? (
-          <div className="rounded-lg border border-primary/20 bg-primary/6 px-4 py-3 text-sm">
-            Showing <span className="font-medium">{repFilter}</span>&apos;s book only.
-          </div>
-        ) : null}
-
+  const panelBody = (
+    <>
         {fullState.accounts.length === 0 ? (
-          <EmptyState
-            onUpload={() => setUploadOpen(true)}
-            onLoadSample={handleLoadSample}
-          />
+          <EmptyState onUpload={openUpload} onLoadSample={handleLoadSample} />
         ) : snapshot.accounts.length === 0 ? (
           <Card className="border-dashed py-12">
             <CardHeader className="items-center text-center">
@@ -481,6 +421,7 @@ export function Dashboard() {
                     description: "Critical and at-risk accounts on this book.",
                     accounts: needAttentionAccounts,
                     showHistory: snapshot.mode === "history",
+                    sortableByRepAndTier: true,
                   })
                 }
               />
@@ -679,6 +620,127 @@ export function Dashboard() {
             </Card>
           </>
         )}
+    </>
+  );
+
+  const panelDialogs = (
+    <>
+      <AccountDetail
+        account={selected}
+        orderTracking={selectedOrderTracking}
+        onOpenChange={(open) => {
+          if (!open) setSelectedId(null);
+        }}
+        onSelectProduct={(product) => {
+          if (selected) {
+            setSelectedAccountProduct({
+              accountName: selected.account.name,
+              product,
+            });
+          }
+        }}
+      />
+      <AccountProductOrdersDialog
+        selection={selectedAccountProduct}
+        orders={state.orders}
+        asOf={state.analysisAsOf}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAccountProduct(null);
+        }}
+      />
+      <AccountListDialog
+        open={accountListDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setAccountListDialog(null);
+        }}
+        title={accountListDialog?.title ?? ""}
+        description={accountListDialog?.description ?? ""}
+        accounts={accountListDialog?.accounts ?? []}
+        showHistory={accountListDialog?.showHistory}
+        emptyMessage={accountListDialog?.emptyMessage}
+        sortableByRepAndTier={accountListDialog?.sortableByRepAndTier}
+        onSelectAccount={setSelectedId}
+      />
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {panelBody}
+        {panelDialogs}
+      </>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <header className="border-b border-primary/15 bg-[color-mix(in_oklch,var(--card),var(--primary)_6%)]">
+        <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 px-4 sm:px-6 lg:px-8 py-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-primary">
+                <Grape className="size-5" />
+                <p className="text-xs font-semibold tracking-[0.18em] uppercase">
+                  Wine distribution · account health
+                </p>
+              </div>
+              <h1 className="font-heading mt-1 text-3xl tracking-tight sm:text-4xl">
+                Cellar Pulse
+              </h1>
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                Upload order history, visit snapshots (last order & last visit dates),
+                and account master data. We score each account’s health, classify risk,
+                and surface priority accounts for this week, two weeks out, and three weeks out
+                (risk, then value tier, then health score).
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {fullState.accounts.length === 0 ? (
+                <Button variant="outline" onClick={handleLoadSample}>
+                  <Sparkles data-icon="inline-start" />
+                  Load sample book
+                </Button>
+              ) : null}
+              <NotificationSidebarTrigger
+                alertsCount={totalAlertsCount}
+                criticalCount={totalCriticalAlertsCount}
+                onClick={() => setNotificationSidebarOpen(true)}
+              />
+              <PrintReportButton page="health" onMessage={flash} />
+              <ClearDataButton onCleared={flash} />
+              <Button onClick={openUpload}>
+                <Upload data-icon="inline-start" />
+                Upload reports
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <SiteNav />
+            <RepFilterSelect
+              reps={reps}
+              value={repFilter}
+              pending={repFilterPending}
+              onValueChange={setRepFilter}
+            />
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-[96rem] space-y-6 px-4 sm:px-6 lg:px-8 py-6">
+        {toast ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/8 px-4 py-3 text-sm">
+            {toast}
+          </div>
+        ) : null}
+
+        {repFilter !== "all" ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/6 px-4 py-3 text-sm">
+            Showing <span className="font-medium">{repFilter}</span>&apos;s book only.
+          </div>
+        ) : null}
+
+        {panelBody}
       </main>
 
       <UploadDialog
@@ -698,43 +760,7 @@ export function Dashboard() {
         }}
         onUploadCleared={flash}
       />
-      <AccountDetail
-        account={selected}
-        orderTracking={selectedOrderTracking}
-        onOpenChange={(open) => {
-          if (!open) setSelectedId(null);
-        }}
-        onSelectProduct={(product) => {
-          if (selected) {
-            setSelectedAccountProduct({
-              accountName: selected.account.name,
-              product,
-            });
-          }
-        }}
-      />
-
-      <AccountProductOrdersDialog
-        selection={selectedAccountProduct}
-        orders={state.orders}
-        asOf={state.analysisAsOf}
-        onOpenChange={(open) => {
-          if (!open) setSelectedAccountProduct(null);
-        }}
-      />
-
-      <AccountListDialog
-        open={accountListDialog !== null}
-        onOpenChange={(open) => {
-          if (!open) setAccountListDialog(null);
-        }}
-        title={accountListDialog?.title ?? ""}
-        description={accountListDialog?.description ?? ""}
-        accounts={accountListDialog?.accounts ?? []}
-        showHistory={accountListDialog?.showHistory}
-        emptyMessage={accountListDialog?.emptyMessage}
-        onSelectAccount={setSelectedId}
-      />
+      {panelDialogs}
 
       <NotificationSidebar
         alerts={frequencyAlerts}

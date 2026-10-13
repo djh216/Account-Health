@@ -28,6 +28,8 @@ export type Account = {
   county?: string;
   region?: string;
   salesRep?: string;
+  /** Set when rep came from account/roster import — not replaced by visit activity. */
+  salesRepFromRoster?: boolean;
 };
 
 export type Order = {

@@ -47,8 +47,9 @@ export function HealthScoreExplainer({
 
   return (
     <>
-      <button
-        type="button"
+      <span
+        role="button"
+        tabIndex={0}
         className={cn(
           "cursor-pointer rounded-sm text-left underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           className,
@@ -58,11 +59,17 @@ export function HealthScoreExplainer({
           event.preventDefault();
           setOpen(true);
         }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(true);
+        }}
         onPointerDown={(event) => event.stopPropagation()}
         title="View health score breakdown and recent changes"
       >
         {scoreNode}
-      </button>
+      </span>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent

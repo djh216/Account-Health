@@ -80,6 +80,19 @@ export function visitsForAccount(index: VisitIndex, account: Account): Visit[] {
   return mergeVisitLists(byId, byName);
 }
 
+/** Real visit log rows only — snapshot `*-last-visit` placeholders are not visit events for strike rate. */
+export function visitsForStrikeRate(index: VisitIndex, account: Account): Visit[] {
+  return visitsForAccount(index, account).filter(
+    (visit) => !isSnapshotLastVisitRecord(visit),
+  );
+}
+
+/** One logical stop per account-day-outcome (handles duplicate account rows / id vs name index). */
+export function strikeRateVisitDedupeKey(visit: Visit): string {
+  const day = visit.date.slice(0, 10);
+  return `${normalizeName(visit.accountName)}|${day}|${visit.outcome ?? ""}`;
+}
+
 /** Drop snapshot last-visit rows when activity import covers that account. */
 export function dropSupersededSnapshotLastVisits(
   current: Visit[],

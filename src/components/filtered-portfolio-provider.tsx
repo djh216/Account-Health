@@ -24,8 +24,11 @@ import { portfolioRosterScopeKey } from "@/lib/frequency-drop-roster";
 import {
   getPortfolioAnalyticsSessionCache,
   isRepAnalyticsWarm,
+  isRepCoreWarm,
   mergePortfolioAnalytics,
   portfolioStateCacheKey,
+  readPortfolioCoreForFilteredState,
+  readPortfolioHeavyForFilteredState,
   warmPortfolioAnalyticsForRep,
   type PortfolioAnalyticsBundle,
   type PortfolioHeavyAnalytics,
@@ -98,6 +101,8 @@ type FilteredPortfolioContextValue = {
   snapshot: PortfolioSnapshot;
   repFilter: string;
   repFilterPending: boolean;
+  /** True while order-level analytics (heavy bundle) is still warming. */
+  orderAnalyticsPending: boolean;
   setRepFilter: (rep: string) => void;
   reps: string[];
   importParseResult: ReturnType<typeof usePortfolio>["importParseResult"];
@@ -129,6 +134,7 @@ function shellPortfolioContext(input: {
   reps: string[];
   importParseResult: ReturnType<typeof usePortfolio>["importParseResult"];
   resetAll: () => void;
+  orderAnalyticsPending?: boolean;
 }): FilteredPortfolioContextValue {
   return {
     state: input.filteredState,
@@ -151,6 +157,7 @@ function shellPortfolioContext(input: {
     },
     repFilter: input.repFilter,
     repFilterPending: input.repFilterPending,
+    orderAnalyticsPending: input.orderAnalyticsPending ?? false,
     setRepFilter,
     reps: input.reps,
     importParseResult: input.importParseResult,
@@ -220,30 +227,87 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
 
   const reps = useMemo(() => listSalesReps(visibleState), [visibleState]);
 
-  const [analyticsEpoch, setAnalyticsEpoch] = useState(0);
+  const filteredState = useMemo(
+    () => portfolioStateForRep(repIndex, repFilter),
+    [repIndex, repFilter],
+  );
+
   const hasPortfolioData = visibleState.accounts.length > 0;
 
-  /** Warm selected rep after paint so we do not block the main thread. */
+  const coreCacheReady =
+    !hasPortfolioData || isRepCoreWarm(analyticsCache, repFilter);
+
+  const [analyticsEpoch, setAnalyticsEpoch] = useState(0);
+
+  /** Core analytics (scores, trends) — off the render path so the UI stays responsive. */
   useEffect(() => {
     if (!hasPortfolioData) return;
+    if (isRepCoreWarm(analyticsCache, repFilter)) return;
+
+    let cancelled = false;
+
+    const warmCore = () => {
+      if (cancelled) return;
+      if (isRepCoreWarm(analyticsCache, repFilter)) return;
+      try {
+        readPortfolioCoreForFilteredState(analyticsCache, repFilter, filteredState);
+        queueMicrotask(() => {
+          if (!cancelled) setAnalyticsEpoch((epoch) => epoch + 1);
+        });
+      } catch (error) {
+        console.error("Failed to warm portfolio analytics core", error);
+      }
+    };
+
+    const timerId = window.setTimeout(warmCore, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [visibleStateKey, repFilter, filteredState, hasPortfolioData, analyticsCache]);
+
+  /** Heavy analytics (order tracking, projections) — idle when possible. */
+  useEffect(() => {
+    if (!hasPortfolioData) return;
+    if (!isRepCoreWarm(analyticsCache, repFilter)) return;
     if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
 
     let cancelled = false;
-    const frame = requestAnimationFrame(() => {
-      if (cancelled) return;
-      warmPortfolioAnalyticsForRep(
-        analyticsCache,
-        repFilter,
-        portfolioStateForRep(repIndex, repFilter),
-      );
-      setAnalyticsEpoch((epoch) => epoch + 1);
-    });
 
+    const ensureHeavy = () => {
+      if (cancelled) return;
+      if (isRepAnalyticsWarm(analyticsCache, repFilter)) return;
+      try {
+        readPortfolioHeavyForFilteredState(analyticsCache, repFilter, filteredState);
+        queueMicrotask(() => {
+          if (!cancelled) setAnalyticsEpoch((epoch) => epoch + 1);
+        });
+      } catch (error) {
+        console.error("Failed to warm portfolio analytics heavy", error);
+      }
+    };
+
+    if (typeof requestIdleCallback !== "undefined") {
+      const idleId = requestIdleCallback(ensureHeavy, { timeout: 1_500 });
+      return () => {
+        cancelled = true;
+        cancelIdleCallback(idleId);
+      };
+    }
+
+    const timerId = window.setTimeout(ensureHeavy, 0);
     return () => {
       cancelled = true;
-      cancelAnimationFrame(frame);
+      window.clearTimeout(timerId);
     };
-  }, [visibleStateKey, repFilter, repIndex, hasPortfolioData, analyticsCache]);
+  }, [
+    visibleStateKey,
+    repFilter,
+    filteredState,
+    hasPortfolioData,
+    analyticsCache,
+    analyticsEpoch,
+  ]);
 
   /** Preload other rep slices in idle time — no React updates until the user switches rep. */
   useEffect(() => {
@@ -292,23 +356,17 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     }
   }, [repFilter, reps]);
 
-  const filteredState = useMemo(
-    () => portfolioStateForRep(repIndex, repFilter),
-    [repIndex, repFilter],
-  );
-
   const activeCore = useMemo(
-    () => analyticsCache.get(repFilter)?.core ?? null,
-    [analyticsCache, repFilter, visibleStateKey, analyticsEpoch],
+    () => (coreCacheReady ? analyticsCache.get(repFilter)?.core ?? null : null),
+    [analyticsCache, repFilter, visibleStateKey, analyticsEpoch, coreCacheReady],
   );
   const activeHeavy = useMemo(
     () => analyticsCache.get(repFilter)?.heavy ?? null,
     [analyticsCache, repFilter, visibleStateKey, analyticsEpoch],
   );
 
-  const repFilterPending = Boolean(
-    hasPortfolioData && (!activeCore || !activeHeavy),
-  );
+  const repFilterPending = Boolean(hasPortfolioData && !activeCore);
+  const orderAnalyticsPending = Boolean(hasPortfolioData && activeCore && !activeHeavy);
 
   const bundle = useMemo(() => {
     if (!activeCore) return null;
@@ -450,6 +508,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
       snapshot: activeCore.snapshot,
       repFilter,
       repFilterPending,
+      orderAnalyticsPending,
       setRepFilter,
       reps,
       importParseResult,
@@ -476,6 +535,7 @@ export function FilteredPortfolioProvider({ children }: { children: ReactNode })
     activeCore,
     repFilter,
     repFilterPending,
+    orderAnalyticsPending,
     reps,
     importParseResult,
     resetAll,

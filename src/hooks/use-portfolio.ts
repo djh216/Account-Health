@@ -31,8 +31,9 @@ export function usePortfolio() {
   );
 
   const importParseResult = useCallback((result: ParseResult) => {
+    const existingAccounts = getPortfolioSnapshot().accounts;
     let records = rowsToRecords(result);
-    remapVisitImportRecords(records, result.kind);
+    remapVisitImportRecords(records, result.kind, existingAccounts);
     const { records: gatedRecords, purgeKeys } = applyActivityOrderedYesFilter(
       result,
       records,

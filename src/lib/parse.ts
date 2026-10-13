@@ -280,6 +280,11 @@ export const COUNTY_ALIASES = ["county"];
 export const REGION_ALIASES = ["region", "territory", "area", "division"];
 
 export const REP_ALIASES = [
+  "created by",
+  "created by name",
+  "created by user",
+  "logged by",
+  "user name",
   "name of team member",
   "lead team member",
   "lead team member name",
@@ -916,6 +921,7 @@ function upsertAccount(
   if (!name) return null;
   const id = slugify(normalizeName(name)) || `licensee-${index}`;
   const existing = accounts.get(id);
+  const rowRep = row[mapping.salesRep ?? ""]?.trim();
   const next: Account = {
     id,
     name: existing?.name ?? name,
@@ -929,7 +935,8 @@ function upsertAccount(
     county: existing?.county || row[mapping.county ?? ""]?.trim() || undefined,
     region: existing?.region || row[mapping.region ?? ""]?.trim() || undefined,
     tier: existing?.tier || row[mapping.tier ?? ""]?.trim() || undefined,
-    salesRep: existing?.salesRep || row[mapping.salesRep ?? ""]?.trim() || undefined,
+    salesRep: existing?.salesRep || rowRep || undefined,
+    salesRepFromRoster: existing?.salesRepFromRoster || Boolean(rowRep),
   };
   accounts.set(id, next);
   return next;
@@ -1025,6 +1032,7 @@ export function rowsToRecords(
 
     if (repFromFile && !account.salesRep) {
       account.salesRep = repFromFile;
+      account.salesRepFromRoster = true;
     }
 
     if (effectiveKind === "snapshot") {
@@ -1077,7 +1085,7 @@ export function rowsToRecords(
         accountId: account.id,
         accountName: account.name,
         date,
-        salesRep: row[mapping.salesRep ?? ""]?.trim() || account.salesRep || repFromFile,
+        salesRep: row[mapping.salesRep ?? ""]?.trim() || repFromFile || undefined,
         outcome: outcome || "Recorded visit",
         durationMinutes: visitDurationFromRow(row, mapping),
       });
@@ -1095,6 +1103,7 @@ export function mergeAccounts(current: Account[], incoming: Account[]): Account[
       map.set(account.id, account);
       continue;
     }
+    const incomingRep = account.salesRep?.trim();
     map.set(account.id, {
       ...existing,
       type: existing.type === "other" ? account.type : existing.type,
@@ -1103,7 +1112,9 @@ export function mergeAccounts(current: Account[], incoming: Account[]): Account[
       county: existing.county || account.county,
       region: existing.region || account.region,
       tier: existing.tier || account.tier,
-      salesRep: account.salesRep || existing.salesRep,
+      salesRep: incomingRep || existing.salesRep,
+      salesRepFromRoster:
+        existing.salesRepFromRoster || Boolean(incomingRep) || account.salesRepFromRoster,
     });
   }
   return [...map.values()];
@@ -1130,8 +1141,10 @@ export function mergeOrders(current: Order[], incoming: Order[]): Order[] {
   return [...byId.values()];
 }
 
-function visitDedupeKey(visit: Visit): string {
-  return `${visit.accountId}|${visit.date}|${visit.outcome ?? ""}`;
+export function visitDedupeKey(visit: Visit): string {
+  const day = visit.date.slice(0, 10);
+  const accountKey = visit.accountId || normalizeName(visit.accountName);
+  return `${accountKey}|${day}|${visit.outcome ?? ""}`;
 }
 
 export function mergeVisits(current: Visit[], incoming: Visit[]): Visit[] {

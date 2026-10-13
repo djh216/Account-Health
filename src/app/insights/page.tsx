@@ -1,5 +1,5 @@
-import { SalesInsightsDashboard } from "@/components/sales-insights-dashboard";
+import { redirect } from "next/navigation";
 
-export default function InsightsPage() {
-  return <SalesInsightsDashboard />;
+export default function SalesInsightsPage() {
+  redirect("/?view=insights");
 }
