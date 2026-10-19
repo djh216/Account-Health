@@ -71,7 +71,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatNumber, normalizeName } from "@/lib/format";
+import { formatDate, formatDateCompact, formatNumber, normalizeName } from "@/lib/format";
 import {
   buildBottleTrendData,
   bottleTrendOrdersScopeKey,
@@ -89,11 +89,64 @@ import { cn } from "@/lib/utils";
 function AccountTrajectoryPill({
   trajectory,
   windowLabel,
+  compact = false,
 }: {
   trajectory: ProductTrajectory;
   windowLabel: "30d" | "90d";
+  compact?: boolean;
 }) {
   const ageLabel = windowLabel;
+  if (compact) {
+    switch (trajectory) {
+      case "accelerating":
+        return (
+          <span
+            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400"
+            title={`Accelerating (${windowLabel})`}
+          >
+            <ArrowUpRight className="size-3 shrink-0" />
+            Accel
+          </span>
+        );
+      case "steady":
+        return (
+          <span
+            className="inline-flex items-center gap-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300"
+            title={`Steady (${windowLabel})`}
+          >
+            Steady
+          </span>
+        );
+      case "decelerating":
+        return (
+          <span
+            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400"
+            title={`Decelerating (${windowLabel})`}
+          >
+            <ArrowDownRight className="size-3 shrink-0" />
+            Decel
+          </span>
+        );
+      case "new":
+        return (
+          <span
+            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400"
+            title={`New (<${ageLabel})`}
+          >
+            New
+          </span>
+        );
+      case "dormant":
+        return (
+          <span
+            className="inline-flex items-center gap-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+            title={`Dormant (>${ageLabel})`}
+          >
+            Dormant
+          </span>
+        );
+    }
+  }
   switch (trajectory) {
     case "accelerating":
       return (
@@ -190,31 +243,45 @@ function PaceComparisonCell({
   recent,
   prior,
   title,
+  compact = false,
 }: {
   deltaPct: number | null;
   recent: number;
   prior: number;
   title: string;
+  compact?: boolean;
 }) {
+  const pctClass = cn(
+    "font-semibold tabular-nums",
+    compact ? "text-[11px]" : "text-xs",
+    deltaPct !== null && deltaPct > 0
+      ? "text-emerald-600 dark:text-emerald-400"
+      : deltaPct !== null && deltaPct < 0
+        ? "text-rose-600 dark:text-rose-400"
+        : "text-muted-foreground",
+  );
+  const detail = `${formatNumber(recent)} vs ${formatNumber(prior)} btls`;
+
+  if (compact) {
+    return (
+      <TableCell
+        className="text-right tabular-nums"
+        title={title ? `${title} · ${detail}` : detail}
+      >
+        <span className={pctClass}>
+          {deltaPct !== null ? `${deltaPct > 0 ? "+" : ""}${deltaPct}%` : "—"}
+        </span>
+      </TableCell>
+    );
+  }
+
   return (
     <TableCell className="text-right tabular-nums">
       <div className="flex flex-col items-end">
-        <span
-          className={cn(
-            "font-semibold text-xs tabular-nums",
-            deltaPct !== null && deltaPct > 0
-              ? "text-emerald-600 dark:text-emerald-400"
-              : deltaPct !== null && deltaPct < 0
-                ? "text-rose-600 dark:text-rose-400"
-                : "text-muted-foreground",
-          )}
-          title={title}
-        >
+        <span className={pctClass} title={title}>
           {deltaPct !== null ? `${deltaPct > 0 ? "+" : ""}${deltaPct}%` : "—"}
         </span>
-        <span className="text-[10px] text-muted-foreground tabular-nums">
-          {formatNumber(recent)} vs {formatNumber(prior)} btls
-        </span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">{detail}</span>
       </div>
     </TableCell>
   );
@@ -227,6 +294,7 @@ function SortableAccountCatalogHead({
   onSort,
   align = "left",
   className,
+  headerTitle,
 }: {
   label: string;
   column: AccountBottleCatalogSortKey;
@@ -234,6 +302,7 @@ function SortableAccountCatalogHead({
   onSort: (column: AccountBottleCatalogSortKey) => void;
   align?: "left" | "right";
   className?: string;
+  headerTitle?: string;
 }) {
   const active = sort.column === column;
   const Icon = active
@@ -250,14 +319,15 @@ function SortableAccountCatalogHead({
           event.stopPropagation();
           onSort(column);
         }}
+        title={headerTitle ?? label}
         className={cn(
-          "inline-flex w-full items-center gap-1 px-3 py-2.5 text-xs font-semibold hover:text-foreground",
+          "inline-flex w-full items-center gap-0.5 px-1 py-2 text-[11px] font-semibold hover:text-foreground",
           align === "right" ? "justify-end" : "justify-start",
           active ? "text-foreground" : "text-foreground/80",
         )}
       >
         <span className="whitespace-nowrap">{label}</span>
-        <Icon className="size-3.5 shrink-0 opacity-70" />
+        <Icon className="size-3 shrink-0 opacity-70" />
       </button>
     </TableHead>
   );
@@ -1245,12 +1315,25 @@ export function BottleSalesTrendChart({
                   </div>
                 </div>
               </div>
-              <div className="overflow-x-auto border-t border-border bg-card">
-              <Table className="text-xs">
+              <div className="border-t border-border bg-card">
+              <Table className="table-fixed w-full text-xs [&_th:not(:first-child)]:text-right [&_td:not(:first-child)]:text-right [&_th]:px-1 [&_td]:px-1 [&_td]:py-1.5">
+                <colgroup>
+                  <col className="w-[4%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[7%]" />
+                </colgroup>
                 <TableHeader>
                   <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="w-12 py-2.5 px-3 text-center font-semibold text-foreground">
-                      Chart
+                    <TableHead className="py-2 text-center text-[11px] font-semibold text-foreground">
+                      Plot
                     </TableHead>
                     <SortableAccountCatalogHead
                       label="Account"
@@ -1259,63 +1342,72 @@ export function BottleSalesTrendChart({
                       onSort={toggleAccountCatalogSort}
                     />
                     <SortableAccountCatalogHead
-                      label="Total Bottles"
+                      label="Total"
+                      headerTitle="Total bottles"
                       column="totalBottles"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="Avg Bottles / Order"
+                      label="Avg/ord"
+                      headerTitle="Average bottles per order"
                       column="avgBottlesPerOrder"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="Monthly Velocity"
+                      label="Btl/mo"
+                      headerTitle="Monthly velocity (bottles per month)"
                       column="monthlyVelocity"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="30-Day Pace vs Prior"
+                      label="30d Δ"
+                      headerTitle="30-day pace vs prior 30 days"
                       column="pace30DeltaPct"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="Trajectory (30d)"
+                      label="30d trj"
+                      headerTitle="Trajectory (30 days)"
                       column="trajectory30"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="Last 90-Day Pace vs Prior"
+                      label="90d Δ"
+                      headerTitle="Last 90-day pace vs prior 90 days"
                       column="pace90DeltaPct"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="Trajectory (90d)"
+                      label="90d trj"
+                      headerTitle="Trajectory (90 days)"
                       column="trajectory90"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="Orders"
+                      label="Ord"
+                      headerTitle="Order count"
                       column="orderCount"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
                       align="right"
                     />
                     <SortableAccountCatalogHead
-                      label="Last Order Date"
+                      label="Last"
+                      headerTitle="Last order date"
                       column="lastOrderDate"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
@@ -1354,7 +1446,7 @@ export function BottleSalesTrendChart({
                         )}
                       >
                         <TableCell
-                          className="py-2.5 px-3 text-center"
+                          className="text-center"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <button
@@ -1385,23 +1477,24 @@ export function BottleSalesTrendChart({
                             />
                           </button>
                         </TableCell>
-                        <TableCell className="py-2.5 px-3 align-top text-foreground">
-                          <div className="flex min-w-0 items-start gap-2">
+                        <TableCell className="max-w-0 align-top text-left text-foreground">
+                          <div className="flex min-w-0 items-start gap-1">
                             {isSelectedInChart && (
                               <span
                                 className="mt-1 size-2 shrink-0 rounded-full ring-2 ring-primary/20"
                                 style={{ backgroundColor: chartColor || "#881337" }}
                               />
                             )}
-                            <div className="min-w-0">
+                            <div className="min-w-0 max-w-full">
                               <button
                                 type="button"
                                 className={cn(
-                                  "break-words text-left transition-colors",
+                                  "block max-w-full truncate text-left transition-colors",
                                   isSelectedInChart
                                     ? "font-bold text-foreground"
                                     : "font-medium group-hover:text-primary",
                                 )}
+                                title={summary.accountName}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onSelectAccount?.(summary.accountName);
@@ -1409,62 +1502,82 @@ export function BottleSalesTrendChart({
                               >
                                 {summary.accountName}
                               </button>
-                              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] tabular-nums text-muted-foreground">
+                              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
                                 {health?.territoryRank != null ? (
                                   <span>#{health.territoryRank}</span>
                                 ) : null}
                                 {health != null ? (
-                                  <span className="inline-flex items-center gap-1">
-                                    · <HealthScoreExplainer account={health} /> health
+                                  <span className="inline-flex items-center gap-0.5">
+                                    ·{" "}
+                                    <HealthScoreExplainer
+                                      account={health}
+                                      showChangeInTrigger={false}
+                                    />
                                   </span>
                                 ) : null}
                               </div>
                               <ExcludeAccountClosedButton
                                 accountName={summary.accountName}
-                                className="mt-1.5"
+                                className="mt-1 scale-90 origin-left"
                                 onExcluded={handleAccountExcludedFromLists}
                               />
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums text-foreground">
-                          {formatNumber(summary.totalBottles)} btls
+                        <TableCell
+                          className="font-semibold tabular-nums text-foreground"
+                          title={`${formatNumber(summary.totalBottles)} bottles`}
+                        >
+                          {formatNumber(summary.totalBottles)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {formatNumber(avgPerOrder)} btls/order
+                        <TableCell
+                          className="tabular-nums text-muted-foreground"
+                          title={`${formatNumber(avgPerOrder)} bottles per order`}
+                        >
+                          {formatNumber(avgPerOrder)}
                         </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums text-foreground">
-                          {formatNumber(summary.avgBottlesPerMonth)} btls/mo
+                        <TableCell
+                          className="font-medium tabular-nums text-foreground"
+                          title={`${formatNumber(summary.avgBottlesPerMonth)} bottles per month`}
+                        >
+                          {formatNumber(summary.avgBottlesPerMonth)}
                         </TableCell>
                         <PaceComparisonCell
+                          compact
                           deltaPct={summary.monthlyPaceDeltaPct}
                           recent={summary.paceLastMonth}
                           prior={summary.pacePriorMonth}
                           title={`30-day pace: ${formatNumber(summary.paceLastMonth)} btls last 30 days vs ${formatNumber(summary.pacePriorMonth)} btls prior 30 days`}
                         />
-                        <TableCell className="text-right whitespace-nowrap">
+                        <TableCell className="text-right">
                           <AccountTrajectoryPill
+                            compact
                             trajectory={summary.monthlyTrajectory}
                             windowLabel="30d"
                           />
                         </TableCell>
                         <PaceComparisonCell
+                          compact
                           deltaPct={summary.quarterlyPaceDeltaPct}
                           recent={summary.paceLast3Months}
                           prior={summary.pacePrior3Months}
                           title={`Last 90 days: ${formatNumber(summary.paceLast3Months)} btls vs ${formatNumber(summary.pacePrior3Months)} btls in the prior 90 days`}
                         />
-                        <TableCell className="text-right whitespace-nowrap">
+                        <TableCell className="text-right">
                           <AccountTrajectoryPill
+                            compact
                             trajectory={summary.quarterlyTrajectory}
                             windowLabel="90d"
                           />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                        <TableCell className="tabular-nums text-muted-foreground">
                           {summary.orderCount}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground text-xs">
-                          {formatDate(summary.lastOrderDate)}
+                        <TableCell
+                          className="tabular-nums text-muted-foreground text-[11px]"
+                          title={formatDate(summary.lastOrderDate)}
+                        >
+                          {formatDateCompact(summary.lastOrderDate)}
                         </TableCell>
                       </TableRow>
                     );
