@@ -41,9 +41,12 @@ import { useFilteredPortfolio } from "@/hooks/use-filtered-portfolio";
 import {
   formatDate,
   formatDays,
+  formatDateCompact,
   formatFrequencyDeltaDays,
+  formatFrequencyDeltaDaysCompact,
   formatHealthScoreDelta,
   formatIntervalDays,
+  formatIntervalDaysCompact,
   formatMoney,
   formatNumber,
   formatPct,
@@ -53,6 +56,7 @@ import {
 import { VolumeProjectionChurnPanel } from "@/components/volume-projection-churn-panel";
 import type { AccountHealth } from "@/lib/types";
 import { FREQUENCY_DROP_RECENT_CLEARANCE_DAYS } from "@/lib/frequency-drop-roster";
+import { cn } from "@/lib/utils";
 import { buildPdfAccountVisitLookup } from "@/lib/report-export";
 import {
   orderCadenceTone,
@@ -74,15 +78,29 @@ function LastOrderCell({
   lastOrderDate,
   daysSinceLastOrder,
   avgDaysBetweenOrders,
+  compact = false,
 }: {
   lastOrderDate: string;
   daysSinceLastOrder: number;
   avgDaysBetweenOrders: number | null;
+  compact?: boolean;
 }) {
   const tone = orderCadenceTone({
     daysSinceOrder: daysSinceLastOrder,
     intervalDays: avgDaysBetweenOrders,
   });
+
+  if (compact) {
+    const label = `${formatDays(daysSinceLastOrder)} · ${formatDate(lastOrderDate)}`;
+    return (
+      <TableCell
+        className={cn(orderCadenceToneClass(tone), "text-xs tabular-nums")}
+        title={label}
+      >
+        {daysSinceLastOrder}d · {formatDateCompact(lastOrderDate)}
+      </TableCell>
+    );
+  }
 
   return (
     <TableCell className={orderCadenceToneClass(tone)}>
@@ -100,12 +118,14 @@ function SortableTableHead<T extends string>({
   sort,
   onSort,
   className,
+  headerTitle,
 }: {
   label: string;
   column: T;
   sort: { column: T; direction: SortDirection };
   onSort: (column: T) => void;
   className?: string;
+  headerTitle?: string;
 }) {
   const active = sort.column === column;
   const Icon = active
@@ -119,10 +139,11 @@ function SortableTableHead<T extends string>({
       <button
         type="button"
         onClick={() => onSort(column)}
-        className={`inline-flex w-full items-center gap-1 hover:text-foreground ${className?.includes("text-right") ? "justify-end" : ""} ${active ? "text-foreground" : "text-muted-foreground"}`}
+        title={headerTitle ?? label}
+        className={`inline-flex w-full items-center gap-0.5 hover:text-foreground ${className?.includes("text-right") ? "justify-end" : ""} ${active ? "text-foreground" : "text-muted-foreground"}`}
       >
         {label}
-        <Icon className="size-3.5 shrink-0 opacity-70" />
+        <Icon className="size-3 shrink-0 opacity-70" />
       </button>
     </TableHead>
   );
@@ -134,12 +155,14 @@ function SortableAccountHead({
   sort,
   onSort,
   className,
+  headerTitle,
 }: {
   label: string;
   column: AccountTrackingSortKey;
   sort: { column: AccountTrackingSortKey; direction: SortDirection };
   onSort: (column: AccountTrackingSortKey) => void;
   className?: string;
+  headerTitle?: string;
 }) {
   return (
     <SortableTableHead
@@ -148,6 +171,7 @@ function SortableAccountHead({
       sort={sort}
       onSort={onSort}
       className={className}
+      headerTitle={headerTitle}
     />
   );
 }
@@ -187,9 +211,13 @@ function FrequencyDeltaCell({ value }: { value: number | null }) {
           ? "text-muted-foreground"
           : "text-muted-foreground";
 
+  const full = formatFrequencyDeltaDays(value);
   return (
-    <TableCell className={`text-right tabular-nums ${toneClass}`}>
-      {formatFrequencyDeltaDays(value)}
+    <TableCell
+      className={`text-right tabular-nums text-xs ${toneClass}`}
+      title={full}
+    >
+      {formatFrequencyDeltaDaysCompact(value)}
     </TableCell>
   );
 }
@@ -660,8 +688,20 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-4">
-                    <div className="overflow-x-auto">
-                      <Table>
+                    <Table className="table-fixed w-full text-xs [&_th]:h-8 [&_th]:px-1 [&_th]:text-[11px] [&_td]:px-1 [&_td]:py-1.5 [&_th:not(:first-child)]:text-right [&_td:not(:first-child)]:text-right">
+                      <colgroup>
+                        <col className="w-[18%]" />
+                        <col className="w-[5%]" />
+                        <col className="w-[5%]" />
+                        <col className="w-[5%]" />
+                        <col className="w-[6%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[6%]" />
+                        <col className="w-[7%]" />
+                      </colgroup>
                         <TableHeader>
                           <TableRow>
                             <SortableAccountHead
@@ -669,39 +709,46 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="accountName"
                               sort={accountSort}
                               onSort={toggleAccountSort}
+                              className="text-left"
                             />
                             <SortableAccountHead
-                              label="Value rank"
+                              label="Rank"
+                              headerTitle="Value rank"
                               column="territoryRank"
                               sort={accountSort}
                               onSort={toggleAccountSort}
                               className="text-right"
                             />
                             <SortableAccountHead
-                              label="Health score"
+                              label="Health"
+                              headerTitle="Health score"
                               column="healthScore"
                               sort={accountSort}
                               onSort={toggleAccountSort}
                               className="text-right"
                             />
                             <SortableAccountHead
-                              label="Health Δ (14d)"
+                              label="H Δ"
+                              headerTitle="Health score change (14 days)"
                               column="healthScoreChange14d"
                               sort={accountSort}
                               onSort={toggleAccountSort}
                               className="text-right"
                             />
                             <SortableAccountHead
-                              label="Typical frequency"
+                              label="Typ. freq."
+                              headerTitle="Typical order frequency"
                               column="orderFrequency"
                               sort={accountSort}
                               onSort={toggleAccountSort}
+                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Last order"
                               column="lastOrderDate"
                               sort={accountSort}
                               onSort={toggleAccountSort}
+                              className="text-right"
                             />
                             <SortableAccountHead
                               label="All-time"
@@ -711,28 +758,32 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               className="text-right"
                             />
                             <SortableAccountHead
-                              label="Recent 45d"
+                              label="Recent"
+                              headerTitle="Recent 45-day volume"
                               column="volumeRecent90"
                               sort={accountSort}
                               onSort={toggleAccountSort}
                               className="text-right"
                             />
                             <SortableAccountHead
-                              label="Prior 45d"
+                              label="Prior"
+                              headerTitle="Prior 45-day volume"
                               column="volumePrior90"
                               sort={accountSort}
                               onSort={toggleAccountSort}
                               className="text-right"
                             />
                             <SortableAccountHead
-                              label="Volume Δ"
+                              label="Vol Δ"
+                              headerTitle="Volume change (recent vs prior 45d)"
                               column="volumeDeltaPct"
                               sort={accountSort}
                               onSort={toggleAccountSort}
                               className="text-right"
                             />
                             <SortableAccountHead
-                              label="Frequency Δ"
+                              label="Freq Δ"
+                              headerTitle="Order frequency change"
                               column="frequencyDeltaDays"
                               sort={accountSort}
                               onSort={toggleAccountSort}
@@ -751,7 +802,12 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               className="cursor-pointer"
                               onClick={() => setSelectedAccount(row)}
                             >
-                              <TableCell className="font-medium">{row.accountName}</TableCell>
+                              <TableCell
+                                className="max-w-0 truncate font-medium"
+                                title={row.accountName}
+                              >
+                                {row.accountName}
+                              </TableCell>
                               <TableCell className="text-right tabular-nums text-muted-foreground">
                                 {row.territoryRank != null ? `#${row.territoryRank}` : "—"}
                               </TableCell>
@@ -777,10 +833,13 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                                   health?.scoreChange14d ?? row.healthScoreChange14d
                                 }
                               />
-                              <TableCell className="tabular-nums">
-                                {formatIntervalDays(row.frequency.avgDaysBetweenOrders)}
+                              <TableCell className="text-right tabular-nums text-muted-foreground">
+                                {formatIntervalDaysCompact(
+                                  row.frequency.avgDaysBetweenOrders,
+                                )}
                               </TableCell>
                               <LastOrderCell
+                                compact
                                 lastOrderDate={row.frequency.lastOrderDate}
                                 daysSinceLastOrder={row.frequency.daysSinceLastOrder}
                                 avgDaysBetweenOrders={row.frequency.avgDaysBetweenOrders}
@@ -802,8 +861,7 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                             );
                           })}
                         </TableBody>
-                      </Table>
-                    </div>
+                    </Table>
                   </CardContent>
                 </Card>
               </TabsContent>

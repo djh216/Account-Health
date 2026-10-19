@@ -31,6 +31,13 @@ export function formatFrequencyDeltaDays(value: number | null): string {
   return `${label} ${days} day${days === 1 ? "" : "s"} (${signed})`;
 }
 
+/** Compact cadence change for dense tables (full text in a tooltip). */
+export function formatFrequencyDeltaDaysCompact(value: number | null): string {
+  if (value === null || Number.isNaN(value)) return "—";
+  if (value === 0) return "0d";
+  return formatSignedFrequencyDays(value);
+}
+
 export function frequencyDeltaTone(value: number | null): "shortened" | "lengthened" | "neutral" | "unknown" {
   if (value === null || Number.isNaN(value)) return "unknown";
   if (value === 0) return "neutral";
@@ -76,6 +83,20 @@ export function formatIntervalDays(days: number | null): string {
   if (days === null) return "—";
   if (days === 1) return "1 day";
   return `${days} days`;
+}
+
+export function formatIntervalDaysCompact(days: number | null): string {
+  if (days === null) return "—";
+  return `${days}d`;
+}
+
+export function formatDateCompact(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return format(parseISO(iso), "M/d/yy");
+  } catch {
+    return iso;
+  }
 }
 
 export function riskLabel(risk: RiskLevel): string {
