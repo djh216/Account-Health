@@ -5,12 +5,15 @@ export function HealthScoreWithChange({
   score,
   change,
   className,
+  showChange = true,
 }: {
   score: number;
   change?: number | null;
   className?: string;
+  /** When false, only the score is shown (change shown in a separate column). */
+  showChange?: boolean;
 }) {
-  const suffix = formatHealthScoreChange(change);
+  const suffix = showChange ? formatHealthScoreChange(change) : null;
   return (
     <span className={cn("tabular-nums", className)}>
       {score}

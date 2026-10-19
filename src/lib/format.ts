@@ -143,6 +143,14 @@ export function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Signed 14-day health score delta for table columns, e.g. `+3`, `-2`, `0`. */
+export function formatHealthScoreDelta(delta: number | null | undefined): string {
+  if (delta === null || delta === undefined || Number.isNaN(delta)) return "—";
+  if (delta > 0) return `+${delta}`;
+  if (delta < 0) return `${delta}`;
+  return "0";
+}
+
 /** Parenthetical delta for health score vs 14 days prior, e.g. `(+3)` or `(-2)`. */
 export function formatHealthScoreChange(delta: number | null | undefined): string | null {
   if (delta === null || delta === undefined || Number.isNaN(delta)) return null;

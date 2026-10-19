@@ -4,7 +4,7 @@ import {
   formatDate,
   formatDays,
   formatFrequencyDeltaDays,
-  formatHealthScoreWithChange,
+  formatHealthScoreDelta,
   formatIntervalDays,
   formatNumber,
   formatPct,
@@ -63,15 +63,14 @@ function lastOrderCell(row: AccountOrderTracking): string {
 function trackingRow(row: AccountOrderTracking): string[] {
   const rank =
     row.territoryRank != null ? `#${row.territoryRank}` : "—";
-  const health =
-    row.healthScore != null
-      ? formatHealthScoreWithChange(row.healthScore, row.healthScoreChange14d)
-      : "—";
+  const health = row.healthScore != null ? String(row.healthScore) : "—";
+  const healthDelta = formatHealthScoreDelta(row.healthScoreChange14d);
 
   return [
     row.accountName,
     rank,
     health,
+    healthDelta,
     formatIntervalDays(row.frequency.avgDaysBetweenOrders),
     lastOrderCell(row),
     formatNumber(row.volumeAllTime),
@@ -137,6 +136,7 @@ export function generateAccountOrderTrackingPdfDocument(
         "Account",
         "Value rank",
         "Health",
+        "Health Δ (14d)",
         "Typical freq.",
         "Last order",
         "All-time",
@@ -152,16 +152,17 @@ export function generateAccountOrderTrackingPdfDocument(
     bodyStyles: PDF_TABLE_BODY,
     styles: { overflow: "linebreak", cellWidth: "wrap" },
     columnStyles: {
-      0: { cellWidth: tableWidth * 0.17 },
-      1: { cellWidth: tableWidth * 0.06, halign: "right" },
-      2: { cellWidth: tableWidth * 0.07, halign: "right" },
-      3: { cellWidth: tableWidth * 0.07 },
-      4: { cellWidth: tableWidth * 0.11 },
-      5: { cellWidth: tableWidth * 0.08, halign: "right" },
-      6: { cellWidth: tableWidth * 0.08, halign: "right" },
-      7: { cellWidth: tableWidth * 0.08, halign: "right" },
-      8: { cellWidth: tableWidth * 0.06, halign: "right" },
-      9: { cellWidth: tableWidth * 0.22, halign: "right" },
+      0: { cellWidth: tableWidth * 0.15 },
+      1: { cellWidth: tableWidth * 0.05, halign: "right" },
+      2: { cellWidth: tableWidth * 0.05, halign: "right" },
+      3: { cellWidth: tableWidth * 0.06, halign: "right" },
+      4: { cellWidth: tableWidth * 0.06 },
+      5: { cellWidth: tableWidth * 0.1 },
+      6: { cellWidth: tableWidth * 0.07, halign: "right" },
+      7: { cellWidth: tableWidth * 0.07, halign: "right" },
+      8: { cellWidth: tableWidth * 0.07, halign: "right" },
+      9: { cellWidth: tableWidth * 0.05, halign: "right" },
+      10: { cellWidth: tableWidth * 0.21, halign: "right" },
     },
     didParseCell: (data) => {
       if (data.section !== "body") return;
@@ -169,7 +170,15 @@ export function generateAccountOrderTrackingPdfDocument(
       const row = input.rows[rowIndex];
       if (!row) return;
 
-      if (data.column.index === 4) {
+      if (data.column.index === 3 && row.healthScoreChange14d != null) {
+        if (row.healthScoreChange14d > 0) {
+          data.cell.styles.textColor = [22, 101, 52];
+        } else if (row.healthScoreChange14d < 0) {
+          data.cell.styles.textColor = [190, 18, 60];
+        }
+      }
+
+      if (data.column.index === 5) {
         const tone = orderCadenceTone({
           daysSinceOrder: row.frequency.daysSinceLastOrder,
           intervalDays: row.frequency.avgDaysBetweenOrders,
@@ -177,7 +186,7 @@ export function generateAccountOrderTrackingPdfDocument(
         data.cell.styles.textColor = CADENCE_COLORS[tone];
       }
 
-      if (data.column.index === 8 && row.volumeDeltaPct !== null) {
+      if (data.column.index === 9 && row.volumeDeltaPct !== null) {
         if (row.volumeDeltaPct > 0) {
           data.cell.styles.textColor = [22, 101, 52];
         } else if (row.volumeDeltaPct < 0) {
@@ -185,7 +194,7 @@ export function generateAccountOrderTrackingPdfDocument(
         }
       }
 
-      if (data.column.index === 9) {
+      if (data.column.index === 10) {
         data.cell.styles.textColor =
           FREQ_DELTA_COLORS[frequencyDeltaTone(row.frequencyDeltaDays)];
       }

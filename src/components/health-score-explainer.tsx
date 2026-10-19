@@ -23,6 +23,7 @@ export function HealthScoreExplainer({
   factors: factorsProp,
   accountName,
   className,
+  showChangeInTrigger = true,
 }: {
   account?: AccountHealth | null;
   score?: number;
@@ -31,6 +32,7 @@ export function HealthScoreExplainer({
   factors?: HealthFactor[];
   accountName?: string;
   className?: string;
+  showChangeInTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -42,7 +44,12 @@ export function HealthScoreExplainer({
   const risk = account?.risk;
 
   const scoreNode = (
-    <HealthScoreWithChange score={score} change={change} className={className} />
+    <HealthScoreWithChange
+      score={score}
+      change={change}
+      className={className}
+      showChange={showChangeInTrigger}
+    />
   );
 
   return (

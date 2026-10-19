@@ -197,6 +197,7 @@ export type AccountTrackingSortKey =
   | "lastOrderDate"
   | "orderFrequency"
   | "healthScore"
+  | "healthScoreChange14d"
   | "territoryRank";
 
 export type RestaurantFrequencySortKey =
@@ -372,6 +373,11 @@ export function sortAccountTrackingRows(
         );
       case "healthScore":
         return compareNullableNumbers(a.healthScore ?? null, b.healthScore ?? null);
+      case "healthScoreChange14d":
+        return compareNullableNumbers(
+          a.healthScoreChange14d ?? null,
+          b.healthScoreChange14d ?? null,
+        );
       case "territoryRank": {
         const rankA = a.territoryRank ?? Number.MAX_SAFE_INTEGER;
         const rankB = b.territoryRank ?? Number.MAX_SAFE_INTEGER;

@@ -42,6 +42,7 @@ import {
   formatDate,
   formatDays,
   formatFrequencyDeltaDays,
+  formatHealthScoreDelta,
   formatIntervalDays,
   formatMoney,
   formatNumber,
@@ -148,6 +149,30 @@ function SortableAccountHead({
       onSort={onSort}
       className={className}
     />
+  );
+}
+
+function HealthScoreChangeCell({
+  change,
+}: {
+  change: number | null | undefined;
+}) {
+  const toneClass =
+    change == null || Number.isNaN(change)
+      ? "text-muted-foreground"
+      : change > 0
+        ? "text-emerald-800 dark:text-emerald-400"
+        : change < 0
+          ? "text-rose-800 dark:text-rose-400"
+          : "text-muted-foreground";
+
+  return (
+    <TableCell
+      className={`text-right tabular-nums font-medium ${toneClass}`}
+      title="Change vs health score 14 days ago"
+    >
+      {formatHealthScoreDelta(change)}
+    </TableCell>
   );
 }
 
@@ -660,6 +685,13 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               className="text-right"
                             />
                             <SortableAccountHead
+                              label="Health Δ (14d)"
+                              column="healthScoreChange14d"
+                              sort={accountSort}
+                              onSort={toggleAccountSort}
+                              className="text-right"
+                            />
+                            <SortableAccountHead
                               label="Typical frequency"
                               column="orderFrequency"
                               sort={accountSort}
@@ -725,17 +757,26 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               </TableCell>
                               <TableCell className="text-right font-semibold tabular-nums">
                                 {health ? (
-                                  <HealthScoreExplainer account={health} />
+                                  <HealthScoreExplainer
+                                    account={health}
+                                    showChangeInTrigger={false}
+                                  />
                                 ) : row.healthScore != null ? (
                                   <HealthScoreExplainer
                                     score={row.healthScore}
                                     change={row.healthScoreChange14d}
                                     accountName={row.accountName}
+                                    showChangeInTrigger={false}
                                   />
                                 ) : (
                                   "—"
                                 )}
                               </TableCell>
+                              <HealthScoreChangeCell
+                                change={
+                                  health?.scoreChange14d ?? row.healthScoreChange14d
+                                }
+                              />
                               <TableCell className="tabular-nums">
                                 {formatIntervalDays(row.frequency.avgDaysBetweenOrders)}
                               </TableCell>
