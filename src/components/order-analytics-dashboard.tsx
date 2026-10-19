@@ -137,13 +137,19 @@ function SortableTableHead<T extends string>({
       : ArrowDown
     : ArrowUpDown;
 
+  const headAlign = className?.includes("text-right")
+    ? "justify-end"
+    : className?.includes("text-left")
+      ? "justify-start"
+      : "justify-center";
+
   return (
-    <TableHead className={className}>
+    <TableHead className={cn("text-center", className)}>
       <button
         type="button"
         onClick={() => onSort(column)}
         title={headerTitle ?? label}
-        className={`inline-flex w-full items-center gap-0.5 hover:text-foreground ${className?.includes("text-right") ? "justify-end" : ""} ${active ? "text-foreground" : "text-muted-foreground"}`}
+        className={`inline-flex w-full items-center gap-0.5 hover:text-foreground ${headAlign} ${active ? "text-foreground" : "text-muted-foreground"}`}
       >
         {label}
         <Icon className="size-3 shrink-0 opacity-70" />
@@ -712,7 +718,7 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-4">
-                    <Table className="table-fixed w-full text-xs [&_th]:h-8 [&_th]:px-1 [&_th]:text-[11px] [&_td]:px-1 [&_td]:py-1.5 [&_th:not(:first-child)]:text-right [&_td:not(:first-child)]:text-right">
+                    <Table className="table-fixed w-full text-xs [&_thead_th]:text-center [&_th]:h-8 [&_th]:px-1 [&_th]:text-[11px] [&_td]:px-1 [&_td]:py-1.5 [&_tbody_td:not(:first-child)]:text-right">
                       <colgroup>
                         <col className="w-[18%]" />
                         <col className="w-[5%]" />
@@ -733,7 +739,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="accountName"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-left"
                             />
                             <SortableAccountHead
                               label="Rank"
@@ -741,7 +746,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="territoryRank"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Health"
@@ -749,7 +753,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="healthScore"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="H Δ"
@@ -757,7 +760,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="healthScoreChange14d"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Typ. freq."
@@ -765,21 +767,18 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="orderFrequency"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Last order"
                               column="lastOrderDate"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="All-time"
                               column="volumeAllTime"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Recent"
@@ -787,7 +786,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="volumeRecent90"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Prior"
@@ -795,7 +793,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="volumePrior90"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Vol Δ"
@@ -803,7 +800,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="volumeDeltaPct"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                             <SortableAccountHead
                               label="Freq Δ"
@@ -811,7 +807,6 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                               column="frequencyDeltaDays"
                               sort={accountSort}
                               onSort={toggleAccountSort}
-                              className="text-right"
                             />
                           </TableRow>
                         </TableHeader>
