@@ -265,7 +265,7 @@ function PaceComparisonCell({
   if (compact) {
     return (
       <TableCell
-        className="text-right tabular-nums"
+        className="text-center tabular-nums"
         title={title ? `${title} · ${detail}` : detail}
       >
         <span className={pctClass}>
@@ -276,8 +276,8 @@ function PaceComparisonCell({
   }
 
   return (
-    <TableCell className="text-right tabular-nums">
-      <div className="flex flex-col items-end">
+    <TableCell className="text-center tabular-nums">
+      <div className="flex flex-col items-center">
         <span className={pctClass} title={title}>
           {deltaPct !== null ? `${deltaPct > 0 ? "+" : ""}${deltaPct}%` : "—"}
         </span>
@@ -292,7 +292,7 @@ function SortableAccountCatalogHead({
   column,
   sort,
   onSort,
-  align = "left",
+  align = "center",
   className,
   headerTitle,
 }: {
@@ -300,7 +300,7 @@ function SortableAccountCatalogHead({
   column: AccountBottleCatalogSortKey;
   sort: { column: AccountBottleCatalogSortKey; direction: BottleCatalogSortDirection };
   onSort: (column: AccountBottleCatalogSortKey) => void;
-  align?: "left" | "right";
+  align?: "left" | "right" | "center";
   className?: string;
   headerTitle?: string;
 }) {
@@ -311,8 +311,13 @@ function SortableAccountCatalogHead({
       : ArrowDown
     : ArrowUpDown;
 
+  const headAlign =
+    align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
+  const buttonJustify =
+    align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
+
   return (
-    <TableHead className={cn("p-0", align === "right" ? "text-right" : "text-left", className)}>
+    <TableHead className={cn("p-0", headAlign, className)}>
       <button
         type="button"
         onClick={(event) => {
@@ -322,7 +327,7 @@ function SortableAccountCatalogHead({
         title={headerTitle ?? label}
         className={cn(
           "inline-flex w-full items-center gap-0.5 px-1 py-2 text-[11px] font-semibold hover:text-foreground",
-          align === "right" ? "justify-end" : "justify-start",
+          buttonJustify,
           active ? "text-foreground" : "text-foreground/80",
         )}
       >
@@ -1316,7 +1321,7 @@ export function BottleSalesTrendChart({
                 </div>
               </div>
               <div className="border-t border-border bg-card">
-              <Table className="table-fixed w-full text-xs [&_th:not(:first-child)]:text-right [&_td:not(:first-child)]:text-right [&_th]:px-1 [&_td]:px-1 [&_td]:py-1.5">
+              <Table className="table-fixed w-full text-xs [&_th]:px-1 [&_th]:text-center [&_td]:px-1 [&_td]:py-1.5 [&_td]:text-center">
                 <colgroup>
                   <col className="w-[4%]" />
                   <col className="w-[19%]" />
@@ -1347,7 +1352,6 @@ export function BottleSalesTrendChart({
                       column="totalBottles"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="Avg/ord"
@@ -1355,7 +1359,6 @@ export function BottleSalesTrendChart({
                       column="avgBottlesPerOrder"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="Btl/mo"
@@ -1363,7 +1366,6 @@ export function BottleSalesTrendChart({
                       column="monthlyVelocity"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="30d Δ"
@@ -1371,7 +1373,6 @@ export function BottleSalesTrendChart({
                       column="pace30DeltaPct"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="30d trj"
@@ -1379,7 +1380,6 @@ export function BottleSalesTrendChart({
                       column="trajectory30"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="90d Δ"
@@ -1387,7 +1387,6 @@ export function BottleSalesTrendChart({
                       column="pace90DeltaPct"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="90d trj"
@@ -1395,7 +1394,6 @@ export function BottleSalesTrendChart({
                       column="trajectory90"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="Ord"
@@ -1403,7 +1401,6 @@ export function BottleSalesTrendChart({
                       column="orderCount"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                     <SortableAccountCatalogHead
                       label="Last"
@@ -1411,7 +1408,6 @@ export function BottleSalesTrendChart({
                       column="lastOrderDate"
                       sort={catalogSort}
                       onSort={toggleAccountCatalogSort}
-                      align="right"
                     />
                   </TableRow>
                 </TableHeader>
@@ -1477,51 +1473,49 @@ export function BottleSalesTrendChart({
                             />
                           </button>
                         </TableCell>
-                        <TableCell className="max-w-0 align-top text-left text-foreground">
-                          <div className="flex min-w-0 items-start gap-1">
-                            {isSelectedInChart && (
+                        <TableCell className="max-w-0 align-top text-foreground">
+                          <div className="mx-auto flex min-w-0 max-w-full flex-col items-center text-center">
+                            {isSelectedInChart ? (
                               <span
-                                className="mt-1 size-2 shrink-0 rounded-full ring-2 ring-primary/20"
+                                className="mb-0.5 size-2 shrink-0 rounded-full ring-2 ring-primary/20"
                                 style={{ backgroundColor: chartColor || "#881337" }}
                               />
-                            )}
-                            <div className="min-w-0 max-w-full">
-                              <button
-                                type="button"
-                                className={cn(
-                                  "block max-w-full truncate text-left transition-colors",
-                                  isSelectedInChart
-                                    ? "font-bold text-foreground"
-                                    : "font-medium group-hover:text-primary",
-                                )}
-                                title={summary.accountName}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSelectAccount?.(summary.accountName);
-                                }}
-                              >
-                                {summary.accountName}
-                              </button>
-                              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
-                                {health?.territoryRank != null ? (
-                                  <span>#{health.territoryRank}</span>
-                                ) : null}
-                                {health != null ? (
-                                  <span className="inline-flex items-center gap-0.5">
-                                    ·{" "}
-                                    <HealthScoreExplainer
-                                      account={health}
-                                      showChangeInTrigger={false}
-                                    />
-                                  </span>
-                                ) : null}
-                              </div>
-                              <ExcludeAccountClosedButton
-                                accountName={summary.accountName}
-                                className="mt-1 scale-90 origin-left"
-                                onExcluded={handleAccountExcludedFromLists}
-                              />
+                            ) : null}
+                            <button
+                              type="button"
+                              className={cn(
+                                "block w-full max-w-full truncate text-center transition-colors",
+                                isSelectedInChart
+                                  ? "font-bold text-foreground"
+                                  : "font-medium group-hover:text-primary",
+                              )}
+                              title={summary.accountName}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectAccount?.(summary.accountName);
+                              }}
+                            >
+                              {summary.accountName}
+                            </button>
+                            <div className="mt-0.5 flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-[10px] tabular-nums text-muted-foreground">
+                              {health?.territoryRank != null ? (
+                                <span>#{health.territoryRank}</span>
+                              ) : null}
+                              {health != null ? (
+                                <span className="inline-flex items-center justify-center gap-0.5">
+                                  {health?.territoryRank != null ? <span>·</span> : null}
+                                  <HealthScoreExplainer
+                                    account={health}
+                                    showChangeInTrigger={false}
+                                  />
+                                </span>
+                              ) : null}
                             </div>
+                            <ExcludeAccountClosedButton
+                              accountName={summary.accountName}
+                              className="mt-1 scale-90"
+                              onExcluded={handleAccountExcludedFromLists}
+                            />
                           </div>
                         </TableCell>
                         <TableCell
@@ -1549,12 +1543,14 @@ export function BottleSalesTrendChart({
                           prior={summary.pacePriorMonth}
                           title={`30-day pace: ${formatNumber(summary.paceLastMonth)} btls last 30 days vs ${formatNumber(summary.pacePriorMonth)} btls prior 30 days`}
                         />
-                        <TableCell className="text-right">
-                          <AccountTrajectoryPill
-                            compact
-                            trajectory={summary.monthlyTrajectory}
-                            windowLabel="30d"
-                          />
+                        <TableCell>
+                          <div className="flex justify-center">
+                            <AccountTrajectoryPill
+                              compact
+                              trajectory={summary.monthlyTrajectory}
+                              windowLabel="30d"
+                            />
+                          </div>
                         </TableCell>
                         <PaceComparisonCell
                           compact
@@ -1563,12 +1559,14 @@ export function BottleSalesTrendChart({
                           prior={summary.pacePrior3Months}
                           title={`Last 90 days: ${formatNumber(summary.paceLast3Months)} btls vs ${formatNumber(summary.pacePrior3Months)} btls in the prior 90 days`}
                         />
-                        <TableCell className="text-right">
-                          <AccountTrajectoryPill
-                            compact
-                            trajectory={summary.quarterlyTrajectory}
-                            windowLabel="90d"
-                          />
+                        <TableCell>
+                          <div className="flex justify-center">
+                            <AccountTrajectoryPill
+                              compact
+                              trajectory={summary.quarterlyTrajectory}
+                              windowLabel="90d"
+                            />
+                          </div>
                         </TableCell>
                         <TableCell className="tabular-nums text-muted-foreground">
                           {summary.orderCount}
