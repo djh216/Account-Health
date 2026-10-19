@@ -43,11 +43,15 @@ export function ExcludeAccountClosedButton({
   accountId,
   className,
   onExcluded,
+  label = "Closed",
+  alwaysShowLabel = false,
 }: {
   accountName: string;
   accountId?: string;
   className?: string;
   onExcluded?: (accountName: string) => void;
+  label?: string;
+  alwaysShowLabel?: boolean;
 }) {
   const { mark } = useClosedBusinessAccounts();
 
@@ -68,7 +72,7 @@ export function ExcludeAccountClosedButton({
       title={`Remove ${accountName} from analytics (closed business)`}
     >
       <Building2 className="size-3" />
-      <span className="hidden sm:inline">Closed</span>
+      <span className={alwaysShowLabel ? undefined : "hidden sm:inline"}>{label}</span>
     </Button>
   );
 }

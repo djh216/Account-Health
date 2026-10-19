@@ -6,6 +6,9 @@ import { AccountListDialog } from "@/components/account-list-dialog";
 import { ClearDataButton } from "@/components/clear-data-button";
 import { PrintReportButton } from "@/components/print-report-button";
 import { AccountTrackingSheet } from "@/components/order-tracking-sheet";
+import { ExcludedAccountsPanel } from "@/components/analytics-exclusion-controls";
+import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
+import { isAccountClosedBusiness } from "@/lib/closed-business-accounts";
 import {
   AccountProductOrdersDialog,
   type AccountProductSelection,
@@ -302,6 +305,7 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
     returningCustomers,
     lastOrderGaps,
   } = useFilteredPortfolio();
+  const { ids: closedAccountIds } = useClosedBusinessAccounts();
   const [uploadOpen, setUploadOpen] = useState(false);
   const openUpload = useOpenUploadDialog(() => setUploadOpen(true));
   const [notificationSidebarOpen, setNotificationSidebarOpen] = useState(false);
@@ -384,10 +388,18 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
     [returningCustomers, healthByAccountName],
   );
 
+  const trackableAccounts = useMemo(
+    () =>
+      analytics.byAccount.filter(
+        (row) => !isAccountClosedBusiness(row.accountName, closedAccountIds),
+      ),
+    [analytics.byAccount, closedAccountIds],
+  );
+
   const sortedAccounts = useMemo(
     () =>
       sortAccountTrackingRows(
-        analytics.byAccount.map((row) => {
+        trackableAccounts.map((row) => {
           const health = healthByAccountName.get(normalizeName(row.accountName));
           return {
             ...row,
@@ -399,7 +411,7 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
         accountSort.column,
         accountSort.direction,
       ),
-    [analytics.byAccount, accountSort, healthByAccountName],
+    [trackableAccounts, accountSort, healthByAccountName],
   );
 
   const sortedFrequencyRows = useMemo(
@@ -440,13 +452,21 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
     );
   }
 
-  const selectedAccountTracking = selectedAccount
-    ? getRestaurantTracking(analytics, selectedAccount.accountName)
-    : null;
+  const selectedAccountTracking = useMemo(() => {
+    if (!selectedAccount) return null;
+    if (isAccountClosedBusiness(selectedAccount.accountName, closedAccountIds)) {
+      return null;
+    }
+    return getRestaurantTracking(analytics, selectedAccount.accountName);
+  }, [selectedAccount, closedAccountIds, analytics]);
 
-  const selectedAccountHealth = selectedAccount
-    ? (healthByAccountName.get(normalizeName(selectedAccount.accountName)) ?? null)
-    : null;
+  const selectedAccountHealth = useMemo(() => {
+    if (!selectedAccount) return null;
+    if (isAccountClosedBusiness(selectedAccount.accountName, closedAccountIds)) {
+      return null;
+    }
+    return healthByAccountName.get(normalizeName(selectedAccount.accountName)) ?? null;
+  }, [selectedAccount, closedAccountIds, healthByAccountName]);
 
   function flash(message: string) {
     if (shell) {
@@ -474,6 +494,10 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
         accountHealth={selectedAccountHealth}
         onOpenChange={(open) => {
           if (!open) setSelectedAccount(null);
+        }}
+        onAccountClosed={(accountName) => {
+          setSelectedAccount(null);
+          flash(`${accountName} marked closed — removed from order analytics.`);
         }}
         onSelectProduct={(product) => {
           if (selectedAccountTracking) {
@@ -862,6 +886,12 @@ export function OrderAnalyticsDashboard({ embedded = false }: { embedded?: boole
                           })}
                         </TableBody>
                     </Table>
+                    <ExcludedAccountsPanel
+                      className="mx-4 mb-4 mt-3"
+                      onRestore={(accountName) =>
+                        flash(`${accountName} restored to order analytics.`)
+                      }
+                    />
                   </CardContent>
                 </Card>
               </TabsContent>

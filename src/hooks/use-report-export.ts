@@ -15,7 +15,10 @@ import {
   buildPdfAccountVisitLookup,
 } from "@/lib/report-export";
 import { revokePdfArtifact, type PdfExportArtifact } from "@/lib/pdf-present";
-import { closedBusinessAccountId } from "@/lib/closed-business-accounts";
+import {
+  closedBusinessAccountId,
+  isAccountClosedBusiness,
+} from "@/lib/closed-business-accounts";
 import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
 import {
   excludeOutOfStockWinBackSkus,
@@ -255,19 +258,21 @@ export function useReportExportController() {
       enrichedAccounts.map((item) => [normalizeName(item.account.name), item]),
     );
     return sortAccountTrackingRows(
-      orderAnalytics.byAccount.map((row) => {
-        const health = healthByAccountName.get(normalizeName(row.accountName));
-        return {
-          ...row,
-          healthScore: health?.score ?? null,
-          healthScoreChange14d: health?.scoreChange14d ?? null,
-          territoryRank: health?.territoryRank ?? null,
-        };
-      }),
+      orderAnalytics.byAccount
+        .filter((row) => !isAccountClosedBusiness(row.accountName, closedAccountIds))
+        .map((row) => {
+          const health = healthByAccountName.get(normalizeName(row.accountName));
+          return {
+            ...row,
+            healthScore: health?.score ?? null,
+            healthScoreChange14d: health?.scoreChange14d ?? null,
+            territoryRank: health?.territoryRank ?? null,
+          };
+        }),
       "territoryRank",
       "asc",
     );
-  }, [orderAnalytics.byAccount, enrichedAccounts]);
+  }, [orderAnalytics.byAccount, enrichedAccounts, closedAccountIds]);
 
   const exportAccountOrderTrackingPdf = useCallback(async () => {
     if (!hasOrderData || accountOrderTrackingRows.length === 0) {

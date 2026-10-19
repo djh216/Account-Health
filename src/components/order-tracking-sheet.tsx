@@ -69,6 +69,9 @@ import {
   type SortDirection,
 } from "@/lib/order-analytics";
 import { downloadAccountProductsPdf } from "@/lib/generate-account-products-pdf";
+import { ExcludeAccountClosedButton } from "@/components/analytics-exclusion-controls";
+import { closedBusinessAccountId } from "@/lib/closed-business-accounts";
+import { useClosedBusinessAccounts } from "@/hooks/use-closed-business-accounts";
 import type { AccountHealth } from "@/lib/types";
 
 function productChangeLabel(status: ProductChangeStatus): string {
@@ -163,11 +166,13 @@ export function AccountTrackingSheet({
   accountHealth,
   onOpenChange,
   onSelectProduct,
+  onAccountClosed,
 }: {
   tracking: AccountOrderTracking | null;
   accountHealth?: AccountHealth | null;
   onOpenChange: (open: boolean) => void;
   onSelectProduct?: (product: string) => void;
+  onAccountClosed?: (accountName: string) => void;
 }) {
   return (
     <Dialog open={Boolean(tracking)} onOpenChange={onOpenChange}>
@@ -177,6 +182,10 @@ export function AccountTrackingSheet({
             tracking={tracking}
             accountHealth={accountHealth}
             onSelectProduct={onSelectProduct}
+            onAccountClosed={(accountName) => {
+              onAccountClosed?.(accountName);
+              onOpenChange(false);
+            }}
           />
         ) : null}
       </DialogContent>
@@ -188,11 +197,17 @@ function AccountTrackingSheetBody({
   tracking,
   accountHealth,
   onSelectProduct,
+  onAccountClosed,
 }: {
   tracking: AccountOrderTracking;
   accountHealth?: AccountHealth | null;
   onSelectProduct?: (product: string) => void;
+  onAccountClosed?: (accountName: string) => void;
 }) {
+  const { ids: closedAccountIds } = useClosedBusinessAccounts();
+  const accountClosed = closedAccountIds.has(
+    closedBusinessAccountId(accountHealth?.account.name ?? tracking.accountName),
+  );
   const cadence = orderCadenceStatus({
     daysSinceOrder: tracking.frequency.daysSinceLastOrder,
     lastOrderDate: tracking.frequency.lastOrderDate,
@@ -238,36 +253,52 @@ function AccountTrackingSheetBody({
                     </DialogDescription>
                   </div>
                 </div>
-                {accountHealth ? (
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    <RiskBadge risk={accountHealth.risk} />
-                    {accountHealth.territoryTier ? (
-                      <TerritoryValueBadge tier={accountHealth.territoryTier} />
-                    ) : null}
-                    <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      Health{" "}
-                      <HealthScoreExplainer account={accountHealth} />
-                      {accountHealth.territoryRank
-                        ? ` · Rank #${accountHealth.territoryRank}`
-                        : ""}
-                    </span>
-                    {tracking.volumeDeltaPct !== null ? (
-                      <span
-                        className={cn(
-                          "rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums",
-                          tracking.volumeDeltaPct > 0
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-                            : tracking.volumeDeltaPct < 0
-                              ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
-                              : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {tracking.volumeDeltaPct > 0 ? "+" : ""}
-                        {formatPct(tracking.volumeDeltaPct)} recent vs prior 45d
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {accountHealth ? (
+                    <>
+                      <RiskBadge risk={accountHealth.risk} />
+                      {accountHealth.territoryTier ? (
+                        <TerritoryValueBadge tier={accountHealth.territoryTier} />
+                      ) : null}
+                      <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        Health{" "}
+                        <HealthScoreExplainer account={accountHealth} />
+                        {accountHealth.territoryRank
+                          ? ` · Rank #${accountHealth.territoryRank}`
+                          : ""}
                       </span>
-                    ) : null}
-                  </div>
-                ) : null}
+                      {tracking.volumeDeltaPct !== null ? (
+                        <span
+                          className={cn(
+                            "rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums",
+                            tracking.volumeDeltaPct > 0
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                              : tracking.volumeDeltaPct < 0
+                                ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                                : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {tracking.volumeDeltaPct > 0 ? "+" : ""}
+                          {formatPct(tracking.volumeDeltaPct)} recent vs prior 45d
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {accountClosed ? (
+                    <span className="rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">
+                      Hidden from analytics (closed)
+                    </span>
+                  ) : (
+                    <ExcludeAccountClosedButton
+                      accountName={tracking.accountName}
+                      accountId={accountHealth?.account.id}
+                      label="Mark closed"
+                      alwaysShowLabel
+                      className="h-8 gap-1.5 px-2.5 text-xs"
+                      onExcluded={onAccountClosed}
+                    />
+                  )}
+                </div>
               </div>
             </DialogHeader>
 
